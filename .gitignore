@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+
+# Imaging data and derivatives are large and re-derivable; keep them out of git.
+data/PENN_GBM_nii/
+data/reference_seg/
+outputs/
+logs/
+*.nii.gz
+*.part

@@ -187,3 +187,34 @@ All four overlays (`outputs/BraTS25_2/qc/`) are anatomically sound: enhancing
 label on the enhancing rim, necrosis filling the core, oedema on FLAIR-bright
 tissue. Subjects 36 and 51 are textbook ring-enhancing lesions; 42 is a bulky
 frontal mass with interdigitating enhancing septa, traced correctly.
+
+## Viewing results in ITK-SNAP
+
+```bash
+./view.sh UPENN-GBM-00036_11              # prediction over T1GD
+./view.sh UPENN-GBM-00002_11 reference    # the expert labels instead
+```
+
+This loads T1GD as the main image, the segmentation as a labelled overlay with
+proper region names and colours (`brats_labels.itksnap.txt`), and T1/T2/FLAIR
+as additional layers.
+
+Once open:
+
+- The **modality dropdown** (top-left) cycles T1GD / T1 / T2 / FLAIR with the
+  segmentation staying put. This is the check that matters — flip to T1GD and
+  the ET label should sit on bright rim; flip to FLAIR and SNFH should sit on
+  bright tissue.
+- **`a`** toggles the segmentation overlay on and off.
+- **`s`**, **`c`**, **`a`** panes are sagittal / coronal / axial; scroll to move
+  through slices.
+- The **3D pane** (bottom right) renders the tumour surface after you press
+  *Update* in the segmentation panel.
+
+Equivalent raw command, if you prefer not to use the script:
+
+```bash
+itksnap -g data/PENN_GBM_nii/SUBJ/SUBJ_T1GD.nii.gz \
+        -s outputs/BraTS25_2/SUBJ_seg.nii.gz \
+        -l brats_labels.itksnap.txt
+```

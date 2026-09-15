@@ -1,9 +1,0 @@
-# ITK-SNAP label description file for BraTS 2024/2025 adult glioma labels.
-# Load with:  itksnap -g <image> -s <seg> -l brats_labels.itksnap.txt
-#
-# Columns: IDX  R  G  B  A  VIS  MSH  "LABEL"
-    0    0    0    0  0.00  0  0  "Clear Label"
-    1  242  193   78  1.00  1  1  "NETC - necrotic tumour core"
-    2   63  167  214  1.00  1  1  "SNFH - oedema / FLAIR hyperintensity"
-    3  228   87   46  1.00  1  1  "ET - enhancing tumour"
-    4  142  125  190  1.00  1  1  "RC - resection cavity"

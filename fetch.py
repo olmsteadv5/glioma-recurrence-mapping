@@ -2,7 +2,7 @@
 
 import urllib.request
 
-from paths import INPUTS, MODALITIES, REFERENCE_SEG, modality, raw_dir, subject_id
+from paths import MODALITIES, REFERENCE_SEG, modality, raw_dir, subject_id
 
 BASE = "https://github.com/data-nih/tcia/releases/download/upenn-gbm"
 
@@ -25,13 +25,13 @@ def _download(url, dest):
 
 
 def get(number, timepoint=1):
-    # Fetch one subject's four modalities and reference labels if published.
+    # Four modalities, plus reference labels if this subject has them.
     subject = subject_id(number, timepoint)
     prefix = f"sub-{number:03d}" if timepoint == 1 else f"sub-{number:03d}_2"
 
     for suffix, name in ASSETS.items():
         dest = modality(raw_dir(subject), subject, name)
-        # downloads are skipped when present; re-pulling a public mirror each run is wasteful
+        # skip what we already have, no point hammering the mirror
         if not dest.exists():
             _download(f"{BASE}/{prefix}_{suffix}", dest)
 
@@ -40,7 +40,7 @@ def get(number, timepoint=1):
         try:
             _download(f"{BASE}/sub-{number:03d}_seg.nii.gz", reference)
         except Exception:
-            pass  # only 147 of 630 subjects have published labels
+            pass  # only 147 of 630 subjects have labels
 
     missing = [n for n in MODALITIES
                if not modality(raw_dir(subject), subject, n).exists()]

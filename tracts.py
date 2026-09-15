@@ -7,7 +7,7 @@ from paths import ATLAS_DIR
 
 CACHE = ATLAS_DIR / "tract_centrelines.npz"
 
-# the OBJ is Y-up Blender; atlas space is (x, -z, y)
+# the OBJ is Y-up, atlas space is (x, -z, y)
 AXES = (0, 2, 1)
 SIGNS = np.array([1.0, -1.0, 1.0])
 
@@ -26,7 +26,7 @@ def _parse_obj(path):
 
 
 def _centreline(points, step=STEP_MM):
-    # Mean position in bins along the bundle's principal axis.
+    # Average the tube down to a line along its long axis.
     centre = points.mean(0)
     axis = np.linalg.svd(points - centre, full_matrices=False)[2][0]
     t = (points - centre) @ axis
@@ -40,7 +40,7 @@ def _centreline(points, step=STEP_MM):
 
 
 def centrelines():
-    # One polyline per connected bundle, cached.
+    # One line per bundle. Slow to build, so cache it.
     if CACHE.exists():
         data = np.load(CACHE)
         return np.split(data["points"], data["offsets"][1:-1])
@@ -67,7 +67,7 @@ def centrelines():
 
 
 def crossing(lines, seg_img, labels, involved):
-    # Tracts passing through the tumour or any involved parcel.
+    # Which lines pass through the tumour or an involved parcel.
     import nibabel as nib
 
     tumour = np.asarray(seg_img.dataobj) > 0

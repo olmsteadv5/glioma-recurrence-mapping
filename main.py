@@ -20,25 +20,23 @@ from paths import MNI, OUTPUTS, RESULTS, out_dir
 def process(number):
     started = time.time()
     subject = fetch.get(number)
-    print(f"[{subject}]")
+    print(subject)
     out_dir(subject).mkdir(parents=True, exist_ok=True)
 
     stripped = skullstrip.run(subject)
     verify.run(subject, stripped)
-    print("    stripped and verified")
 
     seg = segment.run(subject, stripped)
     scores = evaluate.run(subject, seg)
-    regions = scores["regions_ml"]
-    print(f"    segmented: WT {regions['WT']} mL, TC {regions['TC']} mL, "
-          f"ET {regions['ET']} mL")
-    if "dice" in scores:
-        dice = scores["dice"]
-        print(f"    dice vs reference: " + "  ".join(
-            f"{k} {v:.3f}" for k, v in dice.items() if v is not None))
-
     register.run(subject, stripped, seg)
-    print(f"    registered to MNI ({time.time() - started:.0f}s total)")
+
+    # printed here because the segmenter's progress spinner erases the line above it
+    r = scores["regions_ml"]
+    print(f"  WT {r['WT']} mL, TC {r['TC']} mL, ET {r['ET']} mL, "
+          f"{time.time() - started:.0f}s")
+    if "dice" in scores:
+        d = scores["dice"]
+        print(f"  dice WT {d['WT']}, TC {d['TC']}, ET {d['ET']}")
     return subject, scores
 
 
@@ -49,20 +47,19 @@ def main(numbers):
         subject, scores = process(number)
         results[subject] = scores
 
-    print("\n[atlas]")
     labels, names = atlas.label_volume(nib.load(MNI))
 
     for subject in results:
         overlap = atlas.overlap(out_dir(subject) / "seg_in_mni.nii.gz", labels, names)
         results[subject]["atlas"] = overlap
-        print(f"    {subject}: {overlap['in_parcels_ml']:.1f} of "
-              f"{overlap['tumour_ml']:.1f} mL in {len(overlap['parcels'])} parcels")
+        print(f"{subject}: {overlap['in_parcels_ml']} mL in "
+              f"{len(overlap['parcels'])} parcels")
 
-    # merge, so running one subject does not discard the others already on disk
+    # merge so running one subject doesn't wipe the others
     stored = json.loads(RESULTS.read_text()) if RESULTS.exists() else {}
     stored.update(results)
     RESULTS.write_text(json.dumps(stored, indent=2))
-    print(f"\nWrote {RESULTS} ({len(stored)} subjects)")
+    print(f"wrote {RESULTS}")
     return results
 
 

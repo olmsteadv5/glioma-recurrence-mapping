@@ -18,7 +18,7 @@ def _volume_ml(path):
 
 
 def run(subject):
-    # Mask from the T1, applied to all four modalities so they agree.
+    # One mask off the T1, applied to all four so they agree on which voxels exist.
     source, dest = raw_dir(subject), stripped_dir(subject)
     dest.mkdir(parents=True, exist_ok=True)
     mask_path = out_dir(subject) / "brainmask.nii.gz"

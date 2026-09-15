@@ -20,27 +20,27 @@ FILES = {
 
 RESAMPLED = ATLAS_DIR / "yba_on_mni.nii.gz"
 
-# glTF stores the atlas with x and z negated relative to the parcel dictionary
+# the GLB has x and z negated relative to the parcel dictionary
 GLB_FLIP = np.array([-1.0, 1.0, -1.0])
 
 
 def ensure(name):
-    # Fetch one official file into inputs/atlas if it is not already there.
+    # Download an official atlas file if we don't have it yet.
     path = ATLAS_INPUT / name
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        print(f"    downloading {name} ...", end="", flush=True)
-        request = urllib.request.Request(FILES[name],
-                                         headers={"User-Agent": "brats-upenn-gbm"})
-        with urllib.request.urlopen(request, timeout=600) as response, open(path, "wb") as fh:
-            while chunk := response.read(1 << 20):
-                fh.write(chunk)
-        print(" done")
+    if path.exists():
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    print(f"downloading {name}")
+    request = urllib.request.Request(FILES[name],
+                                     headers={"User-Agent": "brats-upenn-gbm"})
+    with urllib.request.urlopen(request, timeout=600) as response, open(path, "wb") as fh:
+        while chunk := response.read(1 << 20):
+            fh.write(chunk)
     return path
 
 
 def parcels():
-    # Official parcel metadata, in label order: label value i is parcels()[i-1].
+    # Label value i is parcels()[i-1].
     with open(ensure("YBA_696_parcel_dict.csv")) as fh:
         rows = list(csv.DictReader(fh))
     return [{
@@ -55,7 +55,7 @@ def parcels():
 
 
 def meshes():
-    # Per-parcel surfaces from the official GLB, in label order.
+    # Per-parcel surfaces, same order as parcels().
     import trimesh
     scene = trimesh.load(ensure("YBA_696.glb"))
     out = []
@@ -67,7 +67,7 @@ def meshes():
 
 
 def label_volume(reference):
-    # Official parcel volume, nearest-neighbour onto the reference grid.
+    # Atlas labels resampled onto the reference grid.
     names = [p["name"] for p in parcels()]
     if RESAMPLED.exists():
         return np.asarray(nib.load(RESAMPLED).dataobj).astype(np.int32), names
@@ -91,7 +91,7 @@ def label_volume(reference):
 
 
 def overlap(seg_mni, labels, names):
-    # Per-parcel tumour volume in mL, most involved first.
+    # How much of each parcel the tumour occupies.
     meta = {p["name"]: p for p in parcels()}
     image = nib.load(seg_mni)
     tumour = np.asarray(image.dataobj).astype(np.int16)
@@ -123,7 +123,7 @@ def overlap(seg_mni, labels, names):
     rows.sort(key=lambda r: (-r["fraction"], -r["in_tumour_ml"]))
     return {
         "tumour_ml": round(float(hit.sum()) * voxel_ml, 2),
-        # parcels cover grey matter only, so this is well under 100%
+        # grey matter only, so this is well under the tumour volume
         "in_parcels_ml": round(sum(r["in_tumour_ml"] for r in rows), 2),
         "parcels": rows,
     }

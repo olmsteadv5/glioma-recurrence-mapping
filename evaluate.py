@@ -5,7 +5,7 @@ import numpy as np
 
 from paths import LABELS, REFERENCE_SEG, REGIONS
 
-# UPenn-GBM legacy labelling used 4 for enhancing; BraTS 2025 uses 3
+# old BraTS used 4 for enhancing, 2025 uses 3
 LEGACY = {0: 0, 1: 1, 2: 2, 4: 3}
 
 
@@ -25,7 +25,7 @@ def _dice(a, b):
 
 
 def run(subject, seg_path):
-    # Per-region volumes in mL, plus Dice when a reference segmentation exists.
+    # Volumes in mL, and Dice if this subject has reference labels.
     image = nib.load(seg_path)
     data = np.asarray(image.dataobj).astype(np.int16)
     voxel_ml = float(np.prod(image.header.get_zooms()[:3])) / 1000.0

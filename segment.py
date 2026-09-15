@@ -8,7 +8,7 @@ from brats.constants import AdultGliomaPreAndPostTreatmentAlgorithms as Algorith
 
 from paths import modality, out_dir
 
-# BraTS25_1 placed first but is CUDA-only; BraTS25_2 is the best CPU-capable entry
+# BraTS25_1 won the challenge but needs CUDA; BraTS25_2 is the best CPU one
 GPU_ALGORITHM = Algorithms.BraTS25_1
 CPU_ALGORITHM = Algorithms.BraTS25_2
 
@@ -23,12 +23,11 @@ def cuda_available():
 
 
 def run(subject, stripped):
-    # Segment one subject; ~3 min on CPU, faster on a GPU host.
+    # About 3 minutes per subject on CPU.
     gpu = cuda_available()
     algorithm = GPU_ALGORITHM if gpu else CPU_ALGORITHM
     if not gpu:
-        print(f"    no CUDA device; using {algorithm.value} (2nd place) instead of "
-              f"{GPU_ALGORITHM.value}")
+        print(f"  no GPU, using {algorithm.value}")
 
     destination = out_dir(subject) / "seg.nii.gz"
     segmenter = AdultGliomaPreAndPostTreatmentSegmenter(algorithm=algorithm,

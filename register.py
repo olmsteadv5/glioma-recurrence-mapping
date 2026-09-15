@@ -22,7 +22,7 @@ def _greedy(args, log):
 
 
 def _metric_mask(t1_path, seg_path, dest):
-    # Brain minus dilated tumour, in patient space, to keep the lesion out of the metric.
+    # Brain minus the tumour, so the lesion cannot drive the alignment.
     image = nib.load(t1_path)
     brain = np.asarray(image.dataobj) > 0
     lesion = np.asarray(nib.load(seg_path).dataobj) > 0
@@ -36,7 +36,7 @@ def _metric_mask(t1_path, seg_path, dest):
 
 
 def run(subject, stripped, seg_path):
-    # Affine then deformable, with the lesion excluded from the deformable metric.
+    # Affine, then deformable with the lesion masked out.
     destination = out_dir(subject)
     t1 = modality(stripped, subject, "T1")
     log = destination / "registration.log"
@@ -49,13 +49,13 @@ def run(subject, stripped, seg_path):
 
     kept = _metric_mask(t1, seg_path, mask)
     if kept < 0.6:
-        print(f"    warning: lesion leaves only {kept:.0%} of brain to align on")
+        print(f"  only {kept:.0%} of brain left to align on")
 
-    # -mm crashes in affine mode, but a 12-parameter transform cannot distort locally anyway
+    # -mm crashes in affine mode; a global transform cannot warp locally anyway
     _greedy(["-d", 3, "-a", "-m", "NMI", "-i", MNI, t1, "-o", affine,
              "-ia-image-centers", "-n", "100x100x50", "-threads", THREADS], log)
 
-    # -mm works only with NCC, which is where mass effect actually does damage
+    # -mm only works with NCC. this is the stage mass effect actually breaks
     _greedy(["-d", 3, "-m", "NCC", "2x2x2", "-i", MNI, t1, "-mm", mask,
              "-it", affine, "-o", warp, "-n", "100x50x20", "-threads", THREADS], log)
 

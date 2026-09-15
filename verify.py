@@ -11,7 +11,7 @@ BRAIN_ML = (900.0, 2000.0)
 
 
 def run(subject, directory):
-    # Raise if geometry, co-registration or brain volume look wrong.
+    # Raise if anything BraTS assumes about the input is not true.
     problems, affines = [], {}
 
     for name in MODALITIES:
@@ -33,7 +33,7 @@ def run(subject, directory):
 
         affines[name] = image.affine
 
-    # a shared affine is what makes the four modalities voxel-comparable
+    # same affine everywhere, or the modalities are not co-registered
     reference = affines[MODALITIES[0]]
     for name, affine in affines.items():
         if not np.allclose(affine, reference, atol=1e-4):

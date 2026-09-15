@@ -4,6 +4,7 @@ import nibabel as nib
 import numpy as np
 import plotly.graph_objects as go
 import pyvista as pv
+import trimesh
 
 import tracts as tractography
 from atlas import label_volume, meshes, parcels
@@ -15,7 +16,7 @@ TRACT_COLOR = "#2f6f4e"
 
 
 def _tumour_surface(data, affine, value):
-    # Marching-cubes surface for one tissue class, in atlas millimetres.
+    # Surface around one tissue class.
     binary = (data == value).astype(np.float32)
     if binary.sum() < 10:
         return None
@@ -36,7 +37,7 @@ def _mesh3d(vertices, faces, **kwargs):
 
 
 def add(subject, fig, opacity=1.0):
-    # Append one solid mesh per tumour tissue class to an existing figure.
+    # Add the tumour to a figure that already exists.
     image = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
     data = np.asarray(image.dataobj).astype(np.int16)
     for value, name in LABELS.items():
@@ -50,7 +51,7 @@ def add(subject, fig, opacity=1.0):
 
 
 def add_tracts(subject, overlap, fig, width=1.5):
-    # Tract centrelines passing through the tumour or an involved parcel.
+    # Tract lines through the tumour and the parcels around it.
     labels, names = label_volume(nib.load(MNI))
     index = {name: i + 1 for i, name in enumerate(names)}
     involved = [index[r["parcel"]] for r in overlap["parcels"] if r["parcel"] in index]
@@ -60,7 +61,7 @@ def add_tracts(subject, overlap, fig, width=1.5):
     if not lines:
         return fig
 
-    # one trace for all of them, with None between polylines
+    # all in one trace, None separates the lines
     xs, ys, zs = [], [], []
     for line in lines:
         xs += [*line[:, 0], None]
@@ -74,7 +75,7 @@ def add_tracts(subject, overlap, fig, width=1.5):
 
 
 def run(subject, overlap, *, shell_opacity=0.2, top=30, show=True, show_tracts=True):
-    # Involved parcels opaque and named, the rest a faint shell, tumour solid.
+    # Involved parcels coloured, everything else faint, tumour on top.
     info = parcels()
     surfaces = meshes()
     index = {p["name"]: i for i, p in enumerate(info)}
@@ -86,7 +87,6 @@ def run(subject, overlap, *, shell_opacity=0.2, top=30, show=True, show_tracts=T
 
     rest = [surfaces[i] for name, i in index.items() if name not in involved_names]
     if rest:
-        import trimesh
         shell = trimesh.util.concatenate(rest)
         fig.add_trace(_mesh3d(np.asarray(shell.vertices), np.asarray(shell.faces),
                               color=SHELL_COLOR, opacity=shell_opacity,
@@ -100,20 +100,14 @@ def run(subject, overlap, *, shell_opacity=0.2, top=30, show=True, show_tracts=T
             np.asarray(mesh.vertices), np.asarray(mesh.faces),
             color=f"rgb{colour}", opacity=0.95,
             name=f"{row['parcel']} ({row['fraction']:.0%})", showlegend=True,
-            hovertemplate=(f"<b>{row['long_name']}</b><br>{row['parcel']}<br>"
-                           f"{row['fraction']:.1%} of volume in tumour<br>"
-                           f"{row['in_tumour_ml']:.2f} of {row['parcel_ml']:.2f} mL<br>"
-                           f"{row['gyrus']}<extra></extra>")))
+            hovertemplate=f"{row['long_name']}<extra></extra>"))
 
     add(subject, fig)
     if show_tracts:
         add_tracts(subject, overlap, fig)
 
-    total, in_parcels = overlap["tumour_ml"], overlap["in_parcels_ml"]
     fig.update_layout(
-        title=(f"{subject} - {total:.0f} mL tumour, {in_parcels:.0f} mL "
-               f"({in_parcels / total:.0%}) in parcelled tissue, "
-               f"{len(involved)} parcels shown"),
+        title=f"{subject}, {overlap['tumour_ml']} mL tumour",
         template="plotly_white",
         scene=dict(xaxis_visible=False, yaxis_visible=False, zaxis_visible=False,
                    aspectmode="data"),

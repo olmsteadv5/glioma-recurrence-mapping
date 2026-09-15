@@ -37,7 +37,7 @@ def _mesh3d(vertices, faces, **kwargs):
                      flatshading=True, **kwargs)
 
 
-def add(subject, fig, opacity=1.0):
+def add(subject, fig, opacity=1.0, rank=10):
     # Add the tumour to a figure that already exists.
     image = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
     data = np.asarray(image.dataobj).astype(np.int16)
@@ -46,7 +46,7 @@ def add(subject, fig, opacity=1.0):
         if surface is None:
             continue
         fig.add_trace(_mesh3d(*surface, color=TISSUE_COLOR[value], opacity=opacity,
-                              name=name, showlegend=True,
+                              name=name, showlegend=True, legendrank=rank + value,
                               hovertemplate=f"{name}<extra></extra>"))
     return fig
 
@@ -71,70 +71,63 @@ def add_tracts(subject, overlap, fig, width=1.5):
     fig.add_trace(go.Scatter3d(x=xs, y=ys, z=zs, mode="lines",
                                line=dict(color=TRACT_COLOR, width=width),
                                name=f"tracts crossing ({len(lines)})",
-                               showlegend=True, hoverinfo="skip"))
+                               showlegend=True, legendrank=20, hoverinfo="skip"))
     return fig
 
 
 def run(subject, overlap, *, shell_opacity=0.2, top=None, show=True, show_tracts=True,
         palette="yba"):
-    # Involved parcels coloured, everything else faint, tumour on top.
+    # Tumour and tracts first in the legend, then the shell, then the parcels.
     info = parcels()
     surfaces = meshes()
-    other = "contrast" if palette != "contrast" else "yba"
-    palette_colours = colours(palette)
-    other_colours = colours(other)
     index = {p["name"]: i for i, p in enumerate(info)}
+
+    other = "contrast" if palette != "contrast" else "yba"
+    here, there = colours(palette), colours(other)
 
     involved = overlap["parcels"][:top] if top else overlap["parcels"]
     involved_names = {r["parcel"] for r in involved}
 
     fig = go.Figure()
+    add(subject, fig)
+    if show_tracts:
+        add_tracts(subject, overlap, fig)
 
+    shell_trace = []
     rest = [surfaces[i] for name, i in index.items() if name not in involved_names]
     if rest:
+        shell_trace = [len(fig.data)]
         shell = trimesh.util.concatenate(rest)
         fig.add_trace(_mesh3d(np.asarray(shell.vertices), np.asarray(shell.faces),
                               color=SHELL_COLOR, opacity=shell_opacity,
                               name="atlas (uninvolved)", showlegend=True,
-                              hoverinfo="skip"))
-    shell_trace = [0] if rest else []
+                              legendrank=30, hoverinfo="skip"))
 
-    parcel_traces, swap, keep = [], [], []
-    for row in involved:
-        mesh = surfaces[index[row["parcel"]]]
-        colour = palette_colours[index[row["parcel"]]]
-        swap.append(f"rgb{other_colours[index[row['parcel']]]}")
-        keep.append(f"rgb{colour}")
+    # no legendgroup: traces sharing one toggle together, which would make
+    # clicking a single parcel hide all of them
+    parcel_traces, keep, swap = [], [], []
+    for rank, row in enumerate(involved, start=100):
+        i = index[row["parcel"]]
         parcel_traces.append(len(fig.data))
+        keep.append(f"rgb{here[i]}")
+        swap.append(f"rgb{there[i]}")
         fig.add_trace(_mesh3d(
-            np.asarray(mesh.vertices), np.asarray(mesh.faces),
-            color=f"rgb{colour}", opacity=0.95,
+            np.asarray(surfaces[i].vertices), np.asarray(surfaces[i].faces),
+            color=f"rgb{here[i]}", opacity=0.95, legendrank=rank,
             name=f"{row['parcel']} ({row['fraction']:.0%})", showlegend=True,
-            legendgroup="parcels",
             hovertemplate=f"{row['long_name']}<extra></extra>"))
-
-    first_tumour = len(fig.data)
-    add(subject, fig)
-    tumour_traces = list(range(first_tumour, len(fig.data)))
-
-    first_tract = len(fig.data)
-    if show_tracts:
-        add_tracts(subject, overlap, fig)
-    tract_traces = list(range(first_tract, len(fig.data)))
 
     fig.update_layout(
         title=f"{subject}, {overlap['tumour_ml']} mL tumour",
         template="plotly_white",
         scene=dict(xaxis_visible=False, yaxis_visible=False, zaxis_visible=False,
-                   aspectmode="data", domain=dict(x=[0, 0.82], y=[0.05, 0.95])),
-        margin=dict(l=0, r=0, b=60, t=60),
+                   aspectmode="data", domain=dict(x=[0, 0.8], y=[0.1, 0.97])),
+        margin=dict(l=0, r=0, b=10, t=50),
         showlegend=True,
-        legend=dict(itemsizing="constant", font=dict(size=10),
+        legend=dict(itemsizing="constant", font=dict(size=10), tracegroupgap=6,
                     x=1.0, xanchor="right", y=1.0, yanchor="top",
                     bgcolor="rgba(255,255,255,0.75)"),
-        updatemenus=_controls(shell_trace, parcel_traces, tumour_traces,
-                              tract_traces,
-                              _palette_button(parcel_traces, swap, keep)),
+        updatemenus=_menus(parcel_traces, keep, swap, palette),
         sliders=_shell_slider(shell_trace, shell_opacity))
 
     if show:
@@ -142,36 +135,31 @@ def run(subject, overlap, *, shell_opacity=0.2, top=None, show=True, show_tracts
     return fig
 
 
-def _toggle(label, traces):
-    # args2 makes this a real toggle: first click hides, second shows.
-    return dict(label=label, method="restyle",
-                args=[{"visible": False}, traces],
-                args2=[{"visible": True}, traces])
+def _dropdown(x, options, active=0):
+    # A dropdown shows its current setting; a button does not.
+    return dict(type="dropdown", direction="up", showactive=True, active=active,
+                x=x, xanchor="left", y=-0.02, yanchor="top",
+                pad=dict(t=0, b=0), font=dict(size=11),
+                bgcolor="#ffffff", bordercolor="#c8ccd0",
+                buttons=options)
 
 
-def _palette_button(parcel_traces, other, current):
-    # restyle takes a list, one colour per trace, so all parcels swap at once.
+def _menus(parcel_traces, keep, swap, palette):
+    # Only what the legend cannot do: bulk parcel visibility, and recolouring.
     if not parcel_traces:
         return []
-    return [dict(label="recolour", method="restyle",
-                 args=[{"color": other}, parcel_traces],
-                 args2=[{"color": current}, parcel_traces])]
-
-
-def _controls(shell, parcels_, tumour, tracts, palette_button):
-    # One row of toggles, fixed width per button so nothing reflows on click.
-    groups = [("parcels", parcels_), ("tumour", tumour), ("tracts", tracts),
-              ("shell", shell)]
-    buttons = [_toggle(name, traces) for name, traces in groups if traces]
-    buttons += palette_button
-    if not buttons:
-        return []
-    return [dict(type="buttons", direction="right", showactive=True,
-                 buttons=buttons,
-                 x=0.01, xanchor="left", y=1.0, yanchor="top",
-                 pad=dict(l=0, r=0, t=0, b=0),
-                 bgcolor="#ffffff", bordercolor="#c8ccd0", borderwidth=1,
-                 font=dict(size=11))]
+    return [
+        _dropdown(0.42, [
+            dict(label=f"{len(parcel_traces)} parcels shown", method="restyle",
+                 args=[{"visible": True}, parcel_traces]),
+            dict(label="parcels hidden", method="restyle",
+                 args=[{"visible": False}, parcel_traces])]),
+        _dropdown(0.62, [
+            dict(label="atlas colours" if palette != "contrast" else "high contrast",
+                 method="restyle", args=[{"color": keep}, parcel_traces]),
+            dict(label="high contrast" if palette != "contrast" else "atlas colours",
+                 method="restyle", args=[{"color": swap}, parcel_traces])]),
+    ]
 
 
 def _shell_slider(shell, opacity):
@@ -181,8 +169,8 @@ def _shell_slider(shell, opacity):
     steps = [round(v / 20, 2) for v in range(21)]
     return [dict(
         active=min(range(len(steps)), key=lambda i: abs(steps[i] - opacity)),
-        x=0.01, xanchor="left", y=0, yanchor="top", len=0.35,
-        pad=dict(t=10, b=10),
+        x=0.02, xanchor="left", y=0, yanchor="top", len=0.34,
+        pad=dict(t=0, b=10),
         currentvalue=dict(prefix="shell opacity  ", font=dict(size=11)),
         tickcolor="#c8ccd0", font=dict(size=9),
         steps=[dict(label=f"{int(v * 100)}" if i % 4 == 0 else "",

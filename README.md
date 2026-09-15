@@ -34,12 +34,17 @@ have already done, don't rerun the pipeline. Just open the view:
 ./view.py 36
 ```
 
-Every parcel the tumour touches gets drawn. Buttons in the top left toggle the
-parcels, the tumour, the tracts and the grey shell, plus recolour, which swaps
-the parcel colours. A slider at the bottom sets how see-through the shell is.
+Every parcel the tumour touches gets drawn. The legend is the main control:
+tumour tissue classes first, then the tracts, then the grey shell, then the
+parcels in order of involvement, so the things you care about are not buried.
+Click any entry to toggle it.
 
-Two palettes. The default is the atlas's own, which colours parcels by region,
-so neighbours in the same region look identical. `palette="contrast"` uses
+Along the bottom are the things the legend cannot do: a slider for shell
+opacity, a dropdown to show or hide all the parcels at once, and a dropdown to
+switch the parcel colouring.
+
+Two palettes. The atlas's own colours parcels by region, so neighbours often
+look identical, only 75 distinct colours across 696 parcels. The other is
 YBA_696_Freeview_HighContrast.txt, where no two touching parcels share a
 colour, which is much easier to read when a tumour spans a dozen of them.
 

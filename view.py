@@ -120,49 +120,57 @@ def run(subject, overlap, *, shell_opacity=0.2, top=None, show=True, show_tracts
         title=f"{subject}, {overlap['tumour_ml']} mL tumour",
         template="plotly_white",
         scene=dict(xaxis_visible=False, yaxis_visible=False, zaxis_visible=False,
-                   aspectmode="data"),
-        margin=dict(l=0, r=0, b=0, t=60),
-        legend=dict(itemsizing="constant", font=dict(size=10)),
+                   aspectmode="data", domain=dict(x=[0, 0.82], y=[0.05, 0.95])),
+        margin=dict(l=0, r=0, b=60, t=60),
+        showlegend=True,
+        legend=dict(itemsizing="constant", font=dict(size=10),
+                    x=1.0, xanchor="right", y=1.0, yanchor="top",
+                    bgcolor="rgba(255,255,255,0.75)"),
         updatemenus=_controls(shell_trace, parcel_traces, tumour_traces,
-                              tract_traces, shell_opacity))
+                              tract_traces),
+        sliders=_shell_slider(shell_trace, shell_opacity))
 
     if show:
         fig.show()
     return fig
 
 
-def _toggle(label, traces, on):
+def _toggle(label, traces):
+    # args2 makes this a real toggle: first click hides, second shows.
     return dict(label=label, method="restyle",
-                args=[{"visible": on}, traces])
+                args=[{"visible": False}, traces],
+                args2=[{"visible": True}, traces])
 
 
-def _controls(shell, parcels_, tumour, tracts, shell_opacity):
-    # Buttons, because clicking 99 legend entries one at a time is no fun.
+def _controls(shell, parcels_, tumour, tracts):
+    # One row of toggles, fixed width per button so nothing reflows on click.
     groups = [("parcels", parcels_), ("tumour", tumour), ("tracts", tracts),
               ("shell", shell)]
-    menus, y = [], 1.0
+    buttons = [_toggle(name, traces) for name, traces in groups if traces]
+    if not buttons:
+        return []
+    return [dict(type="buttons", direction="right", showactive=True,
+                 buttons=buttons,
+                 x=0.01, xanchor="left", y=1.0, yanchor="top",
+                 pad=dict(l=0, r=0, t=0, b=0),
+                 bgcolor="#ffffff", bordercolor="#c8ccd0", borderwidth=1,
+                 font=dict(size=11))]
 
-    for name, traces in groups:
-        if not traces:
-            continue
-        menus.append(dict(
-            type="buttons", direction="right", showactive=False,
-            x=0, xanchor="left", y=y, yanchor="top", pad=dict(r=4, t=2),
-            buttons=[_toggle(f"hide {name}", traces, False),
-                     _toggle(f"show {name}", traces, True)]))
-        y -= 0.07
 
-    if shell:
-        menus.append(dict(
-            type="dropdown", direction="down", showactive=True,
-            x=0, xanchor="left", y=y, yanchor="top", pad=dict(r=4, t=2),
-            active=[0.0, 0.1, 0.2, 0.4, 0.7].index(shell_opacity)
-                   if shell_opacity in (0.0, 0.1, 0.2, 0.4, 0.7) else 2,
-            buttons=[dict(label=f"shell {int(o * 100)}%", method="restyle",
-                          args=[{"opacity": o}, shell])
-                     for o in (0.0, 0.1, 0.2, 0.4, 0.7)]))
-
-    return menus
+def _shell_slider(shell, opacity):
+    # Slider beats a dropdown here, you want to sweep it and watch.
+    if not shell:
+        return []
+    steps = [round(v / 20, 2) for v in range(21)]
+    return [dict(
+        active=min(range(len(steps)), key=lambda i: abs(steps[i] - opacity)),
+        x=0.01, xanchor="left", y=0, yanchor="top", len=0.35,
+        pad=dict(t=10, b=10),
+        currentvalue=dict(prefix="shell opacity  ", font=dict(size=11)),
+        tickcolor="#c8ccd0", font=dict(size=9),
+        steps=[dict(label=f"{int(v * 100)}" if i % 4 == 0 else "",
+                    method="restyle", args=[{"opacity": v}, shell])
+               for i, v in enumerate(steps)])]
 
 
 if __name__ == "__main__":

@@ -19,16 +19,16 @@ outputs/results.json, so it is quick and you can rerun cells freely.
 
 ## Setup
 
-Everything runs on one interpreter:
-
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 ```
-/home/vilem/Projects/YBAParcelVisualizer/.venv/bin/python
-```
 
-It has brats, nibabel, scipy, pyvista, trimesh, plotly and jupyter. Point
-PyCharm's interpreter at it and the notebook will just work. Docker needs to be
-running and you need to be in the docker group. The algorithm image is about
-30 GB and pulls itself the first time you run.
+PyCharm picks up .venv on its own. main.py has a shebang pointing at it, so
+./main.py works without activating anything; if you move the project, fix that
+line. Docker needs to be running and you need to be
+in the docker group. The algorithm image is about 30 GB and pulls itself the
+first time you run.
 
 ## Files
 

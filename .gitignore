@@ -2,7 +2,9 @@ __pycache__/
 *.pyc
 .venv/
 
-# imaging data is large and re-derivable
-inputs/
-outputs/
+# imaging data is large and re-derivable, but the hand-made LUT is not
+inputs/*
+!inputs/atlas/
+inputs/atlas/*
 !inputs/atlas/YBA_696_Freeview_HighContrast.txt
+outputs/

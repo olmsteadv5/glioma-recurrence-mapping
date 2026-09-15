@@ -8,7 +8,7 @@ import pyvista as pv
 import trimesh
 
 import tracts as tractography
-from atlas import label_volume, meshes, parcels
+from atlas import colours, label_volume, meshes, parcels
 from paths import LABELS, MNI, out_dir
 
 TISSUE_COLOR = {1: "#f2c14e", 2: "#3fa7d6", 3: "#e4572e", 4: "#8e7dbe"}
@@ -75,10 +75,14 @@ def add_tracts(subject, overlap, fig, width=1.5):
     return fig
 
 
-def run(subject, overlap, *, shell_opacity=0.2, top=None, show=True, show_tracts=True):
+def run(subject, overlap, *, shell_opacity=0.2, top=None, show=True, show_tracts=True,
+        palette="yba"):
     # Involved parcels coloured, everything else faint, tumour on top.
     info = parcels()
     surfaces = meshes()
+    other = "contrast" if palette != "contrast" else "yba"
+    palette_colours = colours(palette)
+    other_colours = colours(other)
     index = {p["name"]: i for i, p in enumerate(info)}
 
     involved = overlap["parcels"][:top] if top else overlap["parcels"]
@@ -95,10 +99,12 @@ def run(subject, overlap, *, shell_opacity=0.2, top=None, show=True, show_tracts
                               hoverinfo="skip"))
     shell_trace = [0] if rest else []
 
-    parcel_traces = []
+    parcel_traces, swap, keep = [], [], []
     for row in involved:
         mesh = surfaces[index[row["parcel"]]]
-        colour = info[index[row["parcel"]]]["color"]
+        colour = palette_colours[index[row["parcel"]]]
+        swap.append(f"rgb{other_colours[index[row['parcel']]]}")
+        keep.append(f"rgb{colour}")
         parcel_traces.append(len(fig.data))
         fig.add_trace(_mesh3d(
             np.asarray(mesh.vertices), np.asarray(mesh.faces),
@@ -127,7 +133,8 @@ def run(subject, overlap, *, shell_opacity=0.2, top=None, show=True, show_tracts
                     x=1.0, xanchor="right", y=1.0, yanchor="top",
                     bgcolor="rgba(255,255,255,0.75)"),
         updatemenus=_controls(shell_trace, parcel_traces, tumour_traces,
-                              tract_traces),
+                              tract_traces,
+                              _palette_button(parcel_traces, swap, keep)),
         sliders=_shell_slider(shell_trace, shell_opacity))
 
     if show:
@@ -142,11 +149,21 @@ def _toggle(label, traces):
                 args2=[{"visible": True}, traces])
 
 
-def _controls(shell, parcels_, tumour, tracts):
+def _palette_button(parcel_traces, other, current):
+    # restyle takes a list, one colour per trace, so all parcels swap at once.
+    if not parcel_traces:
+        return []
+    return [dict(label="recolour", method="restyle",
+                 args=[{"color": other}, parcel_traces],
+                 args2=[{"color": current}, parcel_traces])]
+
+
+def _controls(shell, parcels_, tumour, tracts, palette_button):
     # One row of toggles, fixed width per button so nothing reflows on click.
     groups = [("parcels", parcels_), ("tumour", tumour), ("tracts", tracts),
               ("shell", shell)]
     buttons = [_toggle(name, traces) for name, traces in groups if traces]
+    buttons += palette_button
     if not buttons:
         return []
     return [dict(type="buttons", direction="right", showactive=True,

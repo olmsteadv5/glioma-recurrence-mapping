@@ -5,3 +5,4 @@ __pycache__/
 # imaging data is large and re-derivable
 inputs/
 outputs/
+!inputs/atlas/YBA_696_Freeview_HighContrast.txt

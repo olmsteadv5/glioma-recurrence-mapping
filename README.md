@@ -34,12 +34,18 @@ have already done, don't rerun the pipeline. Just open the view:
 ./view.py 36
 ```
 
-Every parcel the tumour touches gets drawn. There are buttons in the top left
-of the view to hide or show the parcels, the tumour, the tracts and the grey
-shell, and a dropdown to set how see-through the shell is.
+Every parcel the tumour touches gets drawn. Buttons in the top left toggle the
+parcels, the tumour, the tracts and the grey shell, plus recolour, which swaps
+the parcel colours. A slider at the bottom sets how see-through the shell is.
+
+Two palettes. The default is the atlas's own, which colours parcels by region,
+so neighbours in the same region look identical. `palette="contrast"` uses
+YBA_696_Freeview_HighContrast.txt, where no two touching parcels share a
+colour, which is much easier to read when a tumour spans a dozen of them.
 
 From Python, `view.run` also takes `top=20` if you only want the most involved
-parcels, and `shell_opacity` to set the shell's starting transparency.
+parcels, `shell_opacity` for the shell's starting transparency, and `palette`
+to pick which colouring it opens with.
 
 ## Where things end up
 

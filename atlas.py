@@ -1,6 +1,7 @@
 # Yale Brain Atlas: official parcel volume, meshes, metadata and overlap.
 
 import csv
+import re
 import urllib.request
 
 import nibabel as nib
@@ -19,6 +20,9 @@ FILES = {
 }
 
 RESAMPLED = ATLAS_DIR / "yba_on_mni.nii.gz"
+
+# hand-made graph colouring: no two touching parcels share a colour
+HIGH_CONTRAST = ATLAS_INPUT / "YBA_696_Freeview_HighContrast.txt"
 
 # the GLB has x and z negated relative to the parcel dictionary
 GLB_FLIP = np.array([-1.0, 1.0, -1.0])
@@ -52,6 +56,20 @@ def parcels():
         "gyrus": r["Gyrus"],
         "color": (int(r["YBA_R_color"]), int(r["YBA_G_color"]), int(r["YBA_B_color"])),
     } for r in rows]
+
+
+def colours(palette="yba"):
+    # "yba" groups parcels by region, "contrast" makes neighbours distinguishable.
+    if palette != "contrast":
+        return [p["color"] for p in parcels()]
+    if not HIGH_CONTRAST.exists():
+        raise FileNotFoundError(f"{HIGH_CONTRAST} is missing, falling back is up to you")
+    table = {}
+    for line in HIGH_CONTRAST.read_text().splitlines():
+        parts = re.split(r"\s+", line.strip())
+        if len(parts) >= 5 and parts[0].isdigit():
+            table[int(parts[0])] = (int(parts[2]), int(parts[3]), int(parts[4]))
+    return [table[i] for i in range(1, len(parcels()) + 1)]
 
 
 def meshes():

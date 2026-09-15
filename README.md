@@ -17,6 +17,12 @@ Then open results.ipynb in PyCharm to look at them. The 3D models render inline
 under the cell and you can rotate them there, no browser tab. It only reads
 outputs/results.json, so it is quick and you can rerun cells freely.
 
+The notebook sets plotly's renderer to notebook_connected, which emits plain
+HTML and pulls plotly.js from a CDN. PyCharm does not render plotly's own mime
+type, application/vnd.plotly.v1+json, even though the kernel produces it, so
+the figures come out blank without this. It does mean the figures need internet
+to draw.
+
 ## Setup
 
 ```bash

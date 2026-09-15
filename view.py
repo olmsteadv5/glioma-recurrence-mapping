@@ -114,6 +114,8 @@ def run(subject, overlap, *, shell_opacity=0.2, top=30, show=True, show_tracts=T
         margin=dict(l=0, r=0, b=0, t=60),
         legend=dict(itemsizing="constant", font=dict(size=10)))
 
+    # returning the figure as well would make the notebook draw it twice
     if show:
         fig.show()
+        return None
     return fig

@@ -5,5 +5,4 @@ numpy>=1.26.0
 scipy>=1.11.0
 trimesh>=4.0.0
 pyvista>=0.44.0
-plotly==6.7.0  # 7.x does not render inline in PyCharm 2026.1; 6.7.0 matches the other YBA projects
-jupyter>=1.0.0
+plotly==6.7.0  # matches the other YBA projects

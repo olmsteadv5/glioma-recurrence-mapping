@@ -9,39 +9,17 @@ and which white matter tracts run through it.
 ```
 
 That downloads the scans, skull-strips them, checks them, segments, scores
-against reference labels if the subject has any, registers into MNI and
-intersects with the atlas. Everything reruns each time except the downloads and
-the cached atlas files.
+against reference labels if the subject has any, registers into MNI, intersects
+with the atlas and opens a 3D view per subject in your browser. Everything
+reruns each time except the downloads and the cached atlas files.
 
-Then open results.ipynb in PyCharm to look at them. The 3D models render inline
-under the cell and you can rotate them there, no browser tab. It only reads
-outputs/results.json, so it is quick and you can rerun cells freely.
+To reopen a view without redoing the work:
 
-The notebook sets plotly's renderer to notebook, which emits HTML with
-plotly.js embedded, so it works offline. PyCharm does not draw plotly's own
-mime type, application/vnd.plotly.v1+json, even though the kernel produces it
-correctly, and the CDN variant reserved space but drew nothing. Embedding costs
-about 5 MB the first time a figure is drawn.
-
-If a figure comes out blank, the notebook has probably lost its Jupyter trust
-signature, which stops embedded JS running. Re-sign it with:
-
-```bash
-.venv/bin/jupyter trust results.ipynb
+```python
+import json, view
+results = json.load(open("outputs/results.json"))
+view.run("UPENN-GBM-00036_11", results["UPENN-GBM-00036_11"]["atlas"])
 ```
-
-PyCharm renders the figure in a webview that software-renders WebGL, so the
-full-resolution atlas is too heavy to rotate. view.run takes a detail argument,
-0.25 by default, which decimates the meshes:
-
-```
-detail=1.0    187,000 triangles   stutters badly
-detail=0.25    48,000 triangles   default
-detail=0.12    24,000 triangles   if it is still slow
-```
-
-Most of that is the tumour itself, since marching cubes produces very dense
-surfaces and these are smooth blobs that decimate without looking any different.
 
 ## Setup
 
@@ -70,7 +48,6 @@ atlas.py       atlas volume, meshes, parcel overlap
 tracts.py      tract centrelines
 view.py        3D view
 paths.py       shared paths
-results.ipynb  look at the results
 
 inputs/<SUBJECT>/         raw scans, never modified
 inputs/reference_seg/     expert labels, 147 of 630 subjects have them

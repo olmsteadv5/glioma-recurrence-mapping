@@ -66,8 +66,5 @@ def main(numbers):
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         sys.exit("usage: python main.py <subject numbers>   e.g. python main.py 36 42 51")
-    results = main([int(a) for a in sys.argv[1:]])
-
-    import view
-    for subject in results:
-        view.run(subject, results[subject]["atlas"])
+    main([int(a) for a in sys.argv[1:]])
+    print("open results.ipynb to look at them")

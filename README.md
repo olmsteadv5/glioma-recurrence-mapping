@@ -9,17 +9,13 @@ and which white matter tracts run through it.
 ```
 
 That downloads the scans, skull-strips them, checks them, segments, scores
-against reference labels if the subject has any, registers into MNI, intersects
-with the atlas and opens a 3D view. Everything reruns each time except the
-downloads and the cached atlas files.
+against reference labels if the subject has any, registers into MNI and
+intersects with the atlas. Everything reruns each time except the downloads and
+the cached atlas files.
 
-To reopen a view without redoing the work:
-
-```python
-import json, view
-results = json.load(open("outputs/results.json"))
-view.run("UPENN-GBM-00036_11", results["UPENN-GBM-00036_11"]["atlas"])
-```
+Then open results.ipynb in PyCharm to look at them. The 3D models render inline
+under the cell and you can rotate them there, no browser tab. It only reads
+outputs/results.json, so it is quick and you can rerun cells freely.
 
 ## Setup
 
@@ -29,7 +25,8 @@ Everything runs on one interpreter:
 /home/vilem/Projects/YBAParcelVisualizer/.venv/bin/python
 ```
 
-It has brats, nibabel, scipy, pyvista, trimesh and plotly. Docker needs to be
+It has brats, nibabel, scipy, pyvista, trimesh, plotly and jupyter. Point
+PyCharm's interpreter at it and the notebook will just work. Docker needs to be
 running and you need to be in the docker group. The algorithm image is about
 30 GB and pulls itself the first time you run.
 
@@ -47,6 +44,7 @@ atlas.py       atlas volume, meshes, parcel overlap
 tracts.py      tract centrelines
 view.py        3D view
 paths.py       shared paths
+results.ipynb  look at the results
 
 inputs/<SUBJECT>/         raw scans, never modified
 inputs/reference_seg/     expert labels, 147 of 630 subjects have them

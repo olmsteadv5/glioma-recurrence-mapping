@@ -52,13 +52,53 @@ From Python, `view.run` also takes `top=20` if you only want the most involved
 parcels, `shell_opacity` for the shell's starting transparency, and `palette`
 to pick which colouring it opens with.
 
+## Terminal UI
+
+```bash
+./tui.py
+```
+
+Four panels: subjects, a viewer, the pipeline log and a breakdown. `r` runs the
+pipeline on the selected subject and streams the log, `c` cancels. `v` switches
+the viewer between the 3D atlas and orthogonal slices, `s` switches slices
+between native and MNI, `1`-`4` pick the modality, `p` swaps the parcel
+colouring, `f` swaps the breakdown between parcels and functions, arrows rotate
+or scrub.
+
+**kitty only.** It draws images with kitty's graphics protocol, which no other
+terminal here supports. Elsewhere it still runs but says the images will look
+poor. The browser viewer is the portable one.
+
+Slices default to **native** space, because that has all four modalities and is
+undistorted. MNI has only T1 and is a warped brain, but it is the only space
+where atlas coordinates mean anything, so the readout shows MNI mm there and
+says "no anatomical origin" in native.
+
+## Functions at risk
+
+`function.py` reads Parcelsynth, which scores all 696 parcels against 334
+function terms. For a tumour it weights each involved parcel by how much of it
+is destroyed, then reports terms **over-represented against the whole-brain
+average** rather than raw scores, so common terms do not win every time.
+
+```
+UPENN-GBM-00036_11   grasp, arm, tactile, touch, finger    left sensorimotor
+UPENN-GBM-00002_11   unpleasant, aversive, anxiety         right amygdala, insula
+UPENN-GBM-00042_11   motion, auditory, sound               left temporal
+```
+
+These are **meta-analytic associations pooled across published studies**, not
+this patient's functional anatomy. They suggest what to look into. They do not
+replace fMRI mapping or awake craniotomy, and they must not be used to set a
+margin.
+
 ## Where things end up
 
 ```
 inputs/<SUBJECT>/     the raw scans, never touched after download
 inputs/atlas/         Yale Brain Atlas data
 outputs/<SUBJECT>/    stripped scans, segmentation, registration
-outputs/results.json  volumes, Dice, parcel overlap
+outputs/results.json  volumes, Dice, parcel overlap, functions
 ```
 
 Both directories are gitignored. Everything in them can be regenerated.

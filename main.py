@@ -9,6 +9,7 @@ import nibabel as nib
 
 import atlas
 import evaluate
+import function
 import fetch
 import register
 import segment
@@ -52,8 +53,10 @@ def main(numbers):
     for subject in results:
         overlap = atlas.overlap(out_dir(subject) / "seg_in_mni.nii.gz", labels, names)
         results[subject]["atlas"] = overlap
+        results[subject]["function"] = function.for_tumour(overlap)
+        top = ", ".join(f["term"] for f in results[subject]["function"][:4])
         print(f"{subject}: {overlap['in_parcels_ml']} mL in "
-              f"{len(overlap['parcels'])} parcels")
+              f"{len(overlap['parcels'])} parcels; {top}")
 
     # merge so running one subject doesn't wipe the others
     stored = json.loads(RESULTS.read_text()) if RESULTS.exists() else {}

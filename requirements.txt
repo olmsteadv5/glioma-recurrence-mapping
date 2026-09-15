@@ -6,3 +6,7 @@ scipy>=1.11.0
 trimesh>=4.0.0
 pyvista>=0.44.0
 plotly==6.7.0  # matches the other YBA projects
+
+# terminal UI (tui.py), needs kitty for the graphics protocol
+textual>=8.0
+textual-image>=0.14

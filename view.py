@@ -15,7 +15,7 @@ SHELL_COLOR = "#9aa3ad"
 TRACT_COLOR = "#2f6f4e"
 
 
-def _tumour_surface(data, affine, value):
+def _tumour_surface(data, affine, value, detail=1.0):
     # Surface around one tissue class.
     binary = (data == value).astype(np.float32)
     if binary.sum() < 10:
@@ -26,8 +26,22 @@ def _tumour_surface(data, affine, value):
     if surface.n_points == 0:
         return None
     surface = surface.smooth(n_iter=30, relaxation_factor=0.1)
+    # marching cubes is very dense; these are smooth blobs and decimate well
+    if detail < 1.0 and surface.n_faces_strict > 200:
+        surface = surface.decimate(1.0 - detail)
     return (nib.affines.apply_affine(affine, surface.points),
             np.asarray(surface.faces).reshape(-1, 4)[:, 1:])
+
+
+def _simplify(mesh, keep):
+    # PyCharm software-renders WebGL, so the full atlas is too heavy to rotate.
+    vertices = np.asarray(mesh.vertices)
+    faces = np.asarray(mesh.faces)
+    if keep >= 1.0 or len(faces) < 200:
+        return vertices, faces
+    flat = np.hstack([np.full((len(faces), 1), 3), faces]).ravel()
+    reduced = pv.PolyData(vertices, flat).decimate(1.0 - keep)
+    return np.asarray(reduced.points), np.asarray(reduced.faces).reshape(-1, 4)[:, 1:]
 
 
 def _mesh3d(vertices, faces, **kwargs):
@@ -36,12 +50,12 @@ def _mesh3d(vertices, faces, **kwargs):
                      flatshading=True, **kwargs)
 
 
-def add(subject, fig, opacity=1.0):
+def add(subject, fig, opacity=1.0, detail=1.0):
     # Add the tumour to a figure that already exists.
     image = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
     data = np.asarray(image.dataobj).astype(np.int16)
     for value, name in LABELS.items():
-        surface = _tumour_surface(data, image.affine, value)
+        surface = _tumour_surface(data, image.affine, value, detail)
         if surface is None:
             continue
         fig.add_trace(_mesh3d(*surface, color=TISSUE_COLOR[value], opacity=opacity,
@@ -74,7 +88,8 @@ def add_tracts(subject, overlap, fig, width=1.5):
     return fig
 
 
-def run(subject, overlap, *, shell_opacity=0.2, top=30, show=True, show_tracts=True):
+def run(subject, overlap, *, shell_opacity=0.2, top=30, show=True, show_tracts=True,
+        detail=0.25):
     # Involved parcels coloured, everything else faint, tumour on top.
     info = parcels()
     surfaces = meshes()
@@ -88,7 +103,7 @@ def run(subject, overlap, *, shell_opacity=0.2, top=30, show=True, show_tracts=T
     rest = [surfaces[i] for name, i in index.items() if name not in involved_names]
     if rest:
         shell = trimesh.util.concatenate(rest)
-        fig.add_trace(_mesh3d(np.asarray(shell.vertices), np.asarray(shell.faces),
+        fig.add_trace(_mesh3d(*_simplify(shell, detail / 3),
                               color=SHELL_COLOR, opacity=shell_opacity,
                               name="atlas (uninvolved)", showlegend=True,
                               hoverinfo="skip"))
@@ -97,12 +112,12 @@ def run(subject, overlap, *, shell_opacity=0.2, top=30, show=True, show_tracts=T
         mesh = surfaces[index[row["parcel"]]]
         colour = info[index[row["parcel"]]]["color"]
         fig.add_trace(_mesh3d(
-            np.asarray(mesh.vertices), np.asarray(mesh.faces),
+            *_simplify(mesh, detail),
             color=f"rgb{colour}", opacity=0.95,
             name=f"{row['parcel']} ({row['fraction']:.0%})", showlegend=True,
             hovertemplate=f"{row['long_name']}<extra></extra>"))
 
-    add(subject, fig)
+    add(subject, fig, detail=detail)
     if show_tracts:
         add_tracts(subject, overlap, fig)
 

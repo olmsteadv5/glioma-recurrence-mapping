@@ -23,12 +23,25 @@ mime type, application/vnd.plotly.v1+json, even though the kernel produces it
 correctly, and the CDN variant reserved space but drew nothing. Embedding costs
 about 5 MB the first time a figure is drawn.
 
-If a figure still comes out blank, the notebook may have lost its Jupyter trust
+If a figure comes out blank, the notebook has probably lost its Jupyter trust
 signature, which stops embedded JS running. Re-sign it with:
 
 ```bash
 .venv/bin/jupyter trust results.ipynb
 ```
+
+PyCharm renders the figure in a webview that software-renders WebGL, so the
+full-resolution atlas is too heavy to rotate. view.run takes a detail argument,
+0.25 by default, which decimates the meshes:
+
+```
+detail=1.0    187,000 triangles   stutters badly
+detail=0.25    48,000 triangles   default
+detail=0.12    24,000 triangles   if it is still slow
+```
+
+Most of that is the tumour itself, since marching cubes produces very dense
+surfaces and these are smooth blobs that decimate without looking any different.
 
 ## Setup
 

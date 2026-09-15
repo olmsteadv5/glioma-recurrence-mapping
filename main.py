@@ -8,7 +8,6 @@ import time
 import nibabel as nib
 
 import atlas
-import connectome
 import evaluate
 import fetch
 import register
@@ -52,16 +51,12 @@ def main(numbers):
 
     print("\n[atlas]")
     labels, names = atlas.label_volume(nib.load(MNI))
-    edges = connectome.load()
 
     for subject in results:
         overlap = atlas.overlap(out_dir(subject) / "seg_in_mni.nii.gz", labels, names)
-        reached = connectome.targets(overlap, edges)
         results[subject]["atlas"] = overlap
-        results[subject]["connectome"] = reached
         print(f"    {subject}: {overlap['in_parcels_ml']:.1f} of "
-              f"{overlap['tumour_ml']:.1f} mL in {len(overlap['parcels'])} parcels; "
-              f"connects to {len(reached['targets'])} parcels outside the tumour")
+              f"{overlap['tumour_ml']:.1f} mL in {len(overlap['parcels'])} parcels")
 
     # merge, so running one subject does not discard the others already on disk
     stored = json.loads(RESULTS.read_text()) if RESULTS.exists() else {}

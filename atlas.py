@@ -15,8 +15,7 @@ FILES = {
     "YBA_696_LUT.txt": f"{BASE}/YBA_696parcels/YBA_696_LUT.txt",
     "YBA_696_parcel_dict.csv": f"{BASE}/YBA_696parcels/YBA_696_parcel_dict.csv",
     "YBA_696.glb": f"{BASE}/YBA_696parcels/YBA_696.glb",
-    "structuralconnectivity_metrics_mean.csv":
-        f"{BASE}/Connectome/structuralconnectivity_metrics_mean.csv",
+    "top5k_tracts_decimated.obj": f"{BASE}/Connectome/top5k_tracts_decimated.obj",
 }
 
 RESAMPLED = ATLAS_DIR / "yba_on_mni.nii.gz"

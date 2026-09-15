@@ -5,11 +5,13 @@ import numpy as np
 import plotly.graph_objects as go
 import pyvista as pv
 
-from atlas import meshes, parcels
-from paths import LABELS, out_dir
+import tracts as tractography
+from atlas import label_volume, meshes, parcels
+from paths import LABELS, MNI, out_dir
 
 TISSUE_COLOR = {1: "#f2c14e", 2: "#3fa7d6", 3: "#e4572e", 4: "#8e7dbe"}
 SHELL_COLOR = "#9aa3ad"
+TRACT_COLOR = "#2f6f4e"
 
 
 def _tumour_surface(data, affine, value):
@@ -47,7 +49,31 @@ def add(subject, fig, opacity=1.0):
     return fig
 
 
-def run(subject, overlap, *, shell_opacity=0.2, top=30, show=True):
+def add_tracts(subject, overlap, fig, width=1.5):
+    # Tract centrelines passing through the tumour or an involved parcel.
+    labels, names = label_volume(nib.load(MNI))
+    index = {name: i + 1 for i, name in enumerate(names)}
+    involved = [index[r["parcel"]] for r in overlap["parcels"] if r["parcel"] in index]
+    seg = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
+
+    lines = tractography.crossing(tractography.centrelines(), seg, labels, involved)
+    if not lines:
+        return fig
+
+    # one trace for all of them, with None between polylines
+    xs, ys, zs = [], [], []
+    for line in lines:
+        xs += [*line[:, 0], None]
+        ys += [*line[:, 1], None]
+        zs += [*line[:, 2], None]
+    fig.add_trace(go.Scatter3d(x=xs, y=ys, z=zs, mode="lines",
+                               line=dict(color=TRACT_COLOR, width=width),
+                               name=f"tracts crossing ({len(lines)})",
+                               showlegend=True, hoverinfo="skip"))
+    return fig
+
+
+def run(subject, overlap, *, shell_opacity=0.2, top=30, show=True, show_tracts=True):
     # Involved parcels opaque and named, the rest a faint shell, tumour solid.
     info = parcels()
     surfaces = meshes()
@@ -80,6 +106,8 @@ def run(subject, overlap, *, shell_opacity=0.2, top=30, show=True):
                            f"{row['gyrus']}<extra></extra>")))
 
     add(subject, fig)
+    if show_tracts:
+        add_tracts(subject, overlap, fig)
 
     total, in_parcels = overlap["tumour_ml"], overlap["in_parcels_ml"]
     fig.update_layout(

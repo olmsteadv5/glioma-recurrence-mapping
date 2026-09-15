@@ -50,7 +50,7 @@ segment.py     BraTS via Docker
 evaluate.py    volumes and Dice
 register.py    SRI24 -> MNI152
 atlas.py       official atlas volume, meshes, metadata, volume overlap
-connectome.py  structural connectivity - where the white matter leads
+tracts.py      tract centrelines from the official tract mesh
 view.py        3D view
 paths.py       shared paths
 
@@ -181,38 +181,33 @@ the MNI grid with nearest-neighbour, then intersection is voxel counting.
 Only about 30% of these tumours lands in parcelled tissue; the rest is in white
 matter, which is what the connectivity data is for.
 
-## Where the white matter leads
+## White matter tracts
 
-`connectome.py` reads the official structural connectivity matrix — 241,860
-parcel pairs averaged over 1065 HCP subjects. `SC_PathCount` is hop count, so a
-value of 1 is a direct white matter connection, and `SC_Count` is normalised
-strength.
+`tracts.py` uses the official `top5k_tracts_decimated.obj` and draws, in the 3D
+view, the tracts that pass through the tumour or any involved parcel.
 
-For each parcel at least 20% inside the tumour, it sums the direct connections
-to parcels *outside* the tumour and ranks them. That answers where the pathways
-running through the lesion actually go. Example, subject 36 (a left
-parietal/motor tumour):
+The OBJ is a Blender tube mesh, not line geometry, so it is reduced to
+centrelines once and cached:
+
+- vertices are Y-up, mapped to atlas space as `(x, -z, y)`
+- connected components are split apart (3001 bundles of 12+ vertices)
+- each is collapsed to a polyline by averaging positions in 4 mm bins along its
+  principal axis
+
+Tracts are then selected by sampling the tumour mask and the parcel labels along
+each polyline. Counts scale with tumour size, and the tumour itself does most of
+the selecting:
 
 ```
-  1.117  Left superior frontal gyrus 7 C     Frontal    37.1 mm
-  1.016  Right superior frontal gyrus 8 C    Frontal    36.8 mm
-  0.822  Right posterior motor C             Frontal    32.1 mm
-  0.816  Left supramarginal gyrus 2 B        Parietal   26.0 mm
+                      through tumour   + involved parcels   of 3001
+UPENN-GBM-00002_11               915                 1053
+UPENN-GBM-00036_11               716                  831
+UPENN-GBM-00051_11               356                  369
 ```
 
-Contralateral motor and frontal targets are callosal; supramarginal is
-ipsilateral association fibre.
-
-## Named tract bundles are not part of the atlas
-
-The official atlas also ships `top5k_tracts_decimated.obj`, a 48 MB Blender mesh
-of the top 5000 tracts — one unnamed object, so renderable but not
-identifiable per bundle. It is not used here.
-
-Named bundles such as `ArcuateFasciculusL` do not exist in the Yale data at all.
-They match the naming family of DSI Studio's tractography atlases — the bundled
-`HCP842_tractography` has 80 similarly named bundles — so they most likely come
-from there. Unconfirmed.
+The mesh has no per-bundle names — it is one unnamed object — so these are tract
+*paths*, not named bundles like the arcuate fasciculus. Pass
+`show_tracts=False` to `view.run` to hide them.
 
 ## Data provenance
 

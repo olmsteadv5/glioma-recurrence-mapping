@@ -34,8 +34,12 @@ have already done, don't rerun the pipeline. Just open the view:
 ./view.py 36
 ```
 
-From Python, `view.run` also takes `top=10` to draw fewer parcels and
-`show_tracts=False` to drop the tract lines, if the scene is too busy.
+Every parcel the tumour touches gets drawn. There are buttons in the top left
+of the view to hide or show the parcels, the tumour, the tracts and the grey
+shell, and a dropdown to set how see-through the shell is.
+
+From Python, `view.run` also takes `top=20` if you only want the most involved
+parcels, and `shell_opacity` to set the shell's starting transparency.
 
 ## Where things end up
 

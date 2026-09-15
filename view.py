@@ -1,10 +1,4 @@
-"""Tumour-in-atlas 3D view, following the project's add/run contract.
-
-    add(subject, viz, ...)       -> appends tumour traces to the current figure
-    run(subject, yba, viz, ...)  -> new() + parcels + tumour + show()
-
-`yba` is the YaleBrainAtlas, `viz` its YBAVisualizer.
-"""
+# Tumour-in-atlas 3D view, following the project's add/run contract.
 
 import nibabel as nib
 import numpy as np
@@ -16,7 +10,7 @@ TISSUE_COLOR = {1: "#f2c14e", 2: "#3fa7d6", 3: "#e4572e", 4: "#8e7dbe"}
 
 
 def _surface(data, affine, value):
-    """Marching-cubes surface for one tissue class, in MNI millimetres."""
+    # Marching-cubes surface for one tissue class, in MNI millimetres.
     binary = (data == value).astype(np.float32)
     if binary.sum() < 10:
         return None
@@ -31,7 +25,7 @@ def _surface(data, affine, value):
 
 
 def add(subject, viz, opacity=1.0):
-    """Append one solid mesh per tumour tissue class to the current figure."""
+    # Append one solid mesh per tumour tissue class to the current figure.
     image = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
     data = np.asarray(image.dataobj).astype(np.int16)
 
@@ -45,7 +39,7 @@ def add(subject, viz, opacity=1.0):
 
 
 def run(subject, yba, viz, result, *, figure_name=None, shell_opacity=0.2, top=30):
-    """Fresh figure: involved parcels coloured by involvement, tumour solid on top."""
+    # Fresh figure: involved parcels coloured by involvement, tumour solid on top.
     figure_name = figure_name or subject
     involved = [row["parcel"] for row in result["parcels"]][:top]
     fractions = {row["parcel"]: row["fraction"] for row in result["parcels"]}

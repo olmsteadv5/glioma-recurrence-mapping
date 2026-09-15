@@ -1,4 +1,4 @@
-"""Download UPenn-GBM structural scans from the public TCIA mirror."""
+# Download UPenn-GBM structural scans from the public TCIA mirror.
 
 import urllib.request
 
@@ -25,7 +25,7 @@ def _download(url, dest):
 
 
 def get(number, timepoint=1):
-    """Fetch one subject's four modalities and reference labels if published."""
+    # Fetch one subject's four modalities and reference labels if published.
     subject = subject_id(number, timepoint)
     prefix = f"sub-{number:03d}" if timepoint == 1 else f"sub-{number:03d}_2"
 

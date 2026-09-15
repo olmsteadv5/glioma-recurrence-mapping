@@ -1,4 +1,4 @@
-"""Run the BraTS adult-glioma segmenter in Docker."""
+# Run the BraTS adult-glioma segmenter in Docker.
 
 import shutil
 import subprocess
@@ -23,7 +23,7 @@ def cuda_available():
 
 
 def run(subject, stripped):
-    """Segment one subject; ~3 min on CPU, faster on a GPU host."""
+    # Segment one subject; ~3 min on CPU, faster on a GPU host.
     gpu = cuda_available()
     algorithm = GPU_ALGORITHM if gpu else CPU_ALGORITHM
     if not gpu:

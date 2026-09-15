@@ -1,4 +1,4 @@
-"""Tumour volumes, and Dice against reference labels where they exist."""
+# Tumour volumes, and Dice against reference labels where they exist.
 
 import nibabel as nib
 import numpy as np
@@ -25,7 +25,7 @@ def _dice(a, b):
 
 
 def run(subject, seg_path):
-    """Per-region volumes in mL, plus Dice when a reference segmentation exists."""
+    # Per-region volumes in mL, plus Dice when a reference segmentation exists.
     image = nib.load(seg_path)
     data = np.asarray(image.dataobj).astype(np.int16)
     voxel_ml = float(np.prod(image.header.get_zooms()[:3])) / 1000.0

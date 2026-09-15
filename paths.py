@@ -1,4 +1,4 @@
-"""Shared paths and subject-name helpers."""
+# Shared paths and subject-name helpers.
 
 from pathlib import Path
 
@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parent
 INPUTS = ROOT / "inputs"
 OUTPUTS = ROOT / "outputs"
 REFERENCE_SEG = INPUTS / "reference_seg"
+ATLAS_INPUT = INPUTS / "atlas"
 ATLAS_DIR = OUTPUTS / "atlas"
 RESULTS = OUTPUTS / "results.json"
 

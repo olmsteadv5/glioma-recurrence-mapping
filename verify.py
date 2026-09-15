@@ -1,4 +1,4 @@
-"""Check the BraTS preprocessing assumptions before spending compute."""
+# Check the BraTS preprocessing assumptions before spending compute.
 
 import nibabel as nib
 import numpy as np
@@ -11,7 +11,7 @@ BRAIN_ML = (900.0, 2000.0)
 
 
 def run(subject, directory):
-    """Raise if geometry, co-registration or brain volume look wrong."""
+    # Raise if geometry, co-registration or brain volume look wrong.
     problems, affines = [], {}
 
     for name in MODALITIES:

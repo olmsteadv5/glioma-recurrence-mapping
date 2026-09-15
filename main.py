@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Run the whole pipeline for chosen UPenn-GBM subjects.
-
-    python main.py 36 42 51
-"""
+# Run the whole pipeline for chosen UPenn-GBM subjects.
 
 import json
 import sys
@@ -54,7 +51,7 @@ def main(numbers):
 
     print("\n[atlas]")
     yba, viz = atlas.load_atlas()
-    labels, names = atlas.label_volume(yba, nib.load(MNI))
+    labels, names = atlas.label_volume(nib.load(MNI))
 
     for subject in results:
         overlap = atlas.overlap(out_dir(subject) / "seg_in_mni.nii.gz", labels, names)

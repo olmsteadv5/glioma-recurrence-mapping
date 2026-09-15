@@ -153,32 +153,43 @@ squeezes out mass effect.
 
 ## What the parcel overlap measures
 
-Every one of the 696 parcels is a **closed** mesh — zero open boundary edges, so
-each encloses a real volume (median 0.80 mL, max 3.75 mL). Overlap is a true
-volume intersection in mL. `atlas.py` voxelises the parcels once onto the MNI
-grid and caches the result; intersection is then voxel counting.
+`atlas.py` downloads the **official** 696-parcel volume, `YBA_696.nii`, from the
+Yale Brain Atlas repository and resamples it onto the MNI grid with
+nearest-neighbour. Overlap is then voxel counting, in mL.
 
-**The parcels cover about half the brain.** All 696 total ~656 mL against a
-1200–1500 mL brain; deep white matter is not parcellated. Only 27–32% of these
-tumours lands in parcelled tissue at all — correct behaviour, not a failure.
-The bulk of each lesion sits in white matter the atlas cannot name, which is the
-strongest argument for obtaining the tract bundle below.
+The official label order is identical to `yba.parcel_names` in Ryan's wrapper
+package, so label value *i* is `parcel_names[i-1]` and the two are
+interchangeable.
 
-The grid is 1 mm, so a 0.08 mL parcel is ~80 voxels and its percentage is coarse.
+**The parcels cover grey matter only** — 731 mL against a 1200–1500 mL brain.
+Only about 30% of these tumours lands in parcelled tissue; the rest is in white
+matter the parcellation does not label. That is correct behaviour, not a
+failure, and it is the reason the connectome data below matters.
 
-## White matter tracts — needs a data bundle
+## White matter
 
-`TractNames.txt` lists 92 tracts and the `Tract` API includes
-`get_start_and_end_parcels()`, which answers "where does this pathway lead". The
-geometry is not bundled with the pip package:
+The official atlas does publish white matter data, in two forms
+(`data/Connectome`, open access, no request needed):
 
-```
-FileNotFoundError: Tract Path Does Not Exist, please initialize tract with root directory
-```
+- `top5k_tracts_decimated.obj` — a 48 MB Blender mesh of the top 5000 tracts.
+  One unnamed object, one material, so it is renderable geometry but cannot
+  answer "which named tract".
+- `structuralconnectivity_metrics_mean.csv` plus per-subject
+  `<id>_WMPathCount.csv` / `<id>_WMLength.csv` for 1065 HCP subjects — pairwise
+  parcel-to-parcel structural connectivity.
 
-It expects `WhiteMatterTracts/<name>/polydata.vtp` under a separately
-distributed data root. `YaleBrainAtlas` is Ryan Bose-Roy's library
-(github.com/RyanSBRoy/YaleBrainAtlas), so ask him for that directory.
+**The connectivity matrix is the better route to "where do these pathways
+lead".** Given the parcels a tumour involves, it gives the parcels they connect
+to, averaged over 1065 subjects. Not yet wired in.
+
+Ryan's wrapper exposes a different thing: 92 *named* bundles
+(`ArcuateFasciculusL`, `CNIIL`, `FasciculusLenticularisL`) via a `Tract` API with
+`get_start_and_end_parcels()`. Those names are not in the official atlas. They
+match the naming family of DSI Studio's tractography atlases — the bundled
+`HCP842_tractography` has 80 similarly named bundles (`Arcuate_Fasciculus_L`),
+and the newer HCP1065 atlas has more — so they most likely originate there, not
+from Yale. Unconfirmed. The geometry is not installed locally, so that API
+raises `FileNotFoundError`.
 
 ## Data provenance
 

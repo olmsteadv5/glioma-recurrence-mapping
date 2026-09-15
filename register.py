@@ -1,4 +1,4 @@
-"""Register SRI24 -> MNI152 (the YBA reference space), carrying the tumour along."""
+# Register SRI24 -> MNI152 (the YBA reference space), carrying the tumour along.
 
 import subprocess
 
@@ -22,7 +22,7 @@ def _greedy(args, log):
 
 
 def _metric_mask(t1_path, seg_path, dest):
-    """Brain minus dilated tumour, in patient space, to keep the lesion out of the metric."""
+    # Brain minus dilated tumour, in patient space, to keep the lesion out of the metric.
     image = nib.load(t1_path)
     brain = np.asarray(image.dataobj) > 0
     lesion = np.asarray(nib.load(seg_path).dataobj) > 0
@@ -36,7 +36,7 @@ def _metric_mask(t1_path, seg_path, dest):
 
 
 def run(subject, stripped, seg_path):
-    """Affine then deformable, with the lesion excluded from the deformable metric."""
+    # Affine then deformable, with the lesion excluded from the deformable metric.
     destination = out_dir(subject)
     t1 = modality(stripped, subject, "T1")
     log = destination / "registration.log"

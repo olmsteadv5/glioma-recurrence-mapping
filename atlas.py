@@ -1,64 +1,81 @@
-"""Volume intersection between a tumour and the Yale Brain Atlas parcels."""
+# Volume intersection between a tumour and the Yale Brain Atlas parcels.
 
 import json
+import re
+import urllib.request
 
 import nibabel as nib
 import numpy as np
 
-from paths import ATLAS_DIR, LABELS
+from paths import ATLAS_DIR, ATLAS_INPUT, LABELS
 
-LABEL_VOLUME = ATLAS_DIR / "yba_labels_mni.nii.gz"
-LABEL_NAMES = ATLAS_DIR / "yba_labels_mni.names.json"
+BASE = ("https://raw.githubusercontent.com/YaleBrainAtlas/YaleBrainAtlas/"
+        "master/data/YBA_696parcels")
+ATLAS_NII = ATLAS_INPUT / "YBA_696.nii"
+ATLAS_LUT = ATLAS_INPUT / "YBA_696_LUT.txt"
+
+RESAMPLED = ATLAS_DIR / "yba_on_mni.nii.gz"
+
+
+def _download(url, dest):
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    request = urllib.request.Request(url, headers={"User-Agent": "brats-upenn-gbm"})
+    with urllib.request.urlopen(request, timeout=300) as response, open(dest, "wb") as fh:
+        while chunk := response.read(1 << 20):
+            fh.write(chunk)
 
 
 def load_atlas():
-    """The atlas and its plotly visualiser."""
+    # The atlas and its plotly visualiser, both from Ryan's wrapper package.
     from YaleBrainAtlas import YaleBrainAtlas, YBAVisualizer
     yba = YaleBrainAtlas("Subject")
     return yba, YBAVisualizer(yba)
 
 
-def label_volume(yba, reference):
-    """Voxelise every parcel onto the MNI grid; cached, identical for all subjects."""
-    if LABEL_VOLUME.exists() and LABEL_NAMES.exists():
-        return (np.asarray(nib.load(LABEL_VOLUME).dataobj).astype(np.int32),
-                json.loads(LABEL_NAMES.read_text()))
-
-    print("    voxelising 696 parcels (one-off) ...", end="", flush=True)
-    shape = reference.shape
-    labels = np.zeros(shape, dtype=np.int32)
-    names = sorted(yba.parcel_names)
-    inverse = np.linalg.inv(reference.affine)
-
-    for index, name in enumerate(names, start=1):
-        mesh = getattr(yba, name).mesh
-        corners = np.array([[x, y, z] for x in mesh.bounds[:, 0]
-                            for y in mesh.bounds[:, 1] for z in mesh.bounds[:, 2]])
-        voxels = nib.affines.apply_affine(inverse, corners)
-        low = np.maximum(np.floor(voxels.min(axis=0)).astype(int) - 1, 0)
-        high = np.minimum(np.ceil(voxels.max(axis=0)).astype(int) + 2, shape)
-        if np.any(high <= low):
+def parcel_names():
+    # Official label table; index i names label value i. Same order as yba.parcel_names.
+    if not ATLAS_LUT.exists():
+        _download(f"{BASE}/YBA_696_LUT.txt", ATLAS_LUT)
+    table = {}
+    for line in ATLAS_LUT.read_text().splitlines():
+        if line.startswith("#") or not line.strip():
             continue
+        parts = re.split(r"\s+", line.strip())
+        table[int(parts[0])] = parts[1]
+    return [table[i] for i in sorted(table) if i > 0]
 
-        grid = np.stack(np.meshgrid(*[np.arange(low[i], high[i]) for i in range(3)],
-                                    indexing="ij"), axis=-1).reshape(-1, 3)
-        inside = mesh.contains(nib.affines.apply_affine(reference.affine, grid))
-        if not inside.any():
-            continue
-        selected = grid[inside]
-        free = labels[selected[:, 0], selected[:, 1], selected[:, 2]] == 0
-        selected = selected[free]
-        labels[selected[:, 0], selected[:, 1], selected[:, 2]] = index
+
+def label_volume(reference):
+    # Official 696-parcel volume, nearest-neighbour onto the reference grid.
+    names = parcel_names()
+    if RESAMPLED.exists():
+        return np.asarray(nib.load(RESAMPLED).dataobj).astype(np.int32), names
+
+    if not ATLAS_NII.exists():
+        print("    downloading the official YBA parcel volume ...", end="", flush=True)
+        _download(f"{BASE}/YBA_696.nii", ATLAS_NII)
+        print(" done")
+
+    atlas_img = nib.load(ATLAS_NII)
+    atlas_data = np.asarray(atlas_img.dataobj).astype(np.int32)
+
+    grid = np.indices(reference.shape).reshape(3, -1).T
+    world = nib.affines.apply_affine(reference.affine, grid)
+    ijk = np.rint(nib.affines.apply_affine(np.linalg.inv(atlas_img.affine), world)).astype(int)
+    inside = np.all((ijk >= 0) & (ijk < np.array(atlas_img.shape)), axis=1)
+
+    labels = np.zeros(len(grid), dtype=np.int32)
+    picked = ijk[inside]
+    labels[inside] = atlas_data[picked[:, 0], picked[:, 1], picked[:, 2]]
+    labels = labels.reshape(reference.shape)
 
     ATLAS_DIR.mkdir(parents=True, exist_ok=True)
-    nib.save(nib.Nifti1Image(labels.astype(np.int16), reference.affine), LABEL_VOLUME)
-    LABEL_NAMES.write_text(json.dumps(names))
-    print(f" done ({(labels > 0).sum() / 1000:.0f} mL parcelled)")
+    nib.save(nib.Nifti1Image(labels.astype(np.int16), reference.affine), RESAMPLED)
     return labels, names
 
 
 def overlap(seg_mni, labels, names):
-    """Per-parcel tumour volume in mL, most involved first."""
+    # Per-parcel tumour volume in mL, most involved first.
     image = nib.load(seg_mni)
     tumour = np.asarray(image.dataobj).astype(np.int16)
     voxel_ml = float(np.prod(image.header.get_zooms()[:3])) / 1000.0
@@ -85,7 +102,7 @@ def overlap(seg_mni, labels, names):
     rows.sort(key=lambda r: (-r["fraction"], -r["in_tumour_ml"]))
     return {
         "tumour_ml": round(float(hit.sum()) * voxel_ml, 2),
-        # parcels cover only ~half the brain, so this is well under 100%
+        # parcels cover grey matter only, so this is well under 100%
         "in_parcels_ml": round(sum(r["in_tumour_ml"] for r in rows), 2),
         "parcels": rows,
     }

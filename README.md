@@ -17,11 +17,18 @@ Then open results.ipynb in PyCharm to look at them. The 3D models render inline
 under the cell and you can rotate them there, no browser tab. It only reads
 outputs/results.json, so it is quick and you can rerun cells freely.
 
-The notebook sets plotly's renderer to notebook_connected, which emits plain
-HTML and pulls plotly.js from a CDN. PyCharm does not render plotly's own mime
-type, application/vnd.plotly.v1+json, even though the kernel produces it, so
-the figures come out blank without this. It does mean the figures need internet
-to draw.
+The notebook sets plotly's renderer to notebook, which emits HTML with
+plotly.js embedded, so it works offline. PyCharm does not draw plotly's own
+mime type, application/vnd.plotly.v1+json, even though the kernel produces it
+correctly, and the CDN variant reserved space but drew nothing. Embedding costs
+about 5 MB the first time a figure is drawn.
+
+If a figure still comes out blank, the notebook may have lost its Jupyter trust
+signature, which stops embedded JS running. Re-sign it with:
+
+```bash
+.venv/bin/jupyter trust results.ipynb
+```
 
 ## Setup
 

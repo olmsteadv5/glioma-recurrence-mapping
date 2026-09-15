@@ -14,16 +14,23 @@ in the same millimetre coordinate frame and can be compared directly.
 
 How overlap is measured
 -----------------------
-The YBA is a *surface* atlas: ~63.8k labelled vertices, no volumetric label map
-(see AtlasGeometry in the ElectrodeParcelGaussian project). So "which parcels
-does this tumour hit" is answered by sampling the tumour label volume at each
-atlas vertex's MNI coordinate, then aggregating per parcel.
+Every YBA parcel is a *closed* mesh -- each of the 696 has zero open boundary
+edges, so it encloses a real volume (median 0.80 mL, max 3.75 mL). Overlap is
+therefore a genuine volume intersection, in mL, not a surface-proximity proxy.
 
-That measures the share of each parcel's *surface* inside the tumour, which is
-not the same as the share of its volume. For a cortical parcel, which is a
-sheet, the two are close. Deep structures are represented by their boundary
-surface, so a tumour sitting inside one without reaching its edge will be
-under-counted. The vertex counts are reported so this stays visible.
+The parcel meshes are voxelised once onto the MNI grid (point-in-mesh test per
+parcel over its own bounding box) and cached as a label volume. After that,
+intersecting a tumour with the atlas is voxel counting.
+
+Two things to keep in mind when reading the numbers:
+
+  * The 696 parcels total ~642 mL against a ~1200-1500 mL brain, i.e. they
+    cover roughly half of it. Deep white matter is not parcellated. A tumour
+    can be large and still overlap little, which is correct, not a failure --
+    `tumour_in_any_parcel_ml` reports how much of it landed in parcelled
+    tissue at all.
+  * Voxelisation is on a 1 mm grid, so parcels near the small end (0.08 mL)
+    are only a handful of voxels and their percentages are coarse.
 
 Requires: run scripts/register_to_mni.py first.
 Run with the YBAParcelVisualizer venv, which has the YaleBrainAtlas package:
@@ -53,13 +60,12 @@ def load_atlas():
 
 
 def sample_at_points(seg_img, points_mm: np.ndarray) -> np.ndarray:
-    """Look up the label volume at world (MNI mm) coordinates.
+    """Look up a label volume at world (MNI mm) coordinates.
 
     Returns one label per point; points outside the volume get 0.
     """
     inv = np.linalg.inv(seg_img.affine)
-    ijk = nib.affines.apply_affine(inv, points_mm)
-    ijk = np.rint(ijk).astype(int)
+    ijk = np.rint(nib.affines.apply_affine(inv, points_mm)).astype(int)
 
     data = np.asarray(seg_img.dataobj)
     shape = np.array(data.shape)
@@ -71,32 +77,119 @@ def sample_at_points(seg_img, points_mm: np.ndarray) -> np.ndarray:
     return out
 
 
-def parcel_overlap(atlas, seg_img, min_vertices: int = 1) -> list[dict]:
-    """Per-parcel tumour involvement, most involved first."""
+def parcel_meshes(atlas):
+    """Every parcel as a closed trimesh, in MNI millimetres.
+
+    Parcels are extracted as the faces whose three vertices all carry the same
+    label, then reindexed. Each comes out watertight.
+    """
+    import trimesh
+
     points = np.asarray(atlas.whole_brain.points, dtype=float)
     labels = np.asarray(atlas.whole_brain["parcel_labels"]).astype(str)
-    hit = sample_at_points(seg_img, points)
+    tris = np.asarray(atlas.whole_brain.faces).reshape(-1, 4)[:, 1:]
+
+    out = {}
+    for name in np.unique(labels):
+        keep = labels == name
+        sel = tris[keep[tris].all(axis=1)]
+        if len(sel) == 0:
+            continue
+        used = np.unique(sel)
+        remap = np.full(len(points), -1, dtype=np.int64)
+        remap[used] = np.arange(len(used))
+        out[str(name)] = trimesh.Trimesh(vertices=points[used],
+                                         faces=remap[sel], process=False)
+    return out
+
+
+def build_label_volume(atlas, ref_img, cache: Path):
+    """Voxelise all parcels onto ref_img's grid. Cached -- this is the slow bit.
+
+    Returns (label array of parcel indices, names list). Index 0 means "no
+    parcel", which covers deep white matter and everything else the atlas does
+    not parcellate.
+    """
+    names_path = cache.with_suffix(".names.json")
+    if cache.exists() and names_path.exists():
+        return (np.asarray(nib.load(cache).dataobj).astype(np.int32),
+                json.loads(names_path.read_text()))
+
+    print("  voxelising 696 parcels onto the MNI grid (one-off, cached) ...",
+          end="", flush=True)
+    shape = ref_img.shape
+    labels = np.zeros(shape, dtype=np.int32)
+    meshes = parcel_meshes(atlas)
+    names = sorted(meshes)
+    inv = np.linalg.inv(ref_img.affine)
+
+    for idx, name in enumerate(names, start=1):
+        mesh = meshes[name]
+        # Work only inside this parcel's bounding box; they are ~1 mL each, so
+        # this keeps the point-in-mesh test to a few thousand voxels.
+        corners = np.array([[x, y, z]
+                            for x in mesh.bounds[:, 0]
+                            for y in mesh.bounds[:, 1]
+                            for z in mesh.bounds[:, 2]])
+        vox = nib.affines.apply_affine(inv, corners)
+        lo = np.floor(vox.min(axis=0)).astype(int) - 1
+        hi = np.ceil(vox.max(axis=0)).astype(int) + 2
+        lo = np.maximum(lo, 0)
+        hi = np.minimum(hi, shape)
+        if np.any(hi <= lo):
+            continue
+
+        grid = np.stack(np.meshgrid(
+            np.arange(lo[0], hi[0]), np.arange(lo[1], hi[1]),
+            np.arange(lo[2], hi[2]), indexing="ij"), axis=-1).reshape(-1, 3)
+        world = nib.affines.apply_affine(ref_img.affine, grid)
+        inside = mesh.contains(world)
+        if inside.any():
+            sel = grid[inside]
+            # First parcel to claim a voxel keeps it; parcels barely overlap.
+            free = labels[sel[:, 0], sel[:, 1], sel[:, 2]] == 0
+            sel = sel[free]
+            labels[sel[:, 0], sel[:, 1], sel[:, 2]] = idx
+
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    nib.save(nib.Nifti1Image(labels.astype(np.int16), ref_img.affine), cache)
+    names_path.write_text(json.dumps(names))
+    print(f" done ({(labels > 0).sum() / 1000:.0f} mL parcelled)")
+    return labels, names
+
+
+def parcel_overlap(labels: np.ndarray, names: list[str], seg_img) -> list[dict]:
+    """Volume intersection, in mL, between the tumour and every parcel."""
+    tumour = np.asarray(seg_img.dataobj).astype(np.int16)
+    if tumour.shape != labels.shape:
+        raise SystemExit(f"grid mismatch {tumour.shape} vs {labels.shape}")
+
+    voxel_ml = float(np.prod(seg_img.header.get_zooms()[:3])) / 1000.0
+    hit = tumour > 0
+
+    # One pass each: total voxels per parcel, and tumour voxels per parcel.
+    n = len(names) + 1
+    total = np.bincount(labels.ravel(), minlength=n)
+    inside = np.bincount(labels[hit].ravel(), minlength=n)
 
     rows = []
-    for parcel in np.unique(labels):
-        mask = labels == parcel
-        total = int(mask.sum())
-        involved = hit[mask]
-        n_hit = int((involved > 0).sum())
-        if n_hit < min_vertices:
+    for idx, name in enumerate(names, start=1):
+        if inside[idx] == 0:
             continue
-        breakdown = Counter(LABEL_NAMES.get(int(v), str(v))
-                            for v in involved if v > 0)
+        sub = tumour[hit & (labels == idx)]
+        breakdown = {LABEL_NAMES.get(int(v), str(v)): int((sub == v).sum())
+                     for v in np.unique(sub)}
         rows.append({
-            "parcel": str(parcel),
-            "vertices_total": total,
-            "vertices_in_tumour": n_hit,
-            "fraction": round(n_hit / total, 4),
-            "dominant_tissue": breakdown.most_common(1)[0][0],
-            "tissue_breakdown": dict(breakdown),
+            "parcel": name,
+            "parcel_volume_ml": round(total[idx] * voxel_ml, 3),
+            "volume_in_tumour_ml": round(inside[idx] * voxel_ml, 3),
+            "fraction": round(float(inside[idx]) / total[idx], 4),
+            "dominant_tissue": max(breakdown, key=breakdown.get),
+            "tissue_breakdown": {k: round(v * voxel_ml, 3)
+                                 for k, v in breakdown.items()},
         })
 
-    rows.sort(key=lambda r: (-r["fraction"], -r["vertices_in_tumour"]))
+    rows.sort(key=lambda r: (-r["fraction"], -r["volume_in_tumour_ml"]))
     return rows
 
 
@@ -188,11 +281,17 @@ def main() -> int:
     ATLAS_DIR.mkdir(parents=True, exist_ok=True)
     report = {}
 
+    # The parcel label volume is built once against the first subject's grid;
+    # every subject is resliced onto the same MNI template, so it is reusable.
+    first = nib.load(MNI_DIR / subjects[0] / "seg_in_mni.nii.gz")
+    labels, names = build_label_volume(atlas, first, ATLAS_DIR / "yba_labels_mni.nii.gz")
+    print()
+
     for subject in subjects:
         seg_path = MNI_DIR / subject / "seg_in_mni.nii.gz"
         seg_img = nib.load(seg_path)
 
-        parcels = parcel_overlap(atlas, seg_img)
+        parcels = parcel_overlap(labels, names, seg_img)
         parcels = [p for p in parcels if p["fraction"] >= args.min_fraction]
         tracts, skipped = tract_overlap(atlas, seg_img, tract_names)
 
@@ -202,14 +301,20 @@ def main() -> int:
             mesh_path = ATLAS_DIR / f"{subject}_tumour.vtp"
             mesh.save(mesh_path)
 
+        voxel_ml = float(np.prod(seg_img.header.get_zooms()[:3])) / 1000.0
+        tumour_ml = float((np.asarray(seg_img.dataobj) > 0).sum()) * voxel_ml
+        in_parcels = sum(r["volume_in_tumour_ml"] for r in parcels)
+
         print(f"=== {subject} ===")
+        print(f"tumour {tumour_ml:.1f} mL, of which {in_parcels:.1f} mL "
+              f"({in_parcels / max(tumour_ml, 1e-9):.0%}) lies in parcelled tissue")
         print(f"{len(parcels)} parcel(s) involved"
               + (f", showing top {args.top}" if len(parcels) > args.top else ""))
-        print(f"  {'parcel':<24}{'frac':>7}{'verts':>10}  tissue")
+        print(f"  {'parcel':<24}{'frac':>7}{'in tumour':>12}{'of':>9}  tissue")
         for row in parcels[:args.top]:
             print(f"  {row['parcel']:<24}{row['fraction']:>7.1%}"
-                  f"{row['vertices_in_tumour']:>5}/{row['vertices_total']:<4}"
-                  f"  {row['dominant_tissue']}")
+                  f"{row['volume_in_tumour_ml']:>10.2f} mL"
+                  f"{row['parcel_volume_ml']:>7.2f}  {row['dominant_tissue']}")
 
         if tracts:
             print(f"\n  {len(tracts)} tract(s) crossed:")
@@ -226,7 +331,9 @@ def main() -> int:
                   f"({mesh.n_points} pts, {mesh.volume/1000:.1f} mL enclosed)")
         print()
 
-        report[subject] = {"parcels": parcels, "tracts": tracts,
+        report[subject] = {"tumour_volume_ml": round(tumour_ml, 2),
+                           "tumour_in_any_parcel_ml": round(in_parcels, 2),
+                           "parcels": parcels, "tracts": tracts,
                            "tracts_unavailable": skipped,
                            "mesh": str(mesh_path.relative_to(PROJECT_ROOT))
                                    if mesh_path else None}

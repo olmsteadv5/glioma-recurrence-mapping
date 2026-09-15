@@ -233,15 +233,37 @@ so treat parcel assignments near the tumour rim as approximate.
 squeezes out the mass effect: subject 36's tumour is 234.5 mL natively and
 176.9 mL in MNI. Use MNI for *where*, native for *how much*.
 
-### What the parcel overlap actually measures
+### What the parcel overlap measures
 
-The YBA is a **surface** atlas — ~63.8k labelled vertices, no volumetric label
-map. So overlap is computed by sampling the tumour at each atlas vertex and
-aggregating per parcel, which gives the share of each parcel's *surface* inside
-the tumour. For cortical parcels, which are sheets, that is close to volume
-share. Deep structures are represented by their boundary surface, so a tumour
-sitting inside one without reaching its edge is under-counted. Raw vertex counts
-are reported alongside the fraction so this stays visible.
+Every one of the 696 YBA parcels is a **closed** mesh — zero open boundary
+edges, so each encloses a real volume (median 0.80 mL, max 3.75 mL). Overlap is
+therefore a true volume intersection reported in mL, not a surface proxy.
+
+`tumor_vs_yba.py` voxelises the parcel meshes once onto the MNI grid
+(point-in-mesh per parcel over its own bounding box) and caches the result as
+`outputs/atlas/yba_labels_mni.nii.gz`. After that, intersecting a tumour with
+the atlas is voxel counting.
+
+Two things to keep in mind reading the numbers:
+
+**The parcels cover about half the brain.** All 696 total ~656 mL against a
+1200–1500 mL brain; deep white matter is not parcellated. In practice only
+27–32% of each of these tumours lands in parcelled tissue at all:
+
+```
+UPENN-GBM-00002_11   148.1 mL tumour,  39.8 mL (27%) in parcels,  93 involved
+UPENN-GBM-00036_11   119.4 mL tumour,  38.6 mL (32%) in parcels,  70 involved
+UPENN-GBM-00042_11    64.9 mL tumour,  17.5 mL (27%) in parcels
+```
+
+`tumour_in_any_parcel_ml` reports this per subject. A large tumour overlapping
+little is correct behaviour, not a failure — it means the mass is sitting in
+white matter the atlas does not label. This is also the strongest argument for
+getting the tract bundle: the majority of each tumour is in exactly the tissue
+the parcels cannot describe.
+
+**The grid is 1 mm.** A 0.08 mL parcel is ~80 voxels, so its percentage moves
+in steps of over 1%. Fine for the large parcels, coarse for the smallest.
 
 ### White matter tracts — needs a data bundle
 

@@ -126,8 +126,9 @@ def build_figure(subject: str, atlas, overlap: dict, shell_opacity: float,
             color=color, opacity=0.95, name=f"{parcel} ({row['fraction']:.0%})",
             showlegend=True, flatshading=True,
             hovertemplate=(f"<b>{parcel}</b><br>"
-                           f"{row['fraction']:.1%} of surface in tumour<br>"
-                           f"{row['vertices_in_tumour']}/{row['vertices_total']} vertices<br>"
+                           f"{row['fraction']:.1%} of its volume in tumour<br>"
+                           f"{row['volume_in_tumour_ml']:.2f} of "
+                           f"{row['parcel_volume_ml']:.2f} mL<br>"
                            f"mostly {row['dominant_tissue']}<extra></extra>")))
 
     # 3. The tumour itself.
@@ -149,7 +150,11 @@ def build_figure(subject: str, atlas, overlap: dict, shell_opacity: float,
             hovertemplate=f"{row['tract']}<extra></extra>"))
 
     n_tracts = len(overlap.get("tracts", []))
-    subtitle = (f"{len(involved)} parcels involved"
+    tot = overlap.get("tumour_volume_ml")
+    inp = overlap.get("tumour_in_any_parcel_ml")
+    vol = (f"{tot:.0f} mL tumour, {inp:.0f} mL ({inp / tot:.0%}) in parcelled "
+           f"tissue. " if tot and inp is not None else "")
+    subtitle = (vol + f"{len(involved)} parcels involved"
                 + (f", {n_tracts} tracts crossed" if n_tracts
                    else " - tract data not installed"))
     fig.update_layout(

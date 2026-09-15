@@ -11,6 +11,8 @@ from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Label, ListItem, ListView, RichLog, Static
+from textual_image._terminal import get_cell_size
+from textual_image.widget import Image as ImageWidget
 
 import function
 import render
@@ -23,11 +25,6 @@ BARS = 10
 def bar(fraction, n=BARS):
     filled = round(max(0.0, min(1.0, fraction)) * n)
     return "█" * filled + "░" * (n - filled)
-
-
-class Viewer(Static):
-    # Holds whichever image is current; the app swaps what it renders.
-    pass
 
 
 class Console(App):
@@ -72,7 +69,7 @@ class Console(App):
             yield Static("", id="meta", classes="dim")
         with Vertical(id="mid"):
             with Vertical(id="viewer"):
-                yield Viewer(id="image")
+                yield ImageWidget(id="image")
                 yield Static("", id="caption", classes="dim")
             yield RichLog(id="log", wrap=True, markup=True, highlight=False)
         with Vertical(id="right"):
@@ -85,6 +82,8 @@ class Console(App):
             self.log_write("[#f2c14e]not running in kitty; images will look poor[/]")
         if self.subject:
             self.load_subject(self.subject)
+            # the viewer has no size until layout settles, so the first frame would be tiny
+            self.call_after_refresh(self.draw)
 
     def log_write(self, text):
         self.query_one("#log", RichLog).write(text)
@@ -137,10 +136,10 @@ class Console(App):
     # ----------------------------------------------------------------- render
 
     def draw(self):
-        widget = self.query_one("#image", Viewer)
-        cell = getattr(self.app, "_cell_size", None) or (8, 16)
-        w = max(widget.size.width * cell[0], 64)
-        h = max(widget.size.height * cell[1], 64)
+        widget = self.query_one("#image", ImageWidget)
+        cell = get_cell_size()
+        w = max(widget.size.width * cell.width, 64)
+        h = max(widget.size.height * cell.height, 64)
         if self.mode == "3d":
             self.scene.resize(w, h)
             image = self.scene.image()
@@ -150,12 +149,8 @@ class Console(App):
             r = self.slices.readout()
             coords = f"{r['coords']}" if r["coords"] else r["coord_space"]
             caption = (f" {r['space']}  ·  {r['modality']}  ·  {r['label']}  ·  {coords}")
-        widget.update(self._render_image(image))
+        widget.image = image
         self.query_one("#caption", Static).update(caption)
-
-    def _render_image(self, image):
-        from textual_image.renderable import Image as Renderable
-        return Renderable(image)
 
     def on_resize(self, event: events.Resize):
         if self.scene:

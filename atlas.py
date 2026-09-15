@@ -12,8 +12,10 @@ LABEL_NAMES = ATLAS_DIR / "yba_labels_mni.names.json"
 
 
 def load_atlas():
-    from YaleBrainAtlas import YaleBrainAtlas
-    return YaleBrainAtlas("Subject")
+    """The atlas and its plotly visualiser."""
+    from YaleBrainAtlas import YaleBrainAtlas, YBAVisualizer
+    yba = YaleBrainAtlas("Subject")
+    return yba, YBAVisualizer(yba)
 
 
 def label_volume(yba, reference):

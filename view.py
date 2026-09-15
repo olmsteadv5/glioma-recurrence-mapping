@@ -1,7 +1,9 @@
 """Tumour-in-atlas 3D view, following the project's add/run contract.
 
-    add(subject, yba, ...)  -> appends tumour traces to the current figure
-    run(subject, yba, ...)  -> new() + parcels + tumour + show()
+    add(subject, viz, ...)       -> appends tumour traces to the current figure
+    run(subject, yba, viz, ...)  -> new() + parcels + tumour + show()
+
+`yba` is the YaleBrainAtlas, `viz` its YBAVisualizer.
 """
 
 import nibabel as nib
@@ -28,7 +30,7 @@ def _surface(data, affine, value):
     return vertices, np.asarray(surface.faces).reshape(-1, 4)[:, 1:]
 
 
-def add(subject, yba, opacity=1.0):
+def add(subject, viz, opacity=1.0):
     """Append one solid mesh per tumour tissue class to the current figure."""
     image = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
     data = np.asarray(image.dataobj).astype(np.int16)
@@ -38,24 +40,26 @@ def add(subject, yba, opacity=1.0):
         if mesh is None:
             continue
         vertices, faces = mesh
-        yba.add_custom_mesh(vertices, faces, color=TISSUE_COLOR[value],
+        viz.add_custom_mesh(vertices, faces, color=TISSUE_COLOR[value],
                             opacity=opacity, label=name)
 
 
-def run(subject, yba, result, *, figure_name=None, shell_opacity=0.2, top=30):
+def run(subject, yba, viz, result, *, figure_name=None, shell_opacity=0.2, top=30):
     """Fresh figure: involved parcels coloured by involvement, tumour solid on top."""
     figure_name = figure_name or subject
     involved = [row["parcel"] for row in result["parcels"]][:top]
     fractions = {row["parcel"]: row["fraction"] for row in result["parcels"]}
 
-    yba.new(figure_name)
-    yba.add_parcels([fractions.get(name, 0.0) for name in yba.parcel_names],
-                    segment=set(involved), opacity=1.0 - shell_opacity,
-                    colorscale="reds", title="Fraction in tumour")
-    add(subject, yba)
+    values = [fractions.get(name, 0.0) for name in yba.parcel_names]
+    viz.new(figure_name)
+    # labels must be passed explicitly; add_parcels builds hover text wrongly without it
+    viz.add_parcels(values, labels=values, segment=set(involved),
+                    opacity=1.0 - shell_opacity, colorscale="reds",
+                    title="Fraction in tumour")
+    add(subject, viz)
 
     tumour, in_parcels = result["tumour_ml"], result["in_parcels_ml"]
-    yba.update_layout(figure_name, title=(
+    viz.update_layout(figure_name, title=(
         f"{subject} - {tumour:.0f} mL tumour, {in_parcels:.0f} mL "
         f"({in_parcels / tumour:.0%}) in parcelled tissue, {len(involved)} parcels"))
-    return yba.show(figure_name)
+    return viz.show(figure_name)

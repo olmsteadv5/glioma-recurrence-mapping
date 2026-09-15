@@ -53,7 +53,7 @@ def main(numbers):
         results[subject] = scores
 
     print("\n[atlas]")
-    yba = atlas.load_atlas()
+    yba, viz = atlas.load_atlas()
     labels, names = atlas.label_volume(yba, nib.load(MNI))
 
     for subject in results:
@@ -67,14 +67,14 @@ def main(numbers):
     stored.update(results)
     RESULTS.write_text(json.dumps(stored, indent=2))
     print(f"\nWrote {RESULTS} ({len(stored)} subjects)")
-    return results, yba
+    return results, yba, viz
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         sys.exit("usage: python main.py <subject numbers>   e.g. python main.py 36 42 51")
-    results, yba = main([int(a) for a in sys.argv[1:]])
+    results, yba, viz = main([int(a) for a in sys.argv[1:]])
 
     import view
     for subject in results:
-        view.run(subject, yba, results[subject]["atlas"])
+        view.run(subject, yba, viz, results[subject]["atlas"])

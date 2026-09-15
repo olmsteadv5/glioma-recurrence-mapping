@@ -13,6 +13,18 @@ labels where they exist, registers into MNI, intersects with the atlas, and
 opens a 3D view per subject. Every stage runs each time; only the downloads and
 the cached atlas parcellation are reused.
 
+To re-open a view without recomputing, from a PyCharm console:
+
+```python
+import json, atlas, view
+yba, viz = atlas.load_atlas()
+results = json.load(open("outputs/results.json"))
+view.run("UPENN-GBM-00036_11", yba, viz, results["UPENN-GBM-00036_11"]["atlas"])
+```
+
+`view` follows the project's `add`/`run` contract, so `view.add(subject, viz)`
+layers a tumour onto a figure another module already started.
+
 ## Setup
 
 One interpreter runs everything:

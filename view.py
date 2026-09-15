@@ -1,16 +1,19 @@
-# Tumour-in-atlas 3D view, following the project's add/run contract.
+# Interactive 3D view: solid tumour inside the Yale Brain Atlas.
 
 import nibabel as nib
 import numpy as np
+import plotly.graph_objects as go
 import pyvista as pv
 
+from atlas import meshes, parcels
 from paths import LABELS, out_dir
 
 TISSUE_COLOR = {1: "#f2c14e", 2: "#3fa7d6", 3: "#e4572e", 4: "#8e7dbe"}
+SHELL_COLOR = "#9aa3ad"
 
 
-def _surface(data, affine, value):
-    # Marching-cubes surface for one tissue class, in MNI millimetres.
+def _tumour_surface(data, affine, value):
+    # Marching-cubes surface for one tissue class, in atlas millimetres.
     binary = (data == value).astype(np.float32)
     if binary.sum() < 10:
         return None
@@ -20,40 +23,75 @@ def _surface(data, affine, value):
     if surface.n_points == 0:
         return None
     surface = surface.smooth(n_iter=30, relaxation_factor=0.1)
-    vertices = nib.affines.apply_affine(affine, surface.points)
-    return vertices, np.asarray(surface.faces).reshape(-1, 4)[:, 1:]
+    return (nib.affines.apply_affine(affine, surface.points),
+            np.asarray(surface.faces).reshape(-1, 4)[:, 1:])
 
 
-def add(subject, viz, opacity=1.0):
-    # Append one solid mesh per tumour tissue class to the current figure.
+def _mesh3d(vertices, faces, **kwargs):
+    return go.Mesh3d(x=vertices[:, 0], y=vertices[:, 1], z=vertices[:, 2],
+                     i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
+                     flatshading=True, **kwargs)
+
+
+def add(subject, fig, opacity=1.0):
+    # Append one solid mesh per tumour tissue class to an existing figure.
     image = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
     data = np.asarray(image.dataobj).astype(np.int16)
-
     for value, name in LABELS.items():
-        mesh = _surface(data, image.affine, value)
-        if mesh is None:
+        surface = _tumour_surface(data, image.affine, value)
+        if surface is None:
             continue
-        vertices, faces = mesh
-        viz.add_custom_mesh(vertices, faces, color=TISSUE_COLOR[value],
-                            opacity=opacity, label=name)
+        fig.add_trace(_mesh3d(*surface, color=TISSUE_COLOR[value], opacity=opacity,
+                              name=name, showlegend=True,
+                              hovertemplate=f"{name}<extra></extra>"))
+    return fig
 
 
-def run(subject, yba, viz, result, *, figure_name=None, shell_opacity=0.2, top=30):
-    # Fresh figure: involved parcels coloured by involvement, tumour solid on top.
-    figure_name = figure_name or subject
-    involved = [row["parcel"] for row in result["parcels"]][:top]
-    fractions = {row["parcel"]: row["fraction"] for row in result["parcels"]}
+def run(subject, overlap, *, shell_opacity=0.2, top=30, show=True):
+    # Involved parcels opaque and named, the rest a faint shell, tumour solid.
+    info = parcels()
+    surfaces = meshes()
+    index = {p["name"]: i for i, p in enumerate(info)}
 
-    values = [fractions.get(name, 0.0) for name in yba.parcel_names]
-    viz.new(figure_name)
-    # labels must be passed explicitly; add_parcels builds hover text wrongly without it
-    viz.add_parcels(values, labels=values, segment=set(involved),
-                    opacity=1.0 - shell_opacity, colorscale="reds",
-                    title="Fraction in tumour")
-    add(subject, viz)
+    involved = overlap["parcels"][:top]
+    involved_names = {r["parcel"] for r in involved}
 
-    tumour, in_parcels = result["tumour_ml"], result["in_parcels_ml"]
-    viz.update_layout(figure_name, title=(
-        f"{subject} - {tumour:.0f} mL tumour, {in_parcels:.0f} mL "
-        f"({in_parcels / tumour:.0%}) in parcelled tissue, {len(involved)} parcels"))
-    return viz.show(figure_name)
+    fig = go.Figure()
+
+    rest = [surfaces[i] for name, i in index.items() if name not in involved_names]
+    if rest:
+        import trimesh
+        shell = trimesh.util.concatenate(rest)
+        fig.add_trace(_mesh3d(np.asarray(shell.vertices), np.asarray(shell.faces),
+                              color=SHELL_COLOR, opacity=shell_opacity,
+                              name="atlas (uninvolved)", showlegend=True,
+                              hoverinfo="skip"))
+
+    for row in involved:
+        mesh = surfaces[index[row["parcel"]]]
+        colour = info[index[row["parcel"]]]["color"]
+        fig.add_trace(_mesh3d(
+            np.asarray(mesh.vertices), np.asarray(mesh.faces),
+            color=f"rgb{colour}", opacity=0.95,
+            name=f"{row['parcel']} ({row['fraction']:.0%})", showlegend=True,
+            hovertemplate=(f"<b>{row['long_name']}</b><br>{row['parcel']}<br>"
+                           f"{row['fraction']:.1%} of volume in tumour<br>"
+                           f"{row['in_tumour_ml']:.2f} of {row['parcel_ml']:.2f} mL<br>"
+                           f"{row['gyrus']}<extra></extra>")))
+
+    add(subject, fig)
+
+    total, in_parcels = overlap["tumour_ml"], overlap["in_parcels_ml"]
+    fig.update_layout(
+        title=(f"{subject} - {total:.0f} mL tumour, {in_parcels:.0f} mL "
+               f"({in_parcels / total:.0%}) in parcelled tissue, "
+               f"{len(involved)} parcels shown"),
+        template="plotly_white",
+        scene=dict(xaxis_visible=False, yaxis_visible=False, zaxis_visible=False,
+                   aspectmode="data"),
+        margin=dict(l=0, r=0, b=0, t=60),
+        legend=dict(itemsizing="constant", font=dict(size=10)))
+
+    if show:
+        fig.show()
+    return fig

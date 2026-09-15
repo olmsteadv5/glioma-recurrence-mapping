@@ -1,7 +1,6 @@
-# Volume intersection between a tumour and the Yale Brain Atlas parcels.
+# Yale Brain Atlas: official parcel volume, meshes, metadata and overlap.
 
-import json
-import re
+import csv
 import urllib.request
 
 import nibabel as nib
@@ -9,54 +8,72 @@ import numpy as np
 
 from paths import ATLAS_DIR, ATLAS_INPUT, LABELS
 
-BASE = ("https://raw.githubusercontent.com/YaleBrainAtlas/YaleBrainAtlas/"
-        "master/data/YBA_696parcels")
-ATLAS_NII = ATLAS_INPUT / "YBA_696.nii"
-ATLAS_LUT = ATLAS_INPUT / "YBA_696_LUT.txt"
+BASE = "https://raw.githubusercontent.com/YaleBrainAtlas/YaleBrainAtlas/master/data"
+
+FILES = {
+    "YBA_696.nii": f"{BASE}/YBA_696parcels/YBA_696.nii",
+    "YBA_696_LUT.txt": f"{BASE}/YBA_696parcels/YBA_696_LUT.txt",
+    "YBA_696_parcel_dict.csv": f"{BASE}/YBA_696parcels/YBA_696_parcel_dict.csv",
+    "YBA_696.glb": f"{BASE}/YBA_696parcels/YBA_696.glb",
+    "structuralconnectivity_metrics_mean.csv":
+        f"{BASE}/Connectome/structuralconnectivity_metrics_mean.csv",
+}
 
 RESAMPLED = ATLAS_DIR / "yba_on_mni.nii.gz"
 
-
-def _download(url, dest):
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    request = urllib.request.Request(url, headers={"User-Agent": "brats-upenn-gbm"})
-    with urllib.request.urlopen(request, timeout=300) as response, open(dest, "wb") as fh:
-        while chunk := response.read(1 << 20):
-            fh.write(chunk)
+# glTF stores the atlas with x and z negated relative to the parcel dictionary
+GLB_FLIP = np.array([-1.0, 1.0, -1.0])
 
 
-def load_atlas():
-    # The atlas and its plotly visualiser, both from Ryan's wrapper package.
-    from YaleBrainAtlas import YaleBrainAtlas, YBAVisualizer
-    yba = YaleBrainAtlas("Subject")
-    return yba, YBAVisualizer(yba)
+def ensure(name):
+    # Fetch one official file into inputs/atlas if it is not already there.
+    path = ATLAS_INPUT / name
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        print(f"    downloading {name} ...", end="", flush=True)
+        request = urllib.request.Request(FILES[name],
+                                         headers={"User-Agent": "brats-upenn-gbm"})
+        with urllib.request.urlopen(request, timeout=600) as response, open(path, "wb") as fh:
+            while chunk := response.read(1 << 20):
+                fh.write(chunk)
+        print(" done")
+    return path
 
 
-def parcel_names():
-    # Official label table; index i names label value i. Same order as yba.parcel_names.
-    if not ATLAS_LUT.exists():
-        _download(f"{BASE}/YBA_696_LUT.txt", ATLAS_LUT)
-    table = {}
-    for line in ATLAS_LUT.read_text().splitlines():
-        if line.startswith("#") or not line.strip():
-            continue
-        parts = re.split(r"\s+", line.strip())
-        table[int(parts[0])] = parts[1]
-    return [table[i] for i in sorted(table) if i > 0]
+def parcels():
+    # Official parcel metadata, in label order: label value i is parcels()[i-1].
+    with open(ensure("YBA_696_parcel_dict.csv")) as fh:
+        rows = list(csv.DictReader(fh))
+    return [{
+        "name": r["Name"],
+        "long_name": r["Long_name"],
+        "hemisphere": r["Hemisphere"],
+        "lobe": r["Lobe"],
+        "region": r["Region"],
+        "gyrus": r["Gyrus"],
+        "color": (int(r["YBA_R_color"]), int(r["YBA_G_color"]), int(r["YBA_B_color"])),
+    } for r in rows]
+
+
+def meshes():
+    # Per-parcel surfaces from the official GLB, in label order.
+    import trimesh
+    scene = trimesh.load(ensure("YBA_696.glb"))
+    out = []
+    for key in list(scene.geometry):
+        mesh = scene.geometry[key].copy()
+        mesh.vertices = np.asarray(mesh.vertices) * GLB_FLIP
+        out.append(mesh)
+    return out
 
 
 def label_volume(reference):
-    # Official 696-parcel volume, nearest-neighbour onto the reference grid.
-    names = parcel_names()
+    # Official parcel volume, nearest-neighbour onto the reference grid.
+    names = [p["name"] for p in parcels()]
     if RESAMPLED.exists():
         return np.asarray(nib.load(RESAMPLED).dataobj).astype(np.int32), names
 
-    if not ATLAS_NII.exists():
-        print("    downloading the official YBA parcel volume ...", end="", flush=True)
-        _download(f"{BASE}/YBA_696.nii", ATLAS_NII)
-        print(" done")
-
-    atlas_img = nib.load(ATLAS_NII)
+    atlas_img = nib.load(ensure("YBA_696.nii"))
     atlas_data = np.asarray(atlas_img.dataobj).astype(np.int32)
 
     grid = np.indices(reference.shape).reshape(3, -1).T
@@ -76,6 +93,7 @@ def label_volume(reference):
 
 def overlap(seg_mni, labels, names):
     # Per-parcel tumour volume in mL, most involved first.
+    meta = {p["name"]: p for p in parcels()}
     image = nib.load(seg_mni)
     tumour = np.asarray(image.dataobj).astype(np.int16)
     voxel_ml = float(np.prod(image.header.get_zooms()[:3])) / 1000.0
@@ -91,8 +109,12 @@ def overlap(seg_mni, labels, names):
         tissue = tumour[hit & (labels == index)]
         counts = {LABELS.get(int(v), str(v)): int((tissue == v).sum())
                   for v in np.unique(tissue)}
+        info = meta[name]
         rows.append({
             "parcel": name,
+            "long_name": info["long_name"],
+            "lobe": info["lobe"],
+            "gyrus": info["gyrus"],
             "parcel_ml": round(total[index] * voxel_ml, 3),
             "in_tumour_ml": round(inside[index] * voxel_ml, 3),
             "fraction": round(float(inside[index]) / total[index], 4),

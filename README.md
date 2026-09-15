@@ -33,8 +33,9 @@ One interpreter runs everything:
 /home/vilem/Projects/YBAParcelVisualizer/.venv/bin/python
 ```
 
-It carries `YaleBrainAtlas`, `brats`, nibabel, pyvista, trimesh and plotly.
-Point PyCharm's project interpreter at it. Docker must be running and your user
+It carries `brats`, nibabel, scipy, pyvista, trimesh and plotly. Point
+PyCharm's project interpreter at it. Nothing here imports `YaleBrainAtlas` —
+all atlas data comes from the official Yale repository. Docker must be running and your user
 must be in the `docker` group; the algorithm image is ~30 GB and pulls on first
 use.
 
@@ -48,7 +49,8 @@ verify.py      preprocessing checks
 segment.py     BraTS via Docker
 evaluate.py    volumes and Dice
 register.py    SRI24 -> MNI152
-atlas.py       parcel voxelisation and volume overlap
+atlas.py       official atlas volume, meshes, metadata, volume overlap
+connectome.py  structural connectivity - where the white matter leads
 view.py        3D view
 paths.py       shared paths
 
@@ -58,7 +60,8 @@ inputs/reference_seg/<SUBJECT>_seg.nii.gz
 outputs/<SUBJECT>/stripped/                            skull-stripped
 outputs/<SUBJECT>/seg.nii.gz                           native SRI24
 outputs/<SUBJECT>/seg_in_mni.nii.gz                    MNI152 / YBA space
-outputs/atlas/yba_labels_mni.nii.gz                    cached parcellation
+inputs/atlas/                                          official YBA data
+outputs/atlas/yba_on_mni.nii.gz                        parcellation on MNI grid
 outputs/results.json                                   volumes, Dice, overlap
 ```
 
@@ -151,45 +154,65 @@ mass effect. Parcel assignments at the tumour rim stay approximate.
 **Measure volumes in native space, not MNI.** Warping into a healthy template
 squeezes out mass effect.
 
+## Atlas data — all official
+
+Everything comes from the Yale Brain Atlas repository
+(github.com/YaleBrainAtlas/YaleBrainAtlas, open access), downloaded once into
+`inputs/atlas/`:
+
+| File | Use |
+|---|---|
+| `YBA_696.nii` | 696-parcel volume, resampled onto the MNI grid |
+| `YBA_696_LUT.txt` | label index to parcel name |
+| `YBA_696_parcel_dict.csv` | long names, lobe, gyrus, colours, centroids |
+| `YBA_696.glb` | per-parcel surfaces for the 3D view |
+| `structuralconnectivity_metrics_mean.csv` | parcel-to-parcel connectivity, 1065 HCP subjects |
+
+The GLB stores the atlas with **x and z negated** relative to the parcel
+dictionary; `atlas.GLB_FLIP` corrects it, verified to 0.00 mm against the
+dictionary centroids.
+
 ## What the parcel overlap measures
 
-`atlas.py` downloads the **official** 696-parcel volume, `YBA_696.nii`, from the
-Yale Brain Atlas repository and resamples it onto the MNI grid with
-nearest-neighbour. Overlap is then voxel counting, in mL.
-
-The official label order is identical to `yba.parcel_names` in Ryan's wrapper
-package, so label value *i* is `parcel_names[i-1]` and the two are
-interchangeable.
+A true volume intersection in mL: the official parcel volume is resampled onto
+the MNI grid with nearest-neighbour, then intersection is voxel counting.
 
 **The parcels cover grey matter only** — 731 mL against a 1200–1500 mL brain.
 Only about 30% of these tumours lands in parcelled tissue; the rest is in white
-matter the parcellation does not label. That is correct behaviour, not a
-failure, and it is the reason the connectome data below matters.
+matter, which is what the connectivity data is for.
 
-## White matter
+## Where the white matter leads
 
-The official atlas does publish white matter data, in two forms
-(`data/Connectome`, open access, no request needed):
+`connectome.py` reads the official structural connectivity matrix — 241,860
+parcel pairs averaged over 1065 HCP subjects. `SC_PathCount` is hop count, so a
+value of 1 is a direct white matter connection, and `SC_Count` is normalised
+strength.
 
-- `top5k_tracts_decimated.obj` — a 48 MB Blender mesh of the top 5000 tracts.
-  One unnamed object, one material, so it is renderable geometry but cannot
-  answer "which named tract".
-- `structuralconnectivity_metrics_mean.csv` plus per-subject
-  `<id>_WMPathCount.csv` / `<id>_WMLength.csv` for 1065 HCP subjects — pairwise
-  parcel-to-parcel structural connectivity.
+For each parcel at least 20% inside the tumour, it sums the direct connections
+to parcels *outside* the tumour and ranks them. That answers where the pathways
+running through the lesion actually go. Example, subject 36 (a left
+parietal/motor tumour):
 
-**The connectivity matrix is the better route to "where do these pathways
-lead".** Given the parcels a tumour involves, it gives the parcels they connect
-to, averaged over 1065 subjects. Not yet wired in.
+```
+  1.117  Left superior frontal gyrus 7 C     Frontal    37.1 mm
+  1.016  Right superior frontal gyrus 8 C    Frontal    36.8 mm
+  0.822  Right posterior motor C             Frontal    32.1 mm
+  0.816  Left supramarginal gyrus 2 B        Parietal   26.0 mm
+```
 
-Ryan's wrapper exposes a different thing: 92 *named* bundles
-(`ArcuateFasciculusL`, `CNIIL`, `FasciculusLenticularisL`) via a `Tract` API with
-`get_start_and_end_parcels()`. Those names are not in the official atlas. They
-match the naming family of DSI Studio's tractography atlases — the bundled
-`HCP842_tractography` has 80 similarly named bundles (`Arcuate_Fasciculus_L`),
-and the newer HCP1065 atlas has more — so they most likely originate there, not
-from Yale. Unconfirmed. The geometry is not installed locally, so that API
-raises `FileNotFoundError`.
+Contralateral motor and frontal targets are callosal; supramarginal is
+ipsilateral association fibre.
+
+## Named tract bundles are not part of the atlas
+
+The official atlas also ships `top5k_tracts_decimated.obj`, a 48 MB Blender mesh
+of the top 5000 tracts — one unnamed object, so renderable but not
+identifiable per bundle. It is not used here.
+
+Named bundles such as `ArcuateFasciculusL` do not exist in the Yale data at all.
+They match the naming family of DSI Studio's tractography atlases — the bundled
+`HCP842_tractography` has 80 similarly named bundles — so they most likely come
+from there. Unconfirmed.
 
 ## Data provenance
 

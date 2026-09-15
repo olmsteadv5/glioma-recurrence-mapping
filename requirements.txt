@@ -1,4 +1,4 @@
-# install into /home/vilem/Projects/YBAParcelVisualizer/.venv
+# no YaleBrainAtlas dependency; all atlas data comes from the official repository
 brats>=0.1.11
 nibabel>=5.0.0
 numpy>=1.26.0
@@ -6,4 +6,3 @@ scipy>=1.11.0
 trimesh>=4.0.0
 pyvista>=0.44.0
 plotly>=5.0.0
-# YaleBrainAtlas: pip install git+https://github.com/RyanSBRoy/YaleBrainAtlas.git

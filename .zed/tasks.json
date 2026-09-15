@@ -1,0 +1,33 @@
+[
+  {
+    "label": "BraTS: run pipeline (prompt for subjects)",
+    "command": "/home/vilem/Projects/YBAParcelVisualizer/.venv/bin/python",
+    "args": ["main.py", "$ZED_CUSTOM_SUBJECTS"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "BraTS: run tractography subjects (36 42 51)",
+    "command": "/home/vilem/Projects/YBAParcelVisualizer/.venv/bin/python",
+    "args": ["main.py", "36", "42", "51"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "reveal": "always"
+  },
+  {
+    "label": "BraTS: run current subject number in selection",
+    "command": "/home/vilem/Projects/YBAParcelVisualizer/.venv/bin/python",
+    "args": ["main.py", "$ZED_SELECTED_TEXT"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always"
+  },
+  {
+    "label": "BraTS: show results table",
+    "command": "/home/vilem/Projects/YBAParcelVisualizer/.venv/bin/python",
+    "args": ["report.py"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always"
+  }
+]

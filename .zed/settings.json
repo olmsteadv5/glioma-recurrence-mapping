@@ -1,0 +1,16 @@
+{
+  "languages": {
+    "Python": {
+      "language_servers": ["pyright"]
+    }
+  },
+  "lsp": {
+    "pyright": {
+      "settings": {
+        "python": {
+          "pythonPath": "/home/vilem/Projects/YBAParcelVisualizer/.venv/bin/python"
+        }
+      }
+    }
+  }
+}

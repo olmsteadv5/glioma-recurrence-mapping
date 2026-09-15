@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/vilem/Projects/YBAParcelVisualizer/.venv/bin/python
 # Run the whole pipeline for chosen UPenn-GBM subjects.
 
 import json

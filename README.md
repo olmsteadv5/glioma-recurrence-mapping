@@ -27,17 +27,15 @@ the parcel overlap, and opens a browser view for each one.
 About 3 minutes a subject on CPU. The first run is a lot slower because it
 pulls a 30 GB Docker image and 60 MB of atlas data, both of which are kept.
 
-Everything else reruns every time, so if you only want to look at results you
-already have, don't rerun the pipeline. Open a view directly instead:
+Everything else reruns every time, so if you only want to look at a subject you
+have already done, don't rerun the pipeline. Just open the view:
 
-```python
-import json, view
-results = json.load(open("outputs/results.json"))
-view.run("UPENN-GBM-00036_11", results["UPENN-GBM-00036_11"]["atlas"])
+```bash
+./view.py 36
 ```
 
-`view.run` takes `top=10` to draw fewer parcels and `show_tracts=False` to drop
-the tract lines, if the scene is too busy.
+From Python, `view.run` also takes `top=10` to draw fewer parcels and
+`show_tracts=False` to drop the tract lines, if the scene is too busy.
 
 ## Where things end up
 
@@ -62,7 +60,7 @@ evaluate.py    volumes and Dice
 register.py    SRI24 to MNI152
 atlas.py       atlas volume, meshes, parcel overlap
 tracts.py      tract centrelines
-view.py        3D view
+view.py        3D view, also runnable on its own
 paths.py       shared paths
 ```
 

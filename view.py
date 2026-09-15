@@ -1,3 +1,4 @@
+#!/home/vilem/Projects/brats-upenn-gbm/.venv/bin/python
 # Interactive 3D view: solid tumour inside the Yale Brain Atlas.
 
 import nibabel as nib
@@ -117,3 +118,20 @@ def run(subject, overlap, *, shell_opacity=0.2, top=30, show=True, show_tracts=T
     if show:
         fig.show()
     return fig
+
+
+if __name__ == "__main__":
+    import json
+    import sys
+
+    from paths import RESULTS, subject_id
+
+    if len(sys.argv) != 2:
+        sys.exit("usage: ./view.py <subject>   e.g. ./view.py 36")
+    results = json.load(open(RESULTS))
+    wanted = sys.argv[1]
+    if wanted.isdigit():
+        wanted = subject_id(int(wanted))
+    if wanted not in results:
+        sys.exit(f"{wanted} is not in {RESULTS}. have: {', '.join(sorted(results))}")
+    run(wanted, results[wanted]["atlas"])

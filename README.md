@@ -115,15 +115,20 @@ Inputs come from a **public GitHub-release mirror** of TCIA
 the NBIA Data Retriever / Aspera client and does not script cleanly.
 
 Verified properties of the mirrored files: 240×240×155, 1 mm isotropic, LPS
-(SRI24 atlas space), skull-stripped — i.e. already in BraTS preprocessed form,
-no further preprocessing needed.
+(SRI24 atlas space). They are **not** skull-stripped — the mirror ships the
+`images_structural_unstripped` variant, at ~2650-2930 mL of foreground where a
+stripped brain is 1200-1600 mL. Run `scripts/skullstrip.py` before anything
+else; it matters a lot (see the results section).
 
-Two caveats:
+Three caveats:
 
 1. **This is not an official TCIA endpoint.** It is an unaffiliated account
    with no institutional backing. Fine for a pilot; re-pull from TCIA before
    anything leaves the lab.
-2. **The mirrored volumes are 8-bit (uint8, 0–255).** Whether that matches the
+2. **They arrive unstripped.** `scripts/skullstrip.py` (FreeSurfer SynthStrip)
+   handles it, computing one mask on the T1 and applying it to all four
+   modalities so they cannot disagree about which voxels exist.
+3. **The mirrored volumes are 8-bit (uint8, 0–255).** Whether that matches the
    TCIA originals or is a quantisation introduced by the mirror has not been
    confirmed. BraTS models z-score normalise per modality, so this is unlikely
    to change results much, but it should be checked against a TCIA original
@@ -135,86 +140,122 @@ Subject id mapping, verified against `participants.tsv`:
 Cite: Bakas et al., *The University of Pennsylvania glioblastoma (UPenn-GBM)
 cohort*, Scientific Data 9, 453 (2022).
 
-## First run — results (2026-09-14)
+## Results
 
-`BraTS25_2` on CPU, `--jobs 1`. Four subjects, **~4.5 min each** (faster than the
-~7 min upstream estimate).
+`BraTS25_2` on CPU, `--jobs 1`, skull-stripped inputs. Four subjects, ~3 min
+each.
 
 | Subject | WT mL | TC mL | ET mL | Dice WT | Dice TC | Dice ET |
 |---|---|---|---|---|---|---|
-| UPENN-GBM-00002_11 | 308.8 | 53.4 | 37.7 | 0.757 | 0.882 | 0.812 |
-| UPENN-GBM-00036_11 | 226.9 | 42.8 | 22.1 | — | — | — |
-| UPENN-GBM-00042_11 | 155.6 | 73.9 | 43.7 | — | — | — |
-| UPENN-GBM-00051_11 |  43.8 | 16.2 |  9.2 | — | — | — |
+| UPENN-GBM-00002_11 | 191.1 | 44.5 | 29.6 | 0.919 | 0.958 | 0.900 |
+| UPENN-GBM-00036_11 | 166.6 | 40.9 | 20.8 | — | — | — |
+| UPENN-GBM-00042_11 | 103.1 | 72.7 | 43.8 | — | — | — |
+| UPENN-GBM-00051_11 |  35.5 | 14.7 |  7.8 | — | — | — |
 
 Only subject 2 has published reference labels; the other three are the subjects
 with existing tractography (`~/penn_gbm_tractography/fib_files/`).
 
-### Reading the subject-2 Dice
+### Skull-stripping is not optional
 
-`TC 0.882` / `ET 0.812` land in the published BraTS-winner range, which is the
-result that validates the pipeline — in particular it confirms the `t1c`/`t1n`
-mapping is right, since swapping those craters ET.
+The first run of this pipeline used the mirror's images as downloaded, which are
+unstripped. Same algorithm, same subjects, only the stripping differs:
 
-`WT 0.757` is lower, and the decomposition explains it:
+| Dice | unstripped | skull-stripped |
+|---|---|---|
+| WT | 0.757 | **0.919** |
+| TC | 0.882 | **0.958** |
+| ET | 0.812 | **0.900** |
 
-```
-WT recall    0.930   finds 93% of the reference tumour
-WT precision 0.636   but 36% of what it calls tumour isn't in the reference
+Predicted whole-tumour volume went 308.8 → 191.1 mL against a 211.8 mL
+reference. With skull attached the model labelled non-brain tissue as oedema;
+per-label volume ratios are now 0.97 NETC / 0.87 SNFH / 1.06 ET.
 
-per-label volume ratio (pred/ref):  NETC 1.02   SNFH 1.52   ET 1.36
-```
-
-The model is not missing tumour, it is adding. Necrotic core matches almost
-exactly (ratio 1.02); the excess is nearly all SNFH. The QC overlay shows the
-model's oedema extending further than the reference while still tracking
-visible FLAIR hyperintensity.
-
-That pattern points at an annotation-protocol difference rather than a model
-failure: the UPenn-GBM labels are expert-*approved* semi-automated output, and
-the oedema boundary is the softest call in the label set. Dice against a
-different protocol's labels is not Dice on the BraTS test set. The 8-bit
-quantisation noted above could also shift a soft intensity threshold — testable
-against a TCIA original if a result depends on it.
-
-Practical reading: **trust TC/ET; treat WT as protocol-dependent.** A consistent
-oedema bias cancels in longitudinal volume tracking, but would matter for
-radiotherapy target definition.
+The lesson worth keeping: BraTS algorithms assume skull-stripped input and fail
+*quietly* when they do not get it — plausible-looking output, quietly wrong.
+`verify_inputs.py` now checks absolute brain volume against a 2000 mL ceiling,
+which is the test that actually catches this. A fraction-of-grid test does not:
+an unstripped head is ~33% of the 240×240×155 grid, inside any plausible band
+for a stripped brain.
 
 ### Visual QC
 
 All four overlays (`outputs/BraTS25_2/qc/`) are anatomically sound: enhancing
 label on the enhancing rim, necrosis filling the core, oedema on FLAIR-bright
-tissue. Subjects 36 and 51 are textbook ring-enhancing lesions; 42 is a bulky
-frontal mass with interdigitating enhancing septa, traced correctly.
+tissue. For subject 2 the prediction and the expert reference are now near
+indistinguishable at the tumour-bearing slice.
 
-## Viewing results in ITK-SNAP
 
-```bash
-./view.sh UPENN-GBM-00036_11              # prediction over T1GD
-./view.sh UPENN-GBM-00002_11 reference    # the expert labels instead
-```
+## Mapping the tumour onto the Yale Brain Atlas
 
-This loads T1GD as the main image, the segmentation as a labelled overlay with
-proper region names and colours (`brats_labels.itksnap.txt`), and T1/T2/FLAIR
-as additional layers.
-
-Once open:
-
-- The **modality dropdown** (top-left) cycles T1GD / T1 / T2 / FLAIR with the
-  segmentation staying put. This is the check that matters — flip to T1GD and
-  the ET label should sit on bright rim; flip to FLAIR and SNFH should sit on
-  bright tissue.
-- **`a`** toggles the segmentation overlay on and off.
-- **`s`**, **`c`**, **`a`** panes are sagittal / coronal / axial; scroll to move
-  through slices.
-- The **3D pane** (bottom right) renders the tumour surface after you press
-  *Update* in the segmentation panel.
-
-Equivalent raw command, if you prefer not to use the script:
+Puts the segmentation into the YBA's coordinate frame, then asks which parcels
+and white matter tracts it involves.
 
 ```bash
-itksnap -g data/PENN_GBM_nii/SUBJ/SUBJ_T1GD.nii.gz \
-        -s outputs/BraTS25_2/SUBJ_seg.nii.gz \
-        -l brats_labels.itksnap.txt
+# 1. SRI24 -> MNI152 (the YBA reference space), ~1 min/subject
+.venv/bin/python scripts/register_to_mni.py
+
+# 2 & 3 need the YaleBrainAtlas package, which lives in the other venv
+YBA=/home/vilem/Projects/YBAParcelVisualizer/.venv/bin/python
+
+# 2. which parcels / tracts does the tumour hit
+$YBA scripts/tumor_vs_yba.py
+
+# 3. interactive 3D: solid tumour, involved parcels, faint atlas shell
+$YBA scripts/visualize_yba.py --shell-opacity 0.2
 ```
+
+### Why MNI
+
+The YBA is defined in MNI152: its surface spans x ±72.6, y −107.6..73.7,
+z −52.4..82.5 with centroid (0, −17, 16), matching the MNI152 1mm template's
+(−1, −17, 19). BraTS output is on the SRI24 grid, so it has to be moved.
+
+### Registration with cost-function masking
+
+A glioma displaces healthy tissue. A deformable registration driven by image
+similarity will squash or stretch the lesion to make the patient resemble the
+template, corrupting the warp exactly where it matters.
+
+`register_to_mni.py` excludes the lesion from the similarity metric. greedy
+applies masks to the *fixed* image (`-gm`; its `-mm` moving-image mask errors
+out in the ITK-SNAP build here), and the fixed image is the template — so the
+mask has to be in MNI space, which we do not have until the tumour is already
+there. Hence two passes:
+
+1. register unmasked, push the tumour into MNI to find roughly where it lands
+2. build an MNI-space mask excluding that region, re-register with `-gm`
+
+Masking the reference-space lesion is the same convention FSL uses. It is a
+mitigation, not a cure — tissue displaced by a large lesion is still displaced,
+so treat parcel assignments near the tumour rim as approximate.
+
+**Measure volumes in native space, not MNI.** Warping into a healthy template
+squeezes out the mass effect: subject 36's tumour is 234.5 mL natively and
+176.9 mL in MNI. Use MNI for *where*, native for *how much*.
+
+### What the parcel overlap actually measures
+
+The YBA is a **surface** atlas — ~63.8k labelled vertices, no volumetric label
+map. So overlap is computed by sampling the tumour at each atlas vertex and
+aggregating per parcel, which gives the share of each parcel's *surface* inside
+the tumour. For cortical parcels, which are sheets, that is close to volume
+share. Deep structures are represented by their boundary surface, so a tumour
+sitting inside one without reaching its edge is under-counted. Raw vertex counts
+are reported alongside the fraction so this stays visible.
+
+### White matter tracts — needs a data bundle
+
+`TractNames.txt` lists 92 tracts and the `Tract` API includes
+`get_start_and_end_parcels()`, which answers "where does this pathway lead".
+But the geometry is not bundled with the pip package:
+
+```
+<Tract 'ArcuateFasciculusL' | Fibers: Not Loaded>
+FileNotFoundError: Tract Path Does Not Exist, please initialize tract with root directory
+```
+
+The package expects `WhiteMatterTracts/<name>/polydata.vtp` under a separately
+distributed data root. `YaleBrainAtlas` is Ryan Bose-Roy's library
+(github.com/RyanSBRoy/YaleBrainAtlas), so **ask Ryan for that directory**. The
+tract code here is written against the documented API and stays dormant until
+the bundle is present.

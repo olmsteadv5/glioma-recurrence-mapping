@@ -9,3 +9,5 @@ outputs/
 logs/
 *.nii.gz
 *.part
+data/PENN_GBM_unstripped/
+data/brain_masks/

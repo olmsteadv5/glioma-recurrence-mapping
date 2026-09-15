@@ -29,8 +29,14 @@ NII_DIR = PROJECT_ROOT / "data" / "PENN_GBM_nii"
 MODALITIES = ("T1", "T1GD", "T2", "FLAIR")
 EXPECTED_SHAPE = (240, 240, 155)
 EXPECTED_ZOOMS = (1.0, 1.0, 1.0)
-# Skull-stripped brain occupies roughly a fifth to a third of the bounding box.
-FOREGROUND_RANGE = (0.10, 0.45)
+# Absolute brain volume is the check that actually separates a stripped brain
+# from a whole head. A fraction-of-grid test does not: an unstripped UPenn-GBM
+# head is ~33% of the 240x240x155 grid, which sits inside any plausible band for
+# a stripped brain. Adult brain is ~1100-1600 mL; add oedema, mass effect and a
+# generous margin and anything over 2000 mL still has skull attached.
+BRAIN_VOLUME_ML = (900.0, 2000.0)
+# Kept as a loose floor for "is there an image here at all".
+FOREGROUND_RANGE = (0.05, 0.60)
 
 
 def check_subject(subj_dir: Path) -> list[str]:
@@ -73,7 +79,19 @@ def check_subject(subj_dir: Path) -> list[str]:
             problems.append(
                 f"{modality}: foreground {fg:.1%} outside "
                 f"{FOREGROUND_RANGE[0]:.0%}-{FOREGROUND_RANGE[1]:.0%} "
-                f"(not skull-stripped, or empty?)")
+                f"(empty or corrupt?)")
+
+        voxel_ml = float(np.prod(img.header.get_zooms()[:3])) / 1000.0
+        brain_ml = float((data > 0).sum()) * voxel_ml
+        if brain_ml > BRAIN_VOLUME_ML[1]:
+            problems.append(
+                f"{modality}: {brain_ml:.0f} mL of foreground, over "
+                f"{BRAIN_VOLUME_ML[1]:.0f} mL - NOT skull-stripped. "
+                f"Run scripts/skullstrip.py")
+        elif brain_ml < BRAIN_VOLUME_ML[0]:
+            problems.append(
+                f"{modality}: only {brain_ml:.0f} mL of foreground, under "
+                f"{BRAIN_VOLUME_ML[0]:.0f} mL - over-stripped or truncated?")
 
     # Co-registration: every modality must share one affine.
     if len(affines) > 1:
@@ -111,8 +129,13 @@ def main() -> int:
             for p in problems:
                 print(f"       {p}")
         else:
+            t1 = subj_dir / f"{subj_dir.name}_T1.nii.gz"
+            img = nib.load(t1)
+            ml = float((np.asarray(img.dataobj) > 0).sum()) * (
+                float(np.prod(img.header.get_zooms()[:3])) / 1000.0)
             print(f"ok   {subj_dir.name}  "
-                  f"{'/'.join(MODALITIES)} @ {EXPECTED_SHAPE}, 1mm, co-registered")
+                  f"{'/'.join(MODALITIES)} @ {EXPECTED_SHAPE}, 1mm, "
+                  f"co-registered, {ml:.0f} mL brain")
 
     print(f"\n{len(dirs) - bad}/{len(dirs)} subject(s) ready for segmentation")
     return 1 if bad else 0

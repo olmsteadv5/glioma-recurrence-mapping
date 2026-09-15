@@ -8,11 +8,6 @@ occupies.
 ./main.py 36 42 51
 ```
 
-In Zed: `ctrl-shift-p` -> `task: spawn` picks from `.zed/tasks.json`
-(run the pipeline, run 36/42/51, show the results table). `report.py` is split
-into `# %%` cells, so Zed's REPL runs it a block at a time against the
-registered `BraTS (YBA venv)` kernel.
-
 Fetches the scans, skull-strips, verifies, segments, scores against reference
 labels where they exist, registers into MNI, intersects with the atlas, and
 opens a 3D view per subject. Every stage runs each time; only the downloads and

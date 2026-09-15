@@ -28,11 +28,11 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-PyCharm picks up .venv on its own. main.py has a shebang pointing at it, so
-./main.py works without activating anything; if you move the project, fix that
-line. Docker needs to be running and you need to be
-in the docker group. The algorithm image is about 30 GB and pulls itself the
-first time you run.
+main.py has a shebang pointing at .venv, so ./main.py works without activating
+anything. If you move the project, fix that line.
+
+Docker needs to be running and you need to be in the docker group. The
+algorithm image is about 30 GB and pulls itself the first time you run.
 
 ## Files
 
@@ -166,8 +166,8 @@ UPENN-GBM-00051_11               356            369
 ```
 
 The mesh is one unnamed object, so these are tract paths, not named bundles like
-the arcuate fasciculus. Named bundles are not in the Yale data at all; the names
-in Ryan's wrapper look like DSI Studio's tractography atlas. Pass
+the arcuate fasciculus. Named bundles are not in the Yale data at all, they
+would have to come from a tractography atlas like DSI Studio's. Pass
 show_tracts=False to view.run to hide the lines.
 
 ## Atlas data

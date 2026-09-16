@@ -21,6 +21,7 @@ SHELL = (168, 153, 132)
 TRACT = (95, 155, 114)
 TISSUE = {1: (242, 193, 78), 2: (63, 167, 214), 3: (228, 87, 46), 4: (142, 125, 190)}
 CROSS = (250, 189, 47)
+LIT = (251, 241, 199)
 _hex = lambda t: "#%02x%02x%02x" % tuple(t)
 PANEL = (40, 40, 40)
 DIMMED = 0.16
@@ -67,7 +68,7 @@ class Scene:
             self.actors["tracts"] = self.plotter.add_mesh(
                 lines, color=_hex(TRACT), line_width=1, opacity=0.55)
 
-        self._picker = None
+        self._picker, self.lit = None, None
         self.plotter.show(auto_close=False)
 
         # nothing is watching this window, so never wait on its vertical blank.
@@ -161,6 +162,20 @@ class Scene:
     def show_parcels(self, on):
         for actor in self.parcel_actors.values():
             actor.visibility = bool(on)
+
+    def spotlight(self, name):
+        # an untouched parcel is not in the scene, so add it only when asked for
+        if name == self.lit:
+            return
+        if self.lit is not None:
+            self.plotter.remove_actor(self.actors.pop("lit"))
+            self.lit = None
+        index = {p["name"]: i for i, p in enumerate(atlas.parcels())}
+        if name not in index:
+            return
+        mesh = atlas.meshes()[index[name]]
+        self.actors["lit"] = self._mesh(mesh.vertices, mesh.faces, _hex(LIT), 1.0)
+        self.lit = name
 
     def pick(self, x, y):
         # ray cast against the parcels only, so the shell cannot intercept

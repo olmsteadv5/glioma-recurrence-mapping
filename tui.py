@@ -11,6 +11,7 @@ import time
 
 from textual import events, on, work
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
 from textual.widgets import Footer, Input, Label, ListItem, ListView, RichLog, Static
 from textual_image._terminal import get_cell_size
@@ -18,6 +19,7 @@ from textual_image.renderable import Image as Renderable
 from textual_image.widget import Image as ImageWidget
 
 import atlas
+import connect
 import function
 import render
 import segment
@@ -46,6 +48,7 @@ ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
                ("top5k_tracts_decimated.obj", "tracts", "3001"),
                ("parcelsynth_activations_functionalterms.csv", "parcelsynth", "334"),
                ("structuralconnectivity_metrics_mean.csv", "connectivity", "696²")]
+VIEWS = [("a", "parcels"), ("b", "functions"), ("c", "connectivity")]
 IDLE = "esc leaves · t returns"
 STAGES = ("fetch", "strip", "segment", "register", "map")
 HELP = [("./main.py <n>...", "the whole pipeline, about 3 min a subject"),
@@ -181,34 +184,26 @@ class Pane(ImageWidget, Renderable=Renderable):
         self.app.schedule_draw()
 
 
-class Rows(Static, can_focus=True):
+class Rows(Static):
     # Click-addressable list; the app decides what a row click means.
 
-    def __init__(self, handler=None, stepper=None, **kwargs):
+    def __init__(self, handler=None, **kwargs):
         super().__init__("", **kwargs)
-        self.handler, self.stepper = handler, stepper
-        self.can_focus = stepper is not None
+        self.handler = handler
 
     def on_click(self, event):
         if self.handler:
-            self.focus()
             self.handler(event.y)
 
-    def on_key(self, event):
-        if self.stepper and event.key in ("up", "down"):
-            self.stepper(-1 if event.key == "up" else 1)
-            event.stop()
-            event.prevent_default()
 
-
-class Viewer(Vertical):
-    # The modality strip is drawn into the bottom border, so its clicks land here.
+class Bordered(VerticalScroll):
+    # A strip is drawn into the bottom border, so its clicks land here.
     MARGIN, SPACING = 3, 2
 
     def on_click(self, event):
         # clicks arrive in outer coordinates, so the bottom border is the last row
         if event.y == self.outer_size.height - 1:
-            self.app.click_modality(event.x)
+            self.app.click_strip(self.id, event.x)
 
 
 class Prompt(Input):
@@ -249,7 +244,7 @@ class Console(App):
     #readout { height: 1fr; border: round #504945; border-title-color: #a89984;
                padding: 0 1; }
     #shell { height: 14; }
-    #shell:focus-within, #inputs:focus-within { border: round #fabd2f; }
+    #shell:focus-within { border: round #fabd2f; }
     #log { height: 1fr; background: #282828; padding: 0 1; }
     #line { height: 1; padding: 0 1; }
     #sigil { width: 2; color: #b8bb26; text-style: bold; }
@@ -280,8 +275,11 @@ class Console(App):
     """
     BINDINGS = [
         ("q", "quit", "quit"), ("v", "view", "3d/slices"), ("s", "space", "native/mni"),
-        ("p", "palette", "colours"), ("f", "listing", "parcels/functions"),
-                ("t", "shell", "prompt"), ("c", "cancel", "cancel run"),
+        ("p", "palette", "colours"), ("t", "shell", "prompt"),
+        ("x", "cancel", "cancel run"),
+        Binding("a", "show_list('parcels')", "parcels", show=False),
+        Binding("b", "show_list('functions')", "functions", show=False),
+        Binding("c", "show_list('connectivity')", "connectivity", show=False),
     ]
 
     def __init__(self):
@@ -295,9 +293,10 @@ class Console(App):
         self.layer_rows = list(LAYERS)
         self.history, self.hpos, self.started = [], 0, 0
         self.stage, self.watching = None, None
-        self.row_text, self.marked = [], None
+        self.row_text, self.marked, self.at_risk = [], None, []
         self.pending, self._spin, self._settle = [0.0, 0.0, 1.0], None, None
-        self.modality_spans = []
+        self.strip_spans = {}
+        self.strip_spans = {}
         self._panel_width = self._list_width = self._layers_width = 0
 
     # ---------------------------------------------------------------- compose
@@ -305,15 +304,15 @@ class Console(App):
     def compose(self) -> ComposeResult:
         with Horizontal(id="top"):
             with VerticalScroll(id="inputs", classes="box"):
-                yield Rows(self.click_subject, self.step_subject, id="stats")
-            with Viewer(id="viewer", classes="box"):
+                yield Rows(self.click_subject, id="stats")
+            with Bordered(id="viewer", classes="box"):
                 yield Canvas(id="canvas")
                 with Grid(id="grid"):
                     yield Pane("axial", id="p-axial", classes="pane")
                     yield Pane("coronal", id="p-coronal", classes="pane")
                     yield Pane("sagittal", id="p-sagittal", classes="pane")
                     yield Static("", id="readout")
-            with Vertical(id="right", classes="box"):
+            with Bordered(id="right", classes="box"):
                 yield Rows(self.click_layer, id="layers")
                 yield Static("", id="listhead")
                 yield ListView(id="parcels")
@@ -329,10 +328,11 @@ class Console(App):
     def on_mount(self):
         self.query_one("#grid").display = False
         self.query_one("#inputs").border_title = "inputs"
-        self.query_one("#inputs").border_subtitle = "click or arrow a subject"
+        self.query_one("#inputs").border_subtitle = "click a subject"
         self.query_one("#shell").border_title = "pipeline"
         self.query_one("#shell").border_subtitle = keyed(IDLE)
         self.query_one("#readout").border_title = "cursor"
+        self.query_one("#right").border_title = "breakdown"
         self.log_write(f"[{DIM}]{len(self.results)} subjects from {RESULTS.name}[/]")
         self.log_write(f"[{FAINT}]./main.py <n> runs everything, or start at a stage: "
                        f"{' '.join(STAGES)}. help lists the rest.[/]")
@@ -520,18 +520,6 @@ class Console(App):
         if chosen and chosen != self.subject:
             self.load_subject(chosen)
 
-    def step_subject(self, delta):
-        # arrow keys through the list, and keep the chosen row on screen
-        if not self.subjects:
-            return
-        at = self.subjects.index(self.subject) if self.subject in self.subjects else 0
-        # step past any whose files have gone rather than stopping dead on them
-        for step in range(at + delta, len(self.subjects) if delta > 0 else -1, delta):
-            if self.load_subject(self.subjects[step]):
-                break
-        line = next((n for n, name in self.subject_rows.items() if name == self.subject), 0)
-        self.query_one("#inputs").scroll_to(y=max(0, line - 3), animate=False)
-
     # ----------------------------------------------------------------- layers
 
     def refresh_layers(self):
@@ -587,6 +575,13 @@ class Console(App):
             rows = d["atlas"]["parcels"]
             if index - 1 < len(rows):
                 self.scene.isolate(rows[index - 1]["parcel"])
+        elif self.listing == "connectivity":
+            if index < len(self.at_risk):
+                # the one losing input, lit up, and the involved parcels it loses
+                self.scene.spotlight(self.at_risk[index]["parcel"])
+                self.scene.isolate(n for n, _, _ in
+                                   connect.partners(self.at_risk[index]["parcel"],
+                                                    d["atlas"], 12))
         else:
             top = d.get("function", [])
             if index < len(top):
@@ -602,26 +597,37 @@ class Console(App):
         self._list_width = listing.size.width
         w = max(listing.size.width - 3, 34)
         panel = self.query_one("#right")
+        chips = self.chips()
+        head = self.query_one("#listhead", Static)
+
         if self.listing == "parcels":
             rows = d["atlas"]["parcels"]
-            self.query_one("#listhead", Static).update(f"parcels involved · {len(rows)}")
-            title = "breakdown · parcels"
-            panel.border_title = self.band(panel, title, len(title), ["f functions"])
-            panel.border_subtitle = "click here or in the 3d"
-            chips = self.chips()
+            head.update(f"parcels involved \u00b7 {len(rows)}")
+            note = "click here or in the 3d"
             self.row_text = [row("  all parcels", str(len(rows)), w)]
             self.row_text += [chips.get(p["parcel"], " ") + " " +
                               row(p["parcel"], f"{bar(p['fraction'])} {p['fraction']:>4.0%}", w - 4)
                               for p in rows]
-        else:
+        elif self.listing == "functions":
             top = d.get("function", [])
-            self.query_one("#listhead", Static).update(f"functions at risk · {len(top)}")
-            title = "breakdown · functions"
-            panel.border_title = self.band(panel, title, len(title), ["f parcels"])
-            panel.border_subtitle = "meta-analytic, not this patient"
+            head.update(f"functions at risk \u00b7 {len(top)}")
+            note = "pooled across studies"
             peak = max((f["score"] for f in top), default=1)
             self.row_text = [row(f["term"], f"{bar(f['score'] / peak)} {f['score']:>5.2f}", w - 2)
                              for f in top]
+        else:
+            self.at_risk = connect.at_risk(d["atlas"])
+            head.update(f"connectivity at risk \u00b7 {len(self.at_risk)}")
+            note = "healthy population mean"
+            peak = max((c["share"] for c in self.at_risk), default=1)
+            self.row_text = [chips.get(c["parcel"], " ") + " " +
+                             row(c["parcel"], f"{bar(c['share'] / peak)} {c['share']:>5.0%}", w - 4)
+                             for c in self.at_risk]
+
+        strip, taken = self.strip("right", VIEWS, self.listing)
+        panel.border_title = self.band(panel, "breakdown", 9, [note])
+        panel.border_subtitle = strip
+        panel.styles.border_subtitle_align = "left"
         for text in self.row_text:
             listing.append(ListItem(Label("  " + text)))
         self.marked = None
@@ -671,6 +677,20 @@ class Console(App):
             lines.append(f"[{FAINT}]parcelsynth terms[/]")
             lines += [f"[{DIM}]{row('  ' + t, f'{bar(v / peak, 8)} {v:>5.2f}', w)}[/]"
                       for t, v in terms]
+        elif self.listing == "connectivity":
+            if not self.at_risk or index >= len(self.at_risk):
+                return
+            c = self.at_risk[index]
+            info = self.parcel_info().get(c["parcel"], {})
+            rows = connect.partners(c["parcel"], d["atlas"])
+            lines = [f"[{FG}]{info.get('long_name', c['parcel'])[:w]}[/]",
+                     f"[{FAINT}]{c['parcel']} \u00b7 {info.get('lobe', '')} \u00b7 not in the tumour[/]",
+                     f"[{DIM}]{row('  connectivity at risk', f"{c['share']:.0%}", w)}[/]", "",
+                     f"[{FAINT}]{row(f'{len(rows)} parcels', 'involved    of loss', w)}[/]"]
+            lines += [f"[{DIM}]{row('  ' + name, f'{fraction:>8.0%}    {share:>6.1%}', w)}[/]"
+                      for name, fraction, share in rows]
+            self.query_one("#detailtext", Static).update("\n".join(lines))
+            return
         else:
             top = d.get("function", [])
             if not top or index >= len(top):
@@ -697,14 +717,20 @@ class Console(App):
 
     def seek_parcel(self, index):
         # put the crosshair in the middle of it, which only mni can work out
-        if self.listing != "parcels" or index == 0:
-            return
-        rows = self.results[self.subject]["atlas"]["parcels"]
-        if index - 1 >= len(rows):
+        if self.listing == "parcels":
+            rows = self.results[self.subject]["atlas"]["parcels"]
+            if index == 0 or index - 1 >= len(rows):
+                return
+            wanted = rows[index - 1]["parcel"]
+        elif self.listing == "connectivity":
+            if index >= len(self.at_risk):
+                return
+            wanted = self.at_risk[index]["parcel"]
+        else:
             return
         if self.space != "mni":
             self.action_space()
-        if self.slices.centre(rows[index - 1]["parcel"]):
+        if self.slices.centre(wanted):
             self.draw()
 
 
@@ -733,12 +759,11 @@ class Console(App):
             w, h = max(size.width * cell.width, 64), max(size.height * cell.height, 64)
             self.scene.resize(w, h)
             widget.image = self.scene.image()
-            title = f"3d · {self.palette} colours"
-            viewer.border_title = self.band(viewer, title, len(title), ["v slices"])
+            viewer.border_title = f"3d · {self.palette} colours"
             viewer.styles.border_subtitle_align = "right"
             other = "yba" if self.palette == "contrast" else "contrast"
             viewer.border_subtitle = keyed(
-                f"drag rotate · scroll zoom · p {other} colours")
+                f"v slices · p {other} colours · drag rotate · scroll zoom")
         else:
             for which in render.Slices.PLANES:
                 pane = self.query_one(f"#p-{which}", Pane)
@@ -748,9 +773,10 @@ class Console(App):
             self.refresh_readout()
             r = self.slices.readout()
             who = "" if self.watching is None else f" · {self.watching[10:]}"
-            title = f"slices · {r['space']}{who}"
-            viewer.border_title = self.band(viewer, title, len(title), ["v 3d"])
-            strip, taken = self.modality_strip()
+            viewer.border_title = f"slices · {r['space']}{who}"
+            strip, taken = self.strip(
+                "viewer", [(str(i), m) for i, m in enumerate(MODALITIES, start=1)],
+                r["modality"], absent=[m for m in MODALITIES if m not in r["modalities"]])
             viewer.styles.border_subtitle_align = "left"
             viewer.border_subtitle = self.band(viewer, strip, taken, self.slice_hints())
 
@@ -787,27 +813,33 @@ class Console(App):
     def parcel_info():
         return {p["name"]: p for p in atlas.parcels()}
 
-    def modality_strip(self):
-        # greyed out means the current space does not carry it, mni is T1 only
-        r = self.slices.readout()
-        out, x = [], Viewer.MARGIN
-        self.modality_spans = []
-        for i, name in enumerate(MODALITIES, start=1):
+    def strip(self, which, entries, chosen, absent=()):
+        # key bright when it is the one you are on, greyed when it is not offered
+        out, x, spans = [], Bordered.MARGIN, []
+        for key, name in entries:
             if out:
-                out.append(" " * Viewer.SPACING)
-                x += Viewer.SPACING
-            # only the number carries the state, the way the footer keys do
-            label = f"{i} {name}"
-            here = name in r["modalities"]
-            key = FG if name == r["modality"] else FAINT if here else GONE
-            out.append(f"[{key}]{i}[/] [{DIM if here else GONE}]{name}[/]")
-            self.modality_spans.append((x, x + len(label)))
-            x += len(label)
-        return "".join(out), x - Viewer.MARGIN
+                out.append(" " * Bordered.SPACING)
+                x += Bordered.SPACING
+            here = name not in absent
+            tone = FG if name == chosen else FAINT if here else GONE
+            out.append(f"[{tone}]{key}[/] [{DIM if here else GONE}]{name}[/]")
+            spans.append((x, x + len(key) + 1 + len(name), name))
+            x += len(key) + 1 + len(name)
+        self.strip_spans[which] = spans
+        return "".join(out), x - Bordered.MARGIN
+
+    def click_strip(self, which, x):
+        for start, end, name in self.strip_spans.get(which, []):
+            if start <= x < end:
+                if which == "viewer":
+                    self.pick_modality(name)
+                else:
+                    self.show_list(name)
+                return
 
     def slice_hints(self):
         # each key names what it gives you, not what you are looking at
-        return [f"s {'native' if self.space == 'mni' else 'mni'}"]
+        return [f"v 3d · s {'native' if self.space == 'mni' else 'mni'}"]
 
     def band(self, widget, left, taken, choices):
         # one border line, a label at each end, the line itself drawn between
@@ -817,15 +849,10 @@ class Console(App):
                 return left + f" [{DIM}]{'─' * (room - len(text) - 2)}[/] {keyed(text)}"
         return left
 
-    def click_modality(self, x):
-        if self.mode != "slices" or not self.slices:
-            return
-        here = self.slices.readout()["modalities"]
-        for slot, (start, end) in enumerate(self.modality_spans):
-            if start <= x < end and MODALITIES[slot] in here:
-                self.slices.modality = MODALITIES[slot]
-                self.draw()
-                return
+    def pick_modality(self, name):
+        if self.mode == "slices" and name in self.slices.readout()["modalities"]:
+            self.slices.modality = name
+            self.draw()
 
     def pick_parcel(self, column, line):
         # a parcel clicked in the 3d becomes the selected row in the list
@@ -887,7 +914,7 @@ class Console(App):
 
     # ---------------------------------------------------------------- actions
 
-    VIEW_ACTIONS = ("view", "space", "palette", "listing")
+    VIEW_ACTIONS = ("view", "space", "palette", "show_list")
 
     def check_action(self, action, parameters):
         # grey a key out rather than let it look like it did nothing
@@ -899,6 +926,8 @@ class Console(App):
             return self.mode == "slices" or None
         if action == "cancel":
             return self.proc is not None or None
+        if action == "show_list":
+            return bool(self.scene)
         return True
 
     def action_view(self):
@@ -920,12 +949,18 @@ class Console(App):
         self.refresh_list()
         self.draw()
 
-    def action_listing(self):
-        self.listing = "functions" if self.listing == "parcels" else "parcels"
+    def action_show_list(self, which):
+        if which == self.listing:
+            return
+        self.listing = which
         if self.scene:
             self.scene.unisolate()
+            self.scene.spotlight(None)
         self.refresh_list()
         self.draw()
+
+    def show_list(self, which):
+        self.action_show_list(which)
 
     def action_shell(self):
         self.set_focus(self.query_one("#cmd"))
@@ -1052,7 +1087,7 @@ class Console(App):
     def tick(self):
         done = STAGES.index(self.stage) + 1 if self.stage in STAGES else 0
         where = f"{self.stage} {bar(done / len(STAGES), 5)} {done}/{len(STAGES)}"
-        self.busy(f"{where} · {spell(round(time.time() - self.started))} · c cancels")
+        self.busy(f"{where} · {spell(round(time.time() - self.started))} · x cancels")
 
     def preview(self, subject):
         # the scans exist from here on, so look at the case instead of a stale one

@@ -121,18 +121,19 @@ The cursor panel gives every sequence's intensity at that voxel, not just the
 one on screen, and in MNI it names the parcel under the crosshair.
 
 ```
-v  3d / slices          f  parcels / functions  t  focus the prompt
-s  native / mni         1-4  modality           c  cancel the run
-p  parcel colouring                             q  quit
+v  3d / slices          1-4  modality           t  focus the prompt
+s  native / mni         a b c  breakdown view    x  cancel the run
+p  parcel colouring                              q  quit
 ```
 
 Half of those only make sense in one of the two viewer modes. The ones that do
 not apply go grey in the footer rather than doing nothing silently.
 
-Each panel carries its own labels. The key that switches what the panel shows
-sits top right, the rest of the controls bottom right, and both are labelled
-with what they give you rather than with what you are already looking at, so in
-native space `s` reads `s mni`.
+Each panel carries a strip along its bottom left of the things it can show —
+the four modalities in the viewer, the three breakdown views — with the key for
+each one and the current one bright. The rest of the controls sit bottom right,
+labelled with what they give you rather than with what you are looking at, so
+in native space `s` reads `s mni`.
 
 Each parcel row carries a chip in that parcel's own colour, so a shape you can
 see in the 3D can be found in the list without clicking through it. The chips
@@ -142,7 +143,8 @@ The layer checkboxes drive both views: unticking `SNFH oedema` takes it out of
 the 3D and out of the slice overlay, so there is no separate overlay key.
 
 The breakdown lists the layers with their volumes, clickable to show and hide,
-then either the involved parcels or the functions at risk. Whatever is selected
+then one of three views: the involved parcels, the functions at risk, or the
+connectivity at risk. Whatever is selected
 lights up in the 3D and every other parcel drops back, so a row and a shape in
 the viewer are the same thing. The `all parcels` row at the top of the list is
 the way back: pick it and every involved parcel returns to full brightness.
@@ -223,6 +225,30 @@ These are **meta-analytic associations pooled across published studies**, not
 this patient's functional anatomy. They suggest what to look into. They do not
 replace fMRI mapping or awake craniotomy, and they must not be used to set a
 margin.
+
+## Connectivity at risk
+
+`connect.py` reads the Yale structural connectivity table. It is an edge list,
+not a matrix: 241,860 rows, one per parcel pair, with sixteen metrics each. It
+folds `SC_Count` into a 696x696 array, cached, and then for each parcel the
+tumour has **not** touched, sums the connections it has into parcels the tumour
+**has**, weighted by how much of each of those is gone.
+
+That answers a question the overlap cannot: which intact regions are losing
+their input. Selecting one lights it in the 3D and dims everything except the
+involved parcels it connects to, and the panel underneath lists those with how
+much of the loss each accounts for.
+
+```
+L_SM2_B   Left supramarginal gyrus 2 B, parietal, not in the tumour
+          25% of its connectivity at risk
+          L_SM1_D  52% involved, 18.8% of the loss
+          L_SM1_E  71% involved, 18.7% of the loss
+```
+
+This is a **healthy population mean**, the same caveat as Parcelsynth. A tumour
+displaces tracts, so this patient's real connectivity differs. It says where to
+look, not what has happened.
 
 ## Where things end up
 

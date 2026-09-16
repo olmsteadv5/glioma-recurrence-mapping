@@ -137,12 +137,12 @@ class Rows(Static):
 
 class Viewer(Vertical):
     # The modality strip is drawn into the bottom border, so its clicks land here.
-    SLOT, MARGIN = 8, 3
+    MARGIN, SPACING = 3, 2
 
     def on_click(self, event):
         # clicks arrive in outer coordinates, so the bottom border is the last row
         if event.y == self.outer_size.height - 1:
-            self.app.click_modality((event.x - self.MARGIN) // self.SLOT)
+            self.app.click_modality(event.x)
 
 
 class Prompt(Input):
@@ -226,6 +226,7 @@ class Console(App):
         self.history, self.hpos, self.started = [], 0, 0
         self.row_text, self.marked = [], None
         self.pending, self._spin, self._settle = [0.0, 0.0, 1.0], None, None
+        self.modality_spans = []
         self._panel_width = self._list_width = 0
 
     # ---------------------------------------------------------------- compose
@@ -508,29 +509,35 @@ class Console(App):
     def modality_strip(self):
         # greyed out means the current space does not carry it, mni is T1 only
         r = self.slices.readout()
-        out, width = [], 0
+        out, x = [], Viewer.MARGIN
+        self.modality_spans = []
         for i, name in enumerate(MODALITIES, start=1):
-            style = FG if name == r["modality"] else DIM if name in r["modalities"] else GONE
+            if out:
+                out.append(" " * Viewer.SPACING)
+                x += Viewer.SPACING
             label = f"{i} {name}"
-            label = label if i == len(MODALITIES) else label.ljust(Viewer.SLOT)
+            style = FG if name == r["modality"] else DIM if name in r["modalities"] else GONE
             out.append(f"[{style}]{label}[/]")
-            width += len(label)
-        return "".join(out), width
+            self.modality_spans.append((x, x + len(label)))
+            x += len(label)
+        return "".join(out), x - Viewer.MARGIN
 
     def hint(self, room, choices):
-        # the widest hint that still leaves a gap after the strip, or nothing
+        # carry the border line across the gap, so the two groups stay separate
         for text in choices:
-            if len(text) + 2 <= room:
-                return " " * (room - len(text)) + text
+            if len(text) + 5 <= room:
+                return f" [{DIM}]{'─' * (room - len(text) - 2)}[/] {text}"
         return ""
 
-    def click_modality(self, slot):
-        if not (self.mode == "slices" and self.slices and 0 <= slot < len(MODALITIES)):
+    def click_modality(self, x):
+        if self.mode != "slices" or not self.slices:
             return
-        name = MODALITIES[slot]
-        if name in self.slices.readout()["modalities"]:
-            self.slices.modality = name
-            self.draw()
+        here = self.slices.readout()["modalities"]
+        for slot, (start, end) in enumerate(self.modality_spans):
+            if start <= x < end and MODALITIES[slot] in here:
+                self.slices.modality = MODALITIES[slot]
+                self.draw()
+                return
 
     def pick_parcel(self, column, line):
         # a parcel clicked in the 3d becomes the selected row in the list

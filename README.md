@@ -176,8 +176,10 @@ is a real parent: unticking it takes the parts with it, and it draws its own
 combined shape only when none of the parts is on, so the two can never wash
 each other out.
 
-For a patient with two timepoints, a rule at the bottom of the layers divides
-off three more: what both scans have in cream, what is new in the later one in
+A rule separates the tumour and its margin from the tracts and the brain
+surface, which are context rather than parts of it.
+
+For a patient with two timepoints, a second rule divides off three more: what both scans have in cream, what is new in the later one in
 red, and what has gone since the first in green. They draw the same tissue the
 tumour layers do, so the two groups are exclusive: ticking one of these unticks
 the tumour, and ticking the tumour unticks these. They are computed in MNI, the only frame the two

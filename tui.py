@@ -47,9 +47,10 @@ LAYERS = [("T:margin", "margin 2 cm", "#b16286", 0),
           ("T:ET", "ET enhancing", TISSUE["ET"], 1),
           ("T:NETC", "NETC necrosis", TISSUE["NETC"], 1),
           ("T:RC", "RC cavity", TISSUE["RC"], 1),
+          ("--a", "", "", 0),
           ("tracts", "tracts crossing", "#689d6a", 0),
           ("shell", "brain surface", "#a89984", 0),
-          ("--", "", "", 0),
+          ("--b", "", "", 0),
           ("C:both", "both timepoints", "#ebdbb2", 0),
           ("C:new", "new in the later", "#fb4934", 0),
           ("C:gone", "gone since the first", "#8ec07c", 0)]
@@ -589,9 +590,9 @@ class Console(App):
         self.layer_rows = [r for r in LAYERS
                            if (not r[0].startswith("T:") or r[0] in ("T:WT", "T:margin")
                                or r[0][2:] in volumes)
-                           and (pair or not (r[0].startswith("C:") or r[0] == "--"))]
+                           and (pair or not (r[0].startswith("C:") or r[0] == "--b"))]
         for key, name, color, deep in self.layer_rows:
-            if key == "--":
+            if key.startswith("--"):
                 out.append(f"[{FAINT}]{'\u2500' * (w + 4)}[/]")
                 continue
             on = key not in self.hidden_layers
@@ -635,7 +636,7 @@ class Console(App):
         parts = [k for k in PARTS
                  if k not in self.hidden_layers and k in self.scene.actors]
         for key, *_ in LAYERS:
-            if key == "--":
+            if key.startswith("--"):
                 continue
             on = key not in self.hidden_layers
             # the combined shape stands in for the parts when none of them is on
@@ -649,7 +650,7 @@ class Console(App):
         if not (0 <= row_index < len(self.layer_rows) and self.scene):
             return
         key = self.layer_rows[row_index][0]
-        if key == "--":
+        if key.startswith("--"):
             return
         tumour = {"T:WT", *PARTS}
         change = {k for k, *_ in LAYERS if k.startswith("C:")}

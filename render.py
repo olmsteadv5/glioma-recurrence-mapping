@@ -357,9 +357,9 @@ class Chart:
     def __init__(self, subject, overlap):
         import graph
         self.subject = subject
-        (self.nodes, self.link, to_tumor,
+        (self.nodes, self.link, self.far,
          self.inside, self.spokes) = graph.build(subject, overlap)
-        self.points = graph.layout(len(self.nodes), self.link, to_tumor)
+        self.points = graph.layout(len(self.nodes), self.link, self.far)
         info = atlas.parcels()
         self.names = [p["name"] for p in info]
         self.lobes = [(info[n]["hemisphere"], info[n]["lobe"]) for n in self.nodes]
@@ -384,12 +384,23 @@ class Chart:
             "plain": sum(len(e[4]) for e in self.link if not e[5]),
             "via": sum(len(e[4]) for e in self.link if e[5]),
             "spoke": sum(len(r) for _, _, r in self.spokes),
-            "bow": self.strands - bare, "bare": bare}
+            "bow": self.strands - bare, "bare": bare,
+            # radial draws one line per relationship, not one per tract
+            "plain_n": sum(1 for e in self.link if not e[5]),
+            "via_n": sum(1 for e in self.link if e[5]),
+            "spoke_n": len(self.spokes)}
+
+        # one wedge per region, so the ring order is anatomy and not the seed
+        self.around = sorted(range(len(self.nodes)),
+                             key=lambda n: (self.lobes[n], self.names[self.nodes[n]]))
+        self.slot = {n: k for k, n in enumerate(self.around)}
+        self.plan = "spread"
 
         self.lit, self.guest, self.zoom, self.pan = None, None, 1.0, np.zeros(2)
         self._key_was, self._key_art = None, None
         self.where = {}
         self.screen, self.scale = np.zeros((0, 2)), 1.0
+        self.middle, self.inner = np.zeros(2), 0.0
 
     def name(self, at):
         if at is None or at >= len(self.nodes):
@@ -413,7 +424,7 @@ class Chart:
             return
         n, link, far = made
         info = atlas.parcels()[n]
-        self.guest = {"name": parcel, "link": link,
+        self.guest = {"name": parcel, "link": link, "far": far,
                       "lobe": (info["hemisphere"], info["lobe"]),
                       "point": graph.settle(self.points, link, far),
                       "screen": np.zeros(2)}
@@ -425,7 +436,45 @@ class Chart:
     def home(self):
         self.zoom, self.pan = 1.0, np.zeros(2)
 
+    def swap(self):
+        self.plan = "spread" if self.plan == "radial" else "radial"
+        self.home()
+        return self.plan
+
+    def _place_radial(self, wide, high):
+        # angle is the region going clockwise, radius is the real distance from
+        # the mass. every spoke is then radial and none of them can cross
+        pad = 78
+        self.middle = np.array([wide, high]) / 2 + self.pan
+        span = max(min(wide, high) / 2 - pad, 40) * self.zoom
+        self.inner = span * 0.2
+        self.reach = max(float(np.max(self.far)) if len(self.far) else 1.0, 1.0)
+        # a square root radius, because a couple of far parcels would otherwise
+        # squash the rest into one band. the rings carry the millimetres
+        self.scale = span - self.inner
+        self.outer = span
+        step = 2 * np.pi / max(len(self.nodes), 1)
+
+        turn = np.array([self.slot[n] * step - np.pi / 2 for n in range(len(self.nodes))])
+        out = self._ring_at(np.asarray(self.far))
+        self.screen = np.zeros((len(self.nodes) + 1, 2))
+        self.screen[:-1] = self.middle + out[:, None] * np.stack(
+            [np.cos(turn), np.sin(turn)], axis=1)
+        self.screen[-1] = self.middle
+        if self.guest is not None:
+            # a guest has no slot of its own, so it sits among what it links to
+            near = [turn[k] for k, *_ in self.guest["link"]] or [0.0]
+            mean = np.arctan2(np.mean(np.sin(near)), np.mean(np.cos(near)))
+            out = float(self._ring_at(np.array([self.guest["far"]]))[0])
+            self.guest["screen"] = self.middle + out * np.array(
+                [np.cos(mean), np.sin(mean)])
+
+    def _ring_at(self, mm):
+        return self.inner + np.sqrt(np.clip(mm, 0, None) / self.reach) * self.scale
+
     def _place(self, wide, high):
+        if self.plan == "radial":
+            return self._place_radial(wide, high)
         pad = 30
         low, span = self.points.min(0), np.ptp(self.points, axis=0)
         span[span == 0] = 1
@@ -446,24 +495,40 @@ class Chart:
         self._place(wide, high)
         near = self._neighbors()
 
-        self._blobs(canvas, wide, high)
+        radial = self.plan == "radial"
+        if radial:
+            self._wedges(canvas, wide, high)
+            self._rings(pen)
+        else:
+            self._blobs(canvas, wide, high)
         # a line stays lit only if the picked node is one of its two ends. the
         # neighbors themselves stay lit, but the lines between them do not,
         # which used to read as the picked parcel reaching further than it does
         free = near is None
         for at, count, ratios in self.spokes:
             own = at == self.lit
-            self._strands(pen, self.screen[at], self.screen[-1], ratios,
-                          self._shade(SPOKE, free or own), 3 if own else 2)
+            tone = self._shade(SPOKE, free or own)
+            if radial:
+                pen.line([tuple(self.screen[at]), tuple(self.screen[-1])],
+                         fill=tone, width=3 if own else 1 + int(min(count / 40, 2)))
+            else:
+                self._strands(pen, self.screen[at], self.screen[-1], ratios,
+                              tone, 3 if own else 2)
         for a, b, weight, _, ratios, crosses in self.link:
             own = self.lit in (a, b)
-            self._strands(pen, self.screen[a], self.screen[b], ratios,
-                          self._shade(self._tone(weight, crosses), free or own),
-                          3 if own else 2)
+            tone = self._shade(self._tone(weight, crosses), free or own)
+            if radial:
+                self._chord(pen, self.screen[a], self.screen[b], tone, 3 if own else 2)
+            else:
+                self._strands(pen, self.screen[a], self.screen[b], ratios, tone,
+                              3 if own else 2)
         if self.guest is not None:
             for k, weight, _, ratios, crosses in self.guest["link"]:
-                self._strands(pen, self.screen[k], self.guest["screen"], ratios,
-                              self._tone(weight, crosses), 3)
+                tone = self._tone(weight, crosses)
+                if radial:
+                    self._chord(pen, self.screen[k], self.guest["screen"], tone, 3)
+                else:
+                    self._strands(pen, self.screen[k], self.guest["screen"], ratios, tone, 3)
         self._nodes(pen, near)
         if self.guest is not None:
             self._guest(pen)
@@ -484,6 +549,45 @@ class Chart:
                     fill=NODE_OUT, outline=LIT, width=3)
         pen.text((point[0], point[1] - 14), self.guest["name"], fill=LIT,
                  font=_font(11), anchor="ms")
+
+    def _wedges(self, canvas, wide, high):
+        # a region is a slice of the ring, so it is contiguous by construction
+        pen = ImageDraw.Draw(canvas)
+        step = 360.0 / max(len(self.nodes), 1)
+        rim = self.outer + 26
+        box = [self.middle[0] - rim, self.middle[1] - rim,
+               self.middle[0] + rim, self.middle[1] + rim]
+        self.where = {}
+        for lobe in sorted(set(self.lobes)):
+            slots = [self.slot[n] for n in range(len(self.nodes)) if self.lobes[n] == lobe]
+            first, last = min(slots) * step - 90, max(slots) * step - 90
+            pen.pieslice(box, first - step * 0.5, last + step * 0.5, fill=_ground(*lobe))
+            self.where[lobe] = None
+        hub = self.inner * 0.62
+        pen.ellipse([self.middle[0] - hub, self.middle[1] - hub,
+                     self.middle[0] + hub, self.middle[1] + hub], fill=PANEL)
+
+    def _rings(self, pen):
+        # the radius is millimetres, so say so on the ring rather than in a bar
+        font = _font(11)
+        for mm in (10, 20, 40, 60, 80, 100, 120, 160):
+            reach = float(self._ring_at(np.array([mm]))[0])
+            if mm > self.reach:
+                break
+            pen.ellipse([self.middle[0] - reach, self.middle[1] - reach,
+                         self.middle[0] + reach, self.middle[1] + reach],
+                        outline=KEY_EDGE)
+            pen.text((self.middle[0] + 5, self.middle[1] - reach), f"{mm} mm",
+                     fill=FAINT_INK, font=font, anchor="lm")
+
+    def _chord(self, pen, start, stop, color, width=2):
+        # pulled in toward the middle, so a link reads as an arc between two
+        # points on the ring rather than a line cutting across everything
+        pull = self.middle + (start + stop - 2 * self.middle) * 0.12
+        steps = np.linspace(0, 1, 24)[:, None]
+        curve = ((1 - steps) ** 2 * start + 2 * (1 - steps) * steps * pull
+                 + steps ** 2 * stop)
+        pen.line([tuple(point) for point in curve], fill=color, width=width)
 
     def _neighbors(self):
         # while a node is picked, its own edges stay lit and the rest fall back
@@ -567,13 +671,15 @@ class Chart:
         rows = sorted(self.where)
         tall = 262 + 14 * len(rows)
         if wide < 580 or high < tall + 40:
-            self._scale_bar(pen, wide, high, font)
+            if self.plan != "radial":
+                self._scale_bar(pen, wide, high, font)
             return
-        if self._key_was != (tuple(rows), tall):
-            self._key_was = (tuple(rows), tall)
+        if self._key_was != (tuple(rows), tall, self.plan):
+            self._key_was = (tuple(rows), tall, self.plan)
             self._key_art = self._key_tile(tuple(rows), tall)
         canvas.paste(self._key_art, (14, 6))
-        self._scale_bar(pen, wide, high, font)
+        if self.plan != "radial":
+            self._scale_bar(pen, wide, high, font)
 
     def _key_tile(self, rows, tall):
         # nothing in it moves while the chart is panned, so draw it once
@@ -606,6 +712,8 @@ class Chart:
         pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=PANEL, outline=NODE_IN)
         y = line(y, "overlapped, with nothing linking to it", count["loose"]) + 6
 
+        if self.plan == "radial":
+            y = line(y, "ring: how far it is from the mass") + 6
         pen.text((x, y), "volume in the tumor", fill=INK, font=small, anchor="lm")
         y += 19
         step = x + 7
@@ -618,17 +726,22 @@ class Chart:
         pen.text((step - 8, y + 16), "mL", fill=FAINT_INK, font=small, anchor="lm")
         y += 33
 
-        pen.text((x, y), "links", fill=INK, font=small, anchor="lm")
+        # radial draws one line per pair, spread one per tract, so the column
+        # counts what is actually on screen rather than a number from elsewhere
+        radial = self.plan == "radial"
+        pen.text((x, y), "links" if radial else "links, one per tract",
+                 fill=INK, font=small, anchor="lm")
         y += 17
-        for color, text, tally in (
-                (self._tone(0.5, False), "parcel to parcel", count["plain"]),
-                (self._tone(0.5, True), "parcel to parcel, through the mass", count["via"]),
-                (SPOKE, "parcel to the mass", count["spoke"])):
+        for color, text, key in ((self._tone(0.5, False), "parcel to parcel", "plain"),
+                                 (self._tone(0.5, True),
+                                  "parcel to parcel, through the mass", "via"),
+                                 (SPOKE, "parcel to the mass", "spoke")):
             pen.line([(x, y), (x + 14, y)], fill=color, width=2)
-            y = line(y, text, tally)
+            y = line(y, text, count[key + "_n" if radial else key])
         y += 9
 
-        pen.text((x, y), "regions", fill=INK, font=small, anchor="lm")
+        pen.text((x, y), "regions, clockwise from the top" if radial else "regions",
+                 fill=INK, font=small, anchor="lm")
         y += 17
         for lobe in rows:
             pen.rectangle([x + 1, y - 5, x + 11, y + 5],

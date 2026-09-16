@@ -333,7 +333,7 @@ class Console(App):
     FooterKey.-disabled .footer-key--description { color: #504945; }
     """
     BINDINGS = [
-        ("q", "quit", "quit"), ("v", "view", "3d/slices"), ("s", "space", "native/mni"),
+        ("q", "quit", "quit"), ("v", "view", "3d/slices"), ("s", "space", "space/layout"),
         ("p", "palette", "colors"), ("t", "shell", "prompt"),
         ("x", "cancel", "cancel run"),
         Binding("a", "show_list('parcels')", "parcels", show=False),
@@ -968,7 +968,9 @@ class Console(App):
                 (max(size.width * cell.width, 64), max(size.height * cell.height, 64)))
             viewer.styles.border_subtitle_align = "right"
             viewer.border_title = "graph"
-            viewer.border_subtitle = keyed("v 3d \u00b7 click the mass to reset")
+            other = "spread" if self.chart.plan == "radial" else "radial"
+            viewer.border_subtitle = keyed(
+                f"v 3d \u00b7 s {other} \u00b7 click the mass to reset")
         else:
             for which in render.Slices.PLANES:
                 pane = self.query_one(f"#p-{which}", Pane)
@@ -1203,7 +1205,7 @@ class Console(App):
             # the slices only carry parcels in mni, where the colors mean something
             return (self.mode == "3d" or (self.mode == "slices" and self.space == "mni")) or None
         if action == "space":
-            return self.mode == "slices" or None
+            return self.mode in ("slices", "graph") or None
         if action == "cancel":
             return self.proc is not None or None
         if action == "show_list":
@@ -1221,6 +1223,13 @@ class Console(App):
         self.call_after_refresh(self.draw)
 
     def action_space(self):
+        # the graph has two arrangements of the same data, the way the slices
+        # have two spaces, so the same key swaps whichever one is showing
+        if self.mode == "graph":
+            if self.chart is not None:
+                self.chart.swap()
+                self.draw()
+            return
         self.space = "mni" if self.space == "native" else "native"
         self.slices.load(self.space)
         self.sync_overlay()

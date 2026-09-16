@@ -135,6 +135,16 @@ the mass. For subject 36 that is 183, 258 and 595 arcs. Picking a node dims
 everything else and keeps only the lines that touch it; the lines between its
 neighbors dim too, since the parcel does not reach along them.
 
+`s` swaps the arrangement, the way it swaps space in the slices. **Spread** is
+the one above. **Radial** puts the mass in the middle, the angle around the ring
+is the region going clockwise, and the radius is how far the parcel is from the
+mass, on a square root scale with the rings labeled in millimeters. Every spoke
+is then radial, so none of them can cross, which is 57% of the lines on a
+subject like 36. Links become one bundled chord per pair rather than one arc per
+tract, so the counts in the key follow the arrangement: 259 chords in radial
+against 1036 arcs in spread. The bow means nothing there and is not drawn, and
+nor is the scale bar, because the radius is not a straight gap.
+
 Zoom past about twice and every node is labeled; below that only the picked
 node and what it connects to. The bar at the bottom is 50 mm, which means
 something because the gaps are real distances.

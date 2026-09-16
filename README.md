@@ -134,9 +134,9 @@ the viewer are the same thing. It works both ways: click a parcel in the 3D and
 its row is selected, drag and it rotates instead.
 
 WT, TC and ET are unions of the tissue classes, not classes themselves, which
-is why none of their volumes matches a single layer. The blocks beside each one
-say which classes it contains, in the same colours the layer list uses, so WT
-carries all three and ET only its own.
+is why none of their volumes matches a single layer. The inputs panel spells
+out what each one contains and leaves them uncoloured, since the three colours
+belong to the classes in the breakdown.
 
 For a parcel the panel underneath gives its anatomy and its own Parcelsynth
 terms. For a function it gives the parcels that produced the score, each with

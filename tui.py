@@ -19,8 +19,8 @@ from textual_image.widget import Image as ImageWidget
 
 import function
 import render
-from paths import (ATLAS_INPUT, MODALITIES, REGIONS, RESULTS, ROOT, stripped_dir,
-                   subject_id)
+from paths import (ATLAS_INPUT, LABELS, MODALITIES, REGIONS, RESULTS, ROOT,
+                   stripped_dir, subject_id)
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\r")
 
@@ -33,9 +33,8 @@ LAYERS = [("T:NETC", "NETC necrosis", "#f2c14e"), ("T:SNFH", "SNFH oedema", "#3f
           ("T:ET", "ET enhancing", "#e4572e"), ("tracts", "tracts crossing", "#689d6a"),
           ("shell", "brain surface", "#a89984"),
           ("parcels", "involved parcels", "#d3869b")]
-# WT, TC and ET are nested unions of the tissue classes, not classes themselves,
-# so each one gets a block per class it contains rather than a colour of its own
-TISSUE = {1: "#f2c14e", 2: "#3fa7d6", 3: "#e4572e"}
+# WT, TC and ET are unions of the tissue classes, so they are deliberately left
+# uncoloured: any class colour on them reads as "this row is that tissue"
 ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
                ("YBA_696.glb", "meshes", "glb"),
                ("top5k_tracts_decimated.obj", "tracts", "3001"),
@@ -335,12 +334,12 @@ class Console(App):
 
         d = self.results[self.subject]
         r = d["regions_ml"]
-        out.append(f"[{DIM}]tumour[/]")
+        out.append(f"[{DIM}]tumour regions[/]")
         for name in ("WT", "TC", "ET"):
-            blocks = "".join(f"[{TISSUE[v]}]\u2588[/]" if v in REGIONS[name] else " "
-                             for v in sorted(TISSUE))
-            out.append(f"[{DIM}]  {name}[/] {blocks}"
-                       f"[{DIM}]{f'{r[name]} mL':>{w - 8}}[/]")
+            made = ("" if len(REGIONS[name]) == 1
+                    else " " + "+".join(LABELS[v] for v in REGIONS[name]))
+            out.append(f"[{FG}]  {name}[/][{FAINT}]{made}[/]"
+                       f"[{DIM}]{f'{r[name]} mL':>{w - 4 - len(made)}}[/]")
         in_parcels = f"{d['atlas']['in_parcels_ml']} mL"
         out.append(f"[{FAINT}]{row('  in parcels', in_parcels, w)}[/]")
         dice = f"{d['dice']['WT']:.2f}" if d.get("dice") else "no reference"

@@ -27,8 +27,29 @@ the parcel overlap, and opens a browser view for each one.
 About 3 minutes a subject on CPU. The first run is a lot slower because it
 pulls a 30 GB Docker image and 60 MB of atlas data, both of which are kept.
 
-Everything else reruns every time, so if you only want to look at a subject you
-have already done, don't rerun the pipeline. Just open the view:
+The stages run in order and each one needs the one before it, so you restart at
+a stage rather than picking stages out of the middle:
+
+```bash
+./main.py 36 --from register
+```
+
+| `--from`   | what runs                        | roughly |
+|------------|----------------------------------|---------|
+| `fetch`    | everything, the default          | 3 min   |
+| `strip`    | SynthStrip onwards               | 2 min   |
+| `segment`  | BraTS onwards                    | 2 min   |
+| `register` | greedy and the atlas work        | 40 s    |
+| `map`      | parcel overlap and function only | 3 s     |
+
+`--from map` is the one to reach for after changing anything in `atlas.py` or
+`function.py`, since it reuses the segmentation and the warp.
+
+It says what is missing if you start too late, rather than failing part way
+through. `--no-view` skips the browser window at the end.
+
+To look at a subject you have already done, don't rerun anything, just open the
+view:
 
 ```bash
 ./view.py 36
@@ -66,12 +87,22 @@ enter. Up and down walk the history, escape gives the keyboard back. It only
 knows about this project, it is not a shell:
 
 ```
-./main.py 36 42    segment and map those subjects
+./main.py 36 42    the whole pipeline for those subjects
+fetch 36           \
+strip 36            |  restart at that stage and run everything after it,
+segment 36          |  same as ./main.py 36 --from <stage>
+register 36         |
+map 36             /
+show 36            load a subject into the viewer
+browser 36         that subject in a separate browser window
 cancel             stop the running job
-browser [n]        open the 3D view in a separate browser window
 clear              clear the log
 help               list the commands
 ```
+
+`map 36` is the quick one, a few seconds, and it is what you want after
+changing the atlas or function code. It runs with `--no-view`, since the viewer
+is already sitting next to the prompt.
 
 The viewer is either the 3D atlas, where dragging rotates and the scroll wheel
 zooms, or an ITK-SNAP style 2x2 of axial, coronal and sagittal with a cursor

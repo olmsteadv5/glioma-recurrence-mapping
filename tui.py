@@ -37,9 +37,16 @@ ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
                ("parcelsynth_activations_functionalterms.csv", "parcelsynth", "334"),
                ("structuralconnectivity_metrics_mean.csv", "connectivity", "696²")]
 IDLE = "esc leaves · t returns"
-HELP = [("./main.py <n>...", "segment and map those subjects"),
+STAGES = ("fetch", "strip", "segment", "register", "map")
+HELP = [("./main.py <n>...", "the whole pipeline, about 3 min a subject"),
+        ("fetch <n>...", "download the scans, then everything after"),
+        ("strip <n>...", "skull strip and check, then everything after"),
+        ("segment <n>...", "BraTS in docker, then everything after"),
+        ("register <n>...", "warp into MNI, then the atlas work, ~40 s"),
+        ("map <n>...", "parcel overlap and function terms only, seconds"),
+        ("show <n>", "load a subject into the viewer"),
+        ("browser <n>", "that subject in a separate browser window"),
         ("cancel", "stop the running job"),
-        ("browser [n]", "open the 3D view in a separate browser window"),
         ("clear", "clear this log"),
         ("help", "this")]
 
@@ -239,8 +246,8 @@ class Console(App):
         self.query_one("#shell").border_subtitle = IDLE
         self.query_one("#readout").border_title = "cursor"
         self.log_write(f"[{DIM}]{len(self.results)} subjects from {RESULTS.name}[/]")
-        hint = "  ".join(c.split()[0] for c, _ in HELP)
-        self.log_write(f"[{FAINT}]commands: {hint}[/]")
+        self.log_write(f"[{FAINT}]./main.py <n> runs everything, or start at a stage: "
+                       f"{' '.join(STAGES)}. help lists the rest.[/]")
         if not os.environ.get("TERM", "").startswith("xterm-kitty"):
             self.log_write(f"[{WARN}]not kitty: images will render as text blocks[/]")
         if self.subject:
@@ -614,20 +621,37 @@ class Console(App):
     def execute(self, line):
         parts = line.split()
         name = parts[0].lstrip("./")
+        args = parts[1:]
+
+        # a stage name is shorthand for main.py --from that stage
+        stage = "fetch"
+        if name in STAGES or name in ("main.py", "main", "run"):
+            if name in STAGES:
+                stage = name
+            if "--from" in args:
+                cut = args.index("--from")
+                stage = args[cut + 1] if cut + 1 < len(args) else ""
+                args = args[:cut] + args[cut + 2:]
+            if stage not in STAGES:
+                self.log_write(f"[{BAD}]stages are {', '.join(STAGES)}[/]")
+                return
+
         numbers = []
-        for arg in parts[1:]:
+        for arg in args:
             if not arg.isdigit():
                 self.log_write(f"[{BAD}]{arg}: expected a subject number[/]")
                 return
             numbers.append(int(arg))
 
-        if name in ("main.py", "main", "run"):
+        if name in STAGES or name in ("main.py", "main", "run"):
             if not numbers:
-                self.log_write(f"[{BAD}]usage: ./main.py <subject numbers>[/]")
+                self.log_write(f"[{BAD}]usage: {name} <subject numbers>[/]")
             elif self.proc:
                 self.log_write(f"[{WARN}]a job is already running, cancel it first[/]")
             else:
-                self.run_pipeline(numbers)
+                self.run_pipeline(numbers, stage)
+        elif name in ("show", "load"):
+            self.show_subject(numbers)
         elif name in ("browser", "view.py", "view"):
             self.open_browser(numbers)
         elif name in ("cancel", "stop"):
@@ -638,9 +662,19 @@ class Console(App):
             self.exit()
         elif name == "help":
             for command, note in HELP:
-                self.log_write(f"[{DIM}]{command:<18}[/][{FAINT}]{note}[/]")
+                self.log_write(f"[{DIM}]{command:<20}[/][{FAINT}]{note}[/]")
         else:
             self.log_write(f"[{BAD}]{name}: not a command. try help.[/]")
+
+    def show_subject(self, numbers):
+        if not numbers:
+            self.log_write(f"[{BAD}]usage: show <subject number>[/]")
+            return
+        wanted = subject_id(numbers[0])
+        if wanted not in self.results:
+            self.log_write(f"[{BAD}]{wanted} has no results yet[/]")
+            return
+        self.load_subject(wanted)
 
     def open_browser(self, numbers):
         wanted = subject_id(numbers[0]) if numbers else self.subject
@@ -667,14 +701,19 @@ class Console(App):
         self.busy(f"running {time.time() - self.started:.0f}s · c cancels")
 
     @work(exclusive=True)
-    async def run_pipeline(self, numbers):
+    async def run_pipeline(self, numbers, stage="fetch"):
         self.started = time.time()
         self._clock = self.set_interval(1.0, self.tick)
         self.tick()
+        # --no-view because this panel already has the viewer next to it
+        call = ["main.py", *[str(n) for n in numbers], "--no-view"]
+        if stage != "fetch":
+            call += ["--from", stage]
+        self.log_write(f"[{FAINT}]{' '.join(call)}[/]")
         # rich draws a live spinner that becomes escape-code debris in a log widget
         env = {**os.environ, "TERM": "dumb", "NO_COLOR": "1", "PYTHONUNBUFFERED": "1"}
         self.proc = await asyncio.create_subprocess_exec(
-            sys.executable, "main.py", *[str(n) for n in numbers], cwd=str(ROOT), env=env,
+            sys.executable, *call, cwd=str(ROOT), env=env,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
         self.refresh_bindings()
         async for raw in self.proc.stdout:

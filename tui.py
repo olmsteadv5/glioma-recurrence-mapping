@@ -289,7 +289,7 @@ class Console(App):
     BINDINGS = [
         ("q", "quit", "quit"), ("v", "view", "3d/slices"), ("s", "space", "native/mni"),
         ("p", "palette", "colors"), ("t", "shell", "prompt"),
-        ("x", "cancel", "cancel run"), ("e", "export", "save a png"),
+        ("x", "cancel", "cancel run"),
         Binding("a", "show_list('parcels')", "parcels", show=False),
         Binding("b", "show_list('functions')", "functions", show=False),
         Binding("c", "show_list('connectivity')", "connectivity", show=False),
@@ -812,7 +812,7 @@ class Console(App):
             viewer.styles.border_subtitle_align = "right"
             other = "yba" if self.palette == "contrast" else "contrast"
             viewer.border_subtitle = keyed(
-                f"v slices · p {other} colors · e save")
+                f"v slices · p {other} colors")
         else:
             for which in render.Slices.PLANES:
                 pane = self.query_one(f"#p-{which}", Pane)
@@ -892,8 +892,8 @@ class Console(App):
         core = f"v 3d · s {'native' if self.space == 'mni' else 'mni'}"
         if self.slices.involved:
             other = "yba" if self.palette == "contrast" else "contrast"
-            return [f"{core} · p {other} colors · e save", f"{core} · e save", core]
-        return [f"{core} · e save", core]
+            return [f"{core} · p {other} colors", core]
+        return [core]
 
     def band(self, widget, left, taken, choices):
         # one border line, a label at each end, the line itself drawn between
@@ -981,7 +981,7 @@ class Console(App):
             return self.mode == "slices" or None
         if action == "cancel":
             return self.proc is not None or None
-        if action in ("show_list", "export"):
+        if action == "show_list":
             return bool(self.scene)
         return True
 
@@ -1020,9 +1020,10 @@ class Console(App):
     def show_list(self, which):
         self.action_show_list(which)
 
-    def action_export(self):
+    def save_view(self):
         # whatever the viewer is showing, at a size worth sending to someone
         if not self.scene:
+            self.log_write(f"[{BAD}]nothing loaded to save[/]")
             return
         stamp = time.strftime("%Y%m%d-%H%M%S")
         if self.mode == "3d":
@@ -1109,7 +1110,7 @@ class Console(App):
         elif name in ("show", "load"):
             self.show_subject(numbers, timepoint)
         elif name in ("save", "export"):
-            self.action_export()
+            self.save_view()
         elif name in ("browser", "view.py", "view"):
             self.open_browser(numbers)
         elif name in ("cancel", "stop"):

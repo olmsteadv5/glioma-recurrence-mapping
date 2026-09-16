@@ -90,9 +90,9 @@ The pipeline panel is a prompt. Press `t` or click it, type a command, press
 enter. Up and down walk the history, escape gives the keyboard back. It only
 knows about this project, it is not a shell:
 
-`e`, or `save` at the prompt, writes whatever the viewer is showing next to the
-outputs: the 3D at 1600x1200, or the three slice planes side by side at
-2100x700, both larger than the panes they came from.
+`save` at the prompt writes whatever the viewer is showing next to the outputs:
+the 3D at 1600x1200, or the three slice planes side by side at 2100x700, both
+larger than the panes they came from.
 
 ```
 ./main.py 36 42    the whole pipeline for those subjects
@@ -132,7 +132,7 @@ color, so the title says which palette is on only where it means something.
 ```
 v  3d / slices          1-4  modality           t  focus the prompt
 s  native / mni         a b c  breakdown view    x  cancel the run
-p  parcel coloring      e  save a png            q  quit
+p  parcel coloring                              q  quit
 ```
 
 Half of those only make sense in one of the two viewer modes. The ones that do

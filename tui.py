@@ -73,19 +73,21 @@ class Canvas(ImageWidget, Renderable=Renderable):
 
     def on_mouse_up(self, event):
         self.release_mouse()
-        if not self.dragged:
+        if self.dragged:
+            self.app.settle_view()
+        else:
             self.app.pick_parcel(event.x, event.y)
 
     def on_mouse_move(self, event):
         if event.button:
             self.dragged = True
-            self.app.rotate_scene(-event.delta_x * 3, event.delta_y * 3)
+            self.app.queue_view(-event.delta_x * 3, event.delta_y * 3)
 
     def on_mouse_scroll_down(self, event):
-        self.app.zoom_scene(0.9)
+        self.app.queue_view(zoom=0.9)
 
     def on_mouse_scroll_up(self, event):
-        self.app.zoom_scene(1.1)
+        self.app.queue_view(zoom=1.1)
 
     def on_resize(self, event):
         self.app.schedule_draw()
@@ -210,6 +212,7 @@ class Console(App):
         self.hidden_layers, self.subject_rows = set(), {}
         self.history, self.hpos, self.started = [], 0, 0
         self.row_text, self.marked = [], None
+        self.pending, self._spin, self._settle = [0.0, 0.0, 1.0], None, None
         self._panel_width = self._list_width = 0
 
     # ---------------------------------------------------------------- compose
@@ -512,14 +515,37 @@ class Console(App):
     def select_row(self, index):
         self.query_one("#parcels", ListView).index = index
 
-    def rotate_scene(self, azimuth, elevation):
-        if self.mode == "3d" and self.scene:
-            self.scene.rotate(azimuth, elevation)
-            self.draw()
+    def queue_view(self, azimuth=0.0, elevation=0.0, zoom=1.0):
+        # the terminal sends a move event per pixel; rendering one frame each
+        # puts the view seconds behind the mouse, so collect and draw on a clock
+        if self.mode != "3d" or not self.scene:
+            return
+        self.pending[0] += azimuth
+        self.pending[1] += elevation
+        self.pending[2] *= zoom
+        if self._spin is None:
+            self._spin = self.set_interval(1 / 30, self.flush_view)
+        if self._settle is not None:
+            self._settle.stop()
+        self._settle = self.set_timer(0.3, self.settle_view)
 
-    def zoom_scene(self, factor):
-        if self.mode == "3d" and self.scene:
-            self.scene.zoom(factor)
+    def flush_view(self):
+        azimuth, elevation, zoom = self.pending
+        self.pending = [0.0, 0.0, 1.0]
+        if not (azimuth or elevation or zoom != 1.0) or not self.scene:
+            return
+        self.scene.rotate(azimuth, elevation)
+        self.scene.zoom(zoom)
+        self.draw()
+
+    def settle_view(self):
+        # one full resolution frame once the camera stops
+        if self._spin is None:
+            return
+        self._spin.stop()
+        self._spin = None
+        self.flush_view()
+        if self.scene:
             self.draw()
 
     def seek(self, which, fx, fy):

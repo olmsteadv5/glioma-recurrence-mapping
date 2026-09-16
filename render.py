@@ -612,7 +612,7 @@ class Chart:
         if span < 1:
             return
         side = np.array([-along[1], along[0]]) / span
-        reach = min(span * 0.05, 14.0)
+        reach = min(span * 0.10, 30.0)
         for n, ratio in enumerate(ratios):
             off = (1 if n % 2 else -1) * reach * (0.2 + 0.8 * self._along(ratio))
             pull = start + along * 0.45 + side * off

@@ -26,6 +26,7 @@ CROSS = (250, 189, 47)
 LIT = (251, 241, 199)
 WHOLE = "WT"
 MARGIN = (177, 98, 134)
+COMPARE = {"both": (168, 153, 132), "new": (251, 73, 52), "gone": (184, 187, 38)}
 MARGIN_MM = 20
 _hex = lambda t: "#%02x%02x%02x" % tuple(t)
 PANEL = (40, 40, 40)
@@ -204,6 +205,14 @@ class Scene:
             np.savez_compressed(cache, vertices=points, faces=faces)
         self.actors["T:margin"] = self._mesh(points, faces, _hex(MARGIN), 0.25)
 
+    def ensure_compare(self, first, second):
+        # the two timepoints against each other, built the first time it is asked for
+        if "C:both" in self.actors:
+            return
+        import compare
+        for name, (points, faces) in compare.surfaces(first, second).items():
+            self.actors["C:" + name] = self._mesh(points, faces, _hex(COMPARE[name]), 0.6)
+
     def spotlight(self, name):
         # an untouched parcel is not in the scene, so add it only when asked for
         if name == self.lit:
@@ -269,12 +278,13 @@ class Slices:
         self.geom, self.hidden = {}, set()
         self.involved, self.lit, self.whole = {}, None, None
         self.margin, self.show_margin = None, False
+        self.compare, self.pair = {}, None
         self.load(space)
 
     def load(self, space):
         self.space = space
         self.volumes, self.parcels, self.stripped = {}, None, True
-        self.margin = None   # a different grid needs a different one
+        self.margin, self.compare = None, {}   # a different grid needs different ones
         if space == "native":
             # fall back to the raw scans, so a subject mid-pipeline still draws
             d = stripped_dir(self.subject)
@@ -334,6 +344,11 @@ class Slices:
             return nx - 1 - x, nz - 1 - z
         return ny - 1 - y, nz - 1 - z
 
+    def canon_mask(self, mask):
+        # someone else's MNI array, reoriented the way these slices are
+        reference = nib.load(out_dir(self.subject) / "seg_in_mni.nii.gz")
+        return self._canon(nib.Nifti1Image(mask.astype(np.uint8), reference.affine))[1] > 0
+
     def _margin(self):
         if self.show_margin and self.margin is None and self.segmented:
             path = out_dir(self.subject) / ("seg_in_mni.nii.gz" if self.space == "mni"
@@ -358,6 +373,18 @@ class Slices:
                 alpha[value] = 0.5 if value == self.lit else 0.22
             weight = alpha[parcel][:, :, None]
             rgb = (rgb * (1 - weight) + table[parcel] * weight).astype(np.uint8)
+
+        # the timepoint comparison, which only mni can line up
+        for name, mask in self.compare.items():
+            if which == "axial":
+                slab = mask[::-1, ::-1, self.cursor[2]].T
+            elif which == "coronal":
+                slab = mask[::-1, self.cursor[1], ::-1].T
+            else:
+                slab = mask[self.cursor[0], ::-1, ::-1].T
+            if slab.any():
+                rgb[slab] = (rgb[slab] * 0.45
+                             + np.array(COMPARE[name]) * 0.55).astype(np.uint8)
 
         if self.show_margin:
             ring = outline(edge > 0)

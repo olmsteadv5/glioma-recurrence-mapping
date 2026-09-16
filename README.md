@@ -156,6 +156,11 @@ than three that meet along internal faces, with its parts indented under it. It
 starts off, because its surface coincides with the outside of the three and
 turning both on washes their colors out. It is one or the other.
 
+For a patient with two timepoints there are three more layers: what both scans
+have, what is new in the later one, and what has gone since the first. They are
+computed in MNI, the only frame the two share, and they are the shapes behind
+the Dice in `changes`.
+
 `margin 2 cm` above that is the whole tumour grown by 20 mm, the usual CTV
 expansion, **clipped to the brain**: a fifth to a quarter of a raw expansion
 lands in skull and air, which would put subject 36 at 751 mL instead of 549.
@@ -215,8 +220,14 @@ There are four tissue classes but only three of them usually appear. `RC`, the
 resection cavity, is a post-treatment class, so its region row and its layer
 show up only on a subject that has one.
 
-Between them, `changes` appears when a patient has more than one timepoint:
-the change in WT, and how many parcels the tumour newly reaches or has left.
+Between them, `changes` appears when a patient has more than one timepoint: the
+change in WT, how many parcels the tumour newly reaches or has left, the Dice
+between the two tumours, and how much of the later one sits inside the earlier
+one's footprint. Subject 36 comes back at Dice 0.56 with 91% of the recurrence
+inside where the original was.
+
+Those two are not the same question. Dice is low because the tumour shrank, not
+because it moved; containment says it came back in the same place.
 
 `checks` holds `stages` and `atlas`, a row each. The strip row also carries
 whatever `verify.py` objected to, which used to reach you only as a traceback. A tick is quiet and carries

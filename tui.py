@@ -20,6 +20,7 @@ from textual_image.renderable import Image as Renderable
 from textual_image.widget import Image as ImageWidget
 
 import atlas
+import compare
 import connect
 import function
 import render
@@ -45,6 +46,9 @@ LAYERS = [("T:margin", "margin 2 cm", "#b16286", 0),
           ("T:ET", "ET enhancing", TISSUE["ET"], 1),
           ("T:NETC", "NETC necrosis", TISSUE["NETC"], 1),
           ("T:RC", "RC cavity", TISSUE["RC"], 1),
+          ("C:both", "both timepoints", "#a89984", 0),
+          ("C:new", "new in the later", "#fb4934", 0),
+          ("C:gone", "gone since the first", "#b8bb26", 0),
           ("tracts", "tracts crossing", "#689d6a", 0),
           ("shell", "brain surface", "#a89984", 0)]
 # WT, TC and ET are unions of the tissue classes, so they are deliberately left
@@ -308,7 +312,8 @@ class Console(App):
         self.subject = self.subjects[0] if self.subjects else None
         self.mode, self.space, self.palette, self.listing = "3d", "native", "contrast", "parcels"
         self.scene = self.slices = self.proc = self._timer = self._clock = None
-        self.hidden_layers, self.subject_rows = {"T:WT", "T:margin"}, {}
+        self.hidden_layers, self.subject_rows = {"T:WT", "T:margin",
+                                          "C:both", "C:new", "C:gone"}, {}
         self.layer_rows = list(LAYERS)
         self.history, self.hpos, self.started = [], 0, 0
         self.stage, self.watching = None, None
@@ -385,7 +390,7 @@ class Console(App):
                            f"rerun with ./main.py {int(subject[10:15])}[/]")
             return False
         self.subject, self.watching = subject, None
-        self.hidden_layers = {"T:WT", "T:margin"}
+        self.hidden_layers = {"T:WT", "T:margin", "C:both", "C:new", "C:gone"}
         overlap = self.results[subject]["atlas"]
         self.scene = render.Scene(subject, overlap, palette=self.palette)
         self.scene.set_opacity("shell", SHELL_OPACITY)
@@ -463,6 +468,10 @@ class Console(App):
                 out.append(f"[{WARN if now - was else FAINT}]"
                            f"{row('  newly involved', str(len(now - was)), w)}[/]")
                 out.append(f"[{FAINT}]{row('  no longer', str(len(was - now)), w)}[/]")
+                same = compare.against(before, after)
+                out.append(f"[{FAINT}]{row('  dice', f"{same['dice']:.2f}", w)}[/]")
+                label = f"  of _{after[16:]} inside _{before[16:]}"
+                out.append(f"[{FAINT}]{row(label, f"{same['inside']:.0%}", w)}[/]")
 
         run = d.get("run", {})
         out.append(f"[{DIM}]run[/]")
@@ -534,6 +543,11 @@ class Console(App):
     def dice(self, d):
         return f"{d['dice']['WT']:.2f}" if d.get("dice") else "no reference"
 
+    def pair(self):
+        # the patient's two timepoints, earliest first, or nothing
+        group = [s for s in self.subjects if s[10:15] == self.subject[10:15]]
+        return tuple(group[:2]) if len(group) > 1 else None
+
     def sibling(self, subject):
         # the same patient at the other timepoint, if it has been run
         other = next((s for s in self.subjects
@@ -553,12 +567,17 @@ class Console(App):
         w = max(self._layers_width, 30) - 4
         volumes = self.results[self.subject]["labels_ml"]
         regions = self.results[self.subject]["regions_ml"]
-        self.layer_rows = [r for r in LAYERS if not r[0].startswith("T:")
-                           or r[0] in ("T:WT", "T:margin") or r[0][2:] in volumes]
+        pair = self.pair()
+        self.layer_rows = [r for r in LAYERS
+                           if (not r[0].startswith("T:") or r[0] in ("T:WT", "T:margin")
+                               or r[0][2:] in volumes)
+                           and (not r[0].startswith("C:") or pair)]
         for key, name, color, deep in self.layer_rows:
             on = key not in self.hidden_layers
             if key == "tracts":
                 value = str(self.scene.tract_count) if self.scene else ""
+            elif key.startswith("C:"):
+                value = f"{compare.against(*pair)[key[2:]]} mL"
             elif key == "T:margin":
                 grown = self.results[self.subject].get("margin_ml")
                 value = f"{grown} mL" if grown else "rerun map"
@@ -580,6 +599,8 @@ class Console(App):
         on = key not in self.hidden_layers
         if key == "T:margin" and on:
             self.scene.ensure_margin()
+        if key.startswith("C:") and on:
+            self.scene.ensure_compare(*self.pair())
         self.scene.set_visible(key, on)
         self.sync_overlay()
         self.refresh_layers()
@@ -593,6 +614,12 @@ class Console(App):
                               if "T:" + name in self.hidden_layers}
         self.slices.whole = None if "T:WT" in self.hidden_layers else render.TISSUE[0]
         self.slices.show_margin = "T:margin" not in self.hidden_layers
+        self.slices.compare = {}
+        pair = self.pair()
+        if pair and self.space == "mni":
+            for name, mask in compare.masks(*pair).items():
+                if "C:" + name not in self.hidden_layers:
+                    self.slices.compare[name] = self.slices.canon_mask(mask)
         self.slices.involved = {}
         if not self.parcels_shown or self.slices.parcels is None:
             return

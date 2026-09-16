@@ -509,7 +509,7 @@ class Chart:
             own = at == self.lit
             tone = self._shade(SPOKE, free or own)
             if radial:
-                self._sheaf(pen, self.screen[at], self.screen[-1], len(ratios),
+                self._sheaf(pen, self.screen[at], self.screen[-1], ratios,
                             tone, 3 if own else 1)
             else:
                 self._strands(pen, self.screen[at], self.screen[-1], ratios,
@@ -518,7 +518,7 @@ class Chart:
             own = self.lit in (a, b)
             tone = self._shade(self._tone(weight, crosses), free or own)
             if radial:
-                self._chords(pen, self.screen[a], self.screen[b], len(ratios),
+                self._chords(pen, self.screen[a], self.screen[b], ratios,
                              tone, 3 if own else 1)
             else:
                 self._strands(pen, self.screen[a], self.screen[b], ratios, tone,
@@ -528,7 +528,7 @@ class Chart:
                 tone = self._tone(weight, crosses)
                 if radial:
                     self._chords(pen, self.screen[k], self.guest["screen"],
-                                 len(ratios), tone, 3)
+                                 ratios, tone, 3)
                 else:
                     self._strands(pen, self.screen[k], self.guest["screen"], ratios, tone, 3)
         self._nodes(pen, near)
@@ -583,28 +583,39 @@ class Chart:
                      fill=FAINT_INK, font=font, anchor="lm")
 
     STEPS = np.linspace(0, 1, 24)[:, None]
+    # neither axis here is a straight distance, so a drawn length cannot be a
+    # real length. a thread carries the order only, clamped at both ends: one
+    # pair in 283 measures at nothing and would otherwise sit on the line, and
+    # the longest run nine times its gap and would fold back through the middle
+    SHORT, LONG = 0.15, 3.0
 
-    def _chords(self, pen, start, stop, many, color, width=1):
-        # one thread per tract, each pulled a little further in than the last,
-        # so a bundle nests into a ribbon instead of stacking on one line
-        for n in range(many):
-            lean = 0.12 + 0.05 * (n - (many - 1) / 2) / max(many - 1, 1)
+    @classmethod
+    def _along(cls, ratio):
+        return float(np.clip((ratio - cls.SHORT) / (cls.LONG - cls.SHORT), 0.0, 1.0))
+
+    def _chords(self, pen, start, stop, ratios, color, width=1):
+        # one thread per tract. a shallower pull is a longer path, so the longer
+        # tract dips further in and a bundle fans by how much its lengths differ
+        for ratio in ratios:
+            lean = 0.18 - 0.11 * self._along(ratio)
             pull = self.middle + (start + stop - 2 * self.middle) * lean
             curve = ((1 - self.STEPS) ** 2 * start
                      + 2 * (1 - self.STEPS) * self.STEPS * pull + self.STEPS ** 2 * stop)
             pen.line([tuple(point) for point in curve], fill=color, width=width)
 
-    def _sheaf(self, pen, start, stop, many, color, width=1):
+    def _sheaf(self, pen, start, stop, ratios, color, width=1):
         # every tract as its own thread, fanned at the parcel and gathered at
-        # the mass, which is the shape they make in the brain
+        # the mass, which is the shape they make in the brain. the longer ones
+        # bow out further, so the width of a sheaf is the spread of its lengths
         along = stop - start
         span = float(np.linalg.norm(along))
         if span < 1:
             return
         side = np.array([-along[1], along[0]]) / span
-        for n in range(many):
-            off = (n - (many - 1) / 2) * min(span * 0.012, 3.0)
-            pull = start + along * 0.45 + side * off * 2
+        reach = min(span * 0.05, 14.0)
+        for n, ratio in enumerate(ratios):
+            off = (1 if n % 2 else -1) * reach * (0.2 + 0.8 * self._along(ratio))
+            pull = start + along * 0.45 + side * off
             curve = ((1 - self.STEPS) ** 2 * start
                      + 2 * (1 - self.STEPS) * self.STEPS * pull + self.STEPS ** 2 * stop)
             pen.line([tuple(point) for point in curve], fill=color, width=width)
@@ -757,6 +768,8 @@ class Chart:
                                  (SPOKE, "parcel to the mass", "spoke")):
             pen.line([(x, y), (x + 14, y)], fill=color, width=2)
             y = line(y, text, count[key])
+        if radial:
+            y = line(y, "further from the straight: the longer tract")
         y += 9
 
         pen.text((x, y), "regions, clockwise from the top" if radial else "regions",

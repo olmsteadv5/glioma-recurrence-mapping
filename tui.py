@@ -11,7 +11,7 @@ import time
 
 from textual import events, on, work
 from textual.app import App, ComposeResult
-from textual.containers import Grid, Horizontal, Vertical
+from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
 from textual.widgets import Footer, Input, Label, ListItem, ListView, RichLog, Static
 from textual_image._terminal import get_cell_size
 from textual_image.renderable import Image as Renderable
@@ -243,8 +243,11 @@ class Console(App):
     #parcels { height: 1fr; min-height: 5; background: #282828; }
     ListItem { background: #282828; color: #a89984; padding: 0 1; }
     ListItem.--highlight { background: #32302f; color: #ebdbb2; text-style: bold; }
-    #detail { height: auto; max-height: 13; border-top: solid #504945;
-              padding: 0 1; overflow: hidden; }
+    #detail { height: 13; border-top: solid #504945; padding: 0 1;
+              scrollbar-size-vertical: 1; scrollbar-background: #282828;
+              scrollbar-color: #504945; scrollbar-color-hover: #7c6f64;
+              scrollbar-color-active: #a89984; }
+    #detailtext { height: auto; }
     #listhead { height: 1; padding: 0 1; color: #ebdbb2; text-style: bold;
                 border-top: solid #504945; }
     #inputs, #log, #parcels {
@@ -298,7 +301,8 @@ class Console(App):
                 yield Rows(self.click_layer, id="layers")
                 yield Static("", id="listhead")
                 yield ListView(id="parcels")
-                yield Static("", id="detail")
+                with VerticalScroll(id="detail"):
+                    yield Static("", id="detailtext")
         with Vertical(id="shell", classes="box"):
             yield RichLog(id="log", wrap=True, markup=True, highlight=False)
             with Horizontal(id="line"):
@@ -357,11 +361,24 @@ class Console(App):
         w = self._panel_width = self.panel_width()
         out = [f"[{FG}]subject[/]"]
         self.subject_rows = {}
+        counts = {}
+        for name in self.subjects:
+            counts[name[10:15]] = counts.get(name[10:15], 0) + 1
+        drawn = set()
         for n, name in enumerate(self.subjects, start=1):
             a = self.results[name]["atlas"]
             here = name == self.subject
             self.subject_rows[n] = name
-            left = ("\u203a " if here else "  ") + name[10:]
+            patient = name[10:15]
+            if counts[patient] < 2:
+                tie = " "
+            elif patient not in drawn:
+                tie = "\u250c"
+            else:
+                tie = "\u2514" if name == [s for s in self.subjects
+                                           if s[10:15] == patient][-1] else "\u2502"
+            drawn.add(patient)
+            left = ("\u203a " if here else "  ") + tie + " " + name[10:]
             right = "%3dp %7.0f mL" % (len(a["parcels"]), a["tumour_ml"])
             out.append(f"[{FG if here else DIM}]{row(left, right, w)}[/]")
         out.append(f"[{FAINT}]{'\u2500' * w}[/]")
@@ -388,7 +405,7 @@ class Console(App):
 
         share = distribution(d["atlas"])
         if share:
-            out.append(f"[{DIM}]where[/]")
+            out.append(f"[{DIM}]{row('where', 'of the ' + in_parcels, w)}[/]")
             out += [f"[{FAINT}]{row('  ' + name, f'{value:.0%}', w)}[/]" for name, value in share]
 
         out.append(f"[{DIM}]run[/]")
@@ -401,33 +418,32 @@ class Console(App):
         if "kept" in run:
             out.append(f"[{FAINT}]{row('  brain kept', f"{run['kept']:.0%}", w)}[/]")
 
-        # everything healthy collapses to one line, only trouble gets a row
-        stamps, wrong = {}, []
+        stamps, notes = {}, []
         for stage in STAGES:
             path = stage_file(self.subject, stage)
             stamps[stage] = (run.get("mapped") if path is None
                              else path.stat().st_mtime if path.exists() else None)
             if stamps[stage] is None:
-                if not (stage == "map" and "atlas" in d):
-                    wrong.append((stage, "not run"))
+                unknown = stage == "map" and "atlas" in d
+                notes.append((stage, "unknown" if unknown else "never run", unknown))
                 continue
             done = [t for t in stamps.values() if t]
-            if len(done) > 1 and stamps[stage] < max(done[:-1]):
-                wrong.append((stage, "stale, " + ago(stamps[stage])))
-        newest = max([t for t in stamps.values() if t], default=None)
-        if newest:
-            out.append(f"[{FAINT}]{row('  last touched', ago(newest), w)}[/]")
+            stale = len(done) > 1 and stamps[stage] < max(done[:-1])
+            notes.append((stage, ("stale, " if stale else "") + ago(stamps[stage]), not stale))
 
-        wrong += [(m, "not stripped") for m in MODALITIES
-                  if not (stripped_dir(self.subject) / f"{self.subject}_{m}.nii.gz").exists()]
-        wrong += [(label, "missing") for name, label, _ in ATLAS_FILES
-                  if not (ATLAS_INPUT / name).exists()]
-        if wrong:
-            out.append(f"[{BAD}]needs attention[/]")
-            out += [f"[{FAINT}]  {what}[/][{BAD}]{note:>{w - len(what) - 2}}[/]"
-                    for what, note in wrong]
-        else:
-            out.append(f"[{FAINT}]{row('  scans, stages, atlas', 'all ok', w)}[/]")
+        bare = [m for m in MODALITIES
+                if not (stripped_dir(self.subject) / f"{self.subject}_{m}.nii.gz").exists()]
+        notes.append(("scans", ", ".join(bare) + " raw" if bare
+                      else f"{len(MODALITIES)} stripped", not bare))
+        gone = [label for name, label, _ in ATLAS_FILES if not (ATLAS_INPUT / name).exists()]
+        notes.append(("atlas", ", ".join(gone) + " missing" if gone
+                      else f"{len(ATLAS_FILES)} files", not gone))
+
+        out.append(f"[{DIM}]checks[/]")
+        for what, note, fine in notes:
+            mark = "\u2713" if fine else "\u2717"
+            out.append(f"[{FAINT if fine else BAD}]{mark}[/] [{FAINT}]{what}[/]"
+                       f"[{FAINT if fine else BAD}]{note:>{w - len(what) - 2}}[/]")
 
         self.query_one("#stats", Rows).update("\n".join(out))
 
@@ -547,17 +563,19 @@ class Console(App):
 
     def refresh_detail(self, index):
         d = self.results[self.subject]
-        w = max(self.query_one("#detail", Static).size.width, 30)
+        w = max(self.query_one("#detailtext", Static).size.width, 30)
         if self.listing == "parcels":
             rows = d["atlas"]["parcels"]
             if index == 0:
                 in_parcels = f"{d['atlas']['in_parcels_ml']} mL"
-                self.query_one("#detail", Static).update("\n".join(
-                    [f"[{FG}]all {len(rows)} involved parcels[/]",
-                     f"[{DIM}]{row('  in tumour', in_parcels, w)}[/]", "",
-                     f"[{FAINT}]every one at full brightness.[/]",
-                     f"[{FAINT}]pick a row to bring it forward[/]",
-                     f"[{FAINT}]and drop the rest back.[/]"]))
+                tally = {}
+                for p in rows:
+                    tally[p["tissue"]] = tally.get(p["tissue"], 0) + 1
+                lines = [f"[{FG}]{len(rows)} parcels[/]",
+                         f"[{DIM}]{row('  in tumour', in_parcels, w)}[/]", ""]
+                lines += [f"[{FAINT}]{row('  mostly ' + t, str(n), w)}[/]"
+                          for t, n in sorted(tally.items(), key=lambda kv: -kv[1])]
+                self.query_one("#detailtext", Static).update("\n".join(lines))
                 return
             index -= 1
             if not rows or index >= len(rows):
@@ -580,11 +598,10 @@ class Console(App):
             rows = function.drivers(f["term"], d["atlas"])
             lines = [f"[{FG}]{f['term']}[/]",
                      f"[{FAINT}]{row('weighted score', str(f['score']), w)}[/]", "",
-                     f"[{FAINT}]built from {len(rows)} parcels, strongest first[/]",
-                     f"[{FAINT}]{row('', 'involved     share', w)}[/]"]
+                     f"[{FAINT}]{row(f'{len(rows)} parcels', 'involved     share', w)}[/]"]
             lines += [f"[{DIM}]{row('  ' + name, f'{fraction:>8.0%}     {share:.3f}', w)}[/]"
-                      for name, fraction, share in rows[:7]]
-        self.query_one("#detail", Static).update("\n".join(lines))
+                      for name, fraction, share in rows]
+        self.query_one("#detailtext", Static).update("\n".join(lines))
 
     @on(ListView.Highlighted, "#parcels")
     def highlight(self, event):
@@ -667,9 +684,9 @@ class Console(App):
                       f"[{DIM}]  {info.get('long_name', '')[:w - 2]}[/]",
                       f"[{FAINT}]  {info.get('lobe', '')}[/]"]
         elif self.space == "mni":
-            lines += ["", f"[{FAINT}]no parcel here[/]"]
+            lines += ["", f"[{FAINT}]outside every parcel[/]"]
         else:
-            lines += ["", f"[{FAINT}]s for mni to name the parcel[/]"]
+            lines += ["", f"[{FAINT}]parcels need mni, press s[/]"]
         self.query_one("#readout", Static).update("\n".join(lines))
 
     @staticmethod

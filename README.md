@@ -49,8 +49,8 @@ It says what is missing if you start too late, rather than failing part way
 through. `--no-view` skips the browser window at the end.
 
 `--timepoint 2` fetches the follow-up scan instead of the pre-operative one.
-Not every subject has one; 36, 42 and 51 do, 2 does not. Run both and they sit
-next to each other in the subject list, with the change in WT between them.
+Not every subject has one; 36, 42 and 51 do, 2 does not. Run both and a brace
+in the subject list ties them together, with the change in WT between them.
 
 To look at a subject you have already done, don't rerun anything, just open the
 view:
@@ -157,19 +157,23 @@ which segmenter produced this and on what, how long it took, how much brain the
 registration had left to align on once the lesion was masked out, and how long
 ago anything last changed on disk.
 
-Everything healthy collapses into one `all ok` line. Scans that were never
-stripped, atlas files that are missing, and stages left behind by a partial
-rerun get a row each under `needs attention`, so the only coloured rows in the
-panel are the ones worth looking at.
+Below those is `checks`: a row per stage with how long ago it wrote its output,
+plus the scans and the atlas files. A tick means fine and is quiet; a cross is
+the only thing in the panel that is coloured, so a stage that never ran, a scan
+that was never stripped, or a stage a partial rerun left behind the one before
+it is the only thing that catches your eye.
+
+The percentages under `where` are shares of the tumour volume that lands in
+parcels, which is the figure the header names, not of the whole tumour.
 
 While the pipeline runs, its panel shows which stage is going and the viewer
 switches to the subject being worked on as soon as its scans land, so you are
 looking at the case you are waiting for rather than the last one.
 
 For a parcel the panel underneath gives its anatomy and its own Parcelsynth
-terms. For a function it gives the parcels that produced the score, each with
-how much of it the tumour occupies and what that contributed. Those shares add
-up to the score.
+terms. For a function it gives every parcel that produced the score, each with
+how much of it the tumour occupies and what that contributed; those shares add
+up to the score, and the panel scrolls if there are more than it can show.
 
 **kitty only.** It draws images with kitty's graphics protocol, which no other
 terminal here supports. Elsewhere it still runs but says the images will look

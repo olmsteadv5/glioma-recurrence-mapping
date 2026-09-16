@@ -296,15 +296,16 @@ def bow_for(ratio):
 NODE_IN = (228, 87, 46)
 NODE_OUT = (168, 153, 132)
 NODE_TUMOUR = (214, 200, 175)
-EDGE = (80, 73, 69)
-SPOKE = (102, 92, 84)
-THROUGH = (146, 110, 70)
+# one hue per kind of link: cool where the mass is not in the path, warm where
+# it is. strength brightens a line without draining its hue
+EDGE = (66, 80, 88)
+SPOKE = (116, 78, 84)
+THROUGH = (120, 88, 56)
 # the interface palette, so the key is the same greys as every other panel
 INK = (168, 153, 132)
 FAINT_INK = (124, 111, 100)
 BRIGHT_INK = (235, 219, 178)
 KEY_EDGE = (80, 73, 69)
-EDGE_LIT = (120, 110, 100)
 # one soft ground per hemisphere and lobe, dark enough to sit under the chart.
 # the two sides of a lobe land far apart, so one ground for both would stretch
 # across half the picture and say nothing
@@ -317,7 +318,6 @@ def _ground(side, lobe, lift=0.62):
     base = LOBE.get(lobe, (78, 78, 78))
     dim = 0.6 if side == "Right" else 1.0
     return tuple(int(c * dim * lift) for c in base)
-RISK = (131, 165, 152)
 
 
 class Chart:
@@ -325,7 +325,6 @@ class Chart:
     # nodes are the real distances between the parcels.
 
     def __init__(self, subject, overlap):
-        import connect
         import graph
         self.subject = subject
         (self.nodes, self.link, to_tumour,
@@ -338,9 +337,6 @@ class Chart:
         lost = {r["parcel"]: r["in_tumour_ml"] for r in overlap["parcels"]}
         self.lost = [lost.get(self.names[n], 0.0) for n in self.nodes]
         self.most = max(self.lost, default=1.0) or 1.0
-        self._share = {c["parcel"]: c["share"] for c in connect.at_risk(overlap)}
-        self.risk = [self._share.get(self.names[n], 0.0) for n in self.nodes]
-
         # no edge and no spoke reaches these, so they are drawn hollow rather
         # than left looking like the layout dropped them
         self.loose = (set(range(len(self.nodes)))
@@ -376,7 +372,6 @@ class Chart:
         info = atlas.parcels()[n]
         self.guest = {"name": parcel, "link": link,
                       "lobe": (info["hemisphere"], info["lobe"]),
-                      "risk": self._share.get(parcel, 0.0),
                       "point": graph.settle(self.points, link, far),
                       "screen": np.zeros(2)}
 
@@ -430,17 +425,14 @@ class Chart:
     @staticmethod
     def _tone(weight, crosses):
         base = THROUGH if crosses else EDGE
-        return tuple(int(c + (190 - c) * min(weight, 1.0)) for c in base)
+        gain = 1.0 + 1.1 * min(weight, 1.0)
+        return tuple(min(int(c * gain), 235) for c in base)
 
     def _guest(self, pen):
         # nothing of it is gone, so it draws at the smallest size the key shows
         point, wide = self.guest["screen"], 3.0
         pen.ellipse([point[0] - wide, point[1] - wide, point[0] + wide, point[1] + wide],
                     fill=NODE_OUT, outline=LIT, width=3)
-        if self.guest["risk"] > 0.02:
-            grow = wide + 2 + 5 * min(self.guest["risk"] / 0.3, 1.0)
-            pen.ellipse([point[0] - grow, point[1] - grow,
-                         point[0] + grow, point[1] + grow], outline=RISK)
         pen.text((point[0], point[1] - 14), self.guest["name"], fill=LIT,
                  font=_font(11), anchor="ms")
 
@@ -507,11 +499,6 @@ class Chart:
                         outline=(LIT if at == self.lit
                                  else color if hollow else PANEL),
                         width=3 if at == self.lit else 1)
-            # a ring on the untouched ones says how much they stand to lose
-            if not last and self.risk[at] > 0.02:
-                grow = wide + 2 + 5 * min(self.risk[at] / 0.3, 1.0)
-                pen.ellipse([point[0] - grow, point[1] - grow,
-                             point[0] + grow, point[1] + grow], outline=RISK)
 
     def _labels(self, pen, near):
         if self.zoom < 1.8 and near is None:
@@ -528,8 +515,8 @@ class Chart:
         # a title cut into the top edge, headings over quieter rows
         font = _font(12)
         rows = sorted(self.where)
-        tall = 278 + 14 * len(rows)
-        if wide < 430 or high < tall + 40:
+        tall = 266 + 14 * len(rows)
+        if wide < 470 or high < tall + 40:
             self._scale_bar(pen, wide, high, font)
             return
         if self._key_was != (tuple(rows), tall):
@@ -542,25 +529,28 @@ class Chart:
         # nothing in it moves while the chart is panned, so draw it once
         font, small = _font(12), _font(11)
         # the top edge is inset so the title sitting on it is not clipped
-        tile = Image.new("RGB", (266, tall + 9), PANEL)
+        tile = Image.new("RGB", (330, tall + 9), PANEL)
         pen = ImageDraw.Draw(tile)
-        pen.rounded_rectangle((0, 8, 265, tall + 8), radius=6, fill=PANEL, outline=KEY_EDGE)
+        pen.rounded_rectangle((0, 8, 329, tall + 8), radius=6, fill=PANEL, outline=KEY_EDGE)
         pen.rectangle((10, 3, 46, 13), fill=PANEL)
         pen.text((14, 8), "key", fill=BRIGHT_INK, font=font, anchor="lm")
         x, y = 14, 34
 
-        pen.text((x, y), "parcels", fill=INK, font=small, anchor="lm")
+        pen.text((x, y), "one dot, one parcel", fill=INK, font=small, anchor="lm")
         y += 17
-        for color, text in ((NODE_IN, "in the tumour"), (NODE_OUT, "still intact"),
-                            (NODE_TUMOUR, "the tumour itself")):
+        for color, text in ((NODE_IN, "the tumour overlaps it"),
+                            (NODE_OUT, "no overlap, connected to one"),
+                            (NODE_TUMOUR, "the tumour mass itself")):
             pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=color)
             pen.text((x + 21, y), text, fill=FAINT_INK, font=font, anchor="lm")
             y += 15
         pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=PANEL, outline=NODE_IN)
-        pen.text((x + 21, y), "nothing reaches it", fill=FAINT_INK, font=font, anchor="lm")
+        pen.text((x + 21, y), "no white matter link drawn", fill=FAINT_INK,
+                 font=font, anchor="lm")
         y += 21
 
-        pen.text((x, y), "how much of it is gone", fill=INK, font=small, anchor="lm")
+        pen.text((x, y), "dot area: parcel volume inside the tumour",
+                 fill=INK, font=small, anchor="lm")
         y += 19
         step = x + 7
         for share in (0.15, 0.5, 1.0):
@@ -572,24 +562,21 @@ class Chart:
         pen.text((step - 8, y + 16), "mL", fill=FAINT_INK, font=small, anchor="lm")
         y += 33
 
-        pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=NODE_OUT)
-        pen.ellipse([x - 3, y - 9, x + 15, y + 9], outline=RISK)
-        pen.text((x + 25, y), "losing its connections", fill=FAINT_INK, font=font, anchor="lm")
-        y += 24
-
-        pen.text((x, y), "tracts", fill=INK, font=small, anchor="lm")
+        pen.text((x, y), "one line, one white matter link", fill=INK, font=small, anchor="lm")
         y += 17
-        for color, text in ((THROUGH, "runs through the tumour"),
-                            (EDGE_LIT, "connects two parcels")):
+        for color, text in ((self._tone(0.5, False), "parcel to parcel"),
+                            (self._tone(0.5, True), "parcel to parcel, via the mass"),
+                            (SPOKE, "parcel into the mass")):
             pen.line([(x, y), (x + 14, y)], fill=color, width=1)
             pen.text((x + 25, y), text, fill=FAINT_INK, font=font, anchor="lm")
             y += 15
-        pen.arc([x, y - 6, x + 14, y + 8], 180, 360, fill=EDGE_LIT)
-        pen.text((x + 25, y), "bowed: longer than the gap", fill=FAINT_INK,
-                 font=font, anchor="lm")
+        pen.arc([x, y - 6, x + 14, y + 8], 180, 360, fill=self._tone(0.5, False))
+        pen.text((x + 25, y), "bow: the tract is longer than the gap",
+                 fill=FAINT_INK, font=font, anchor="lm")
         y += 24
 
-        pen.text((x, y), "regions", fill=INK, font=small, anchor="lm")
+        pen.text((x, y), "ground colour: where the parcel sits",
+                 fill=INK, font=small, anchor="lm")
         y += 17
         for lobe in rows:
             pen.rectangle([x + 1, y - 5, x + 11, y + 5],
@@ -607,7 +594,7 @@ class Chart:
         pen.line([(20, y), (20 + bar, y)], fill=INK, width=1)
         for end in (20, 20 + bar):
             pen.line([(end, y - 3), (end, y + 3)], fill=INK)
-        pen.text((34 + bar, y), "50 mm apart", fill=INK, font=font, anchor="lm")
+        pen.text((34 + bar, y), "50 mm between parcel centres", fill=INK, font=font, anchor="lm")
 
     def _strands(self, pen, start, stop, ratios, color):
         # one arc per tract, bowed until its drawn length is its real length

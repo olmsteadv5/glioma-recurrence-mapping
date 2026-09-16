@@ -2,8 +2,11 @@
 
 import nibabel as nib
 import numpy as np
+from scipy import ndimage
 
-from paths import LABELS, REFERENCE_SEG, REGIONS
+from paths import LABELS, REFERENCE_SEG, REGIONS, modality, stripped_dir
+
+MARGIN_MM = 20
 
 # old BraTS used 4 for enhancing, 2025 uses 3
 LEGACY = {0: 0, 1: 1, 2: 2, 4: 3}
@@ -37,6 +40,15 @@ def run(subject, seg_path):
         "regions_ml": {name: round(float(np.isin(data, values).sum()) * voxel_ml, 2)
                        for name, values in REGIONS.items()},
     }
+
+    # the planning margin, clipped to the brain: a fifth of a raw 2 cm
+    # expansion falls outside the head, where it means nothing
+    brain_path = modality(stripped_dir(subject), subject, "T1")
+    if brain_path.exists():
+        brain = np.asarray(nib.load(brain_path).dataobj) > 0
+        if brain.shape == data.shape:
+            far = ndimage.distance_transform_edt(data == 0, sampling=image.header.get_zooms()[:3])
+            result["margin_ml"] = round(float(((far <= MARGIN_MM) & brain).sum()) * voxel_ml, 2)
 
     reference_path = REFERENCE_SEG / f"{subject}_seg.nii.gz"
     if reference_path.exists():

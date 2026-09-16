@@ -156,6 +156,18 @@ than three that meet along internal faces, with its parts indented under it. It
 starts off, because its surface coincides with the outside of the three and
 turning both on washes their colors out. It is one or the other.
 
+`margin 2 cm` above that is the whole tumour grown by 20 mm, the usual CTV
+expansion, **clipped to the brain**: a fifth to a quarter of a raw expansion
+lands in skull and air, which would put subject 36 at 751 mL instead of 549.
+It is an outline on the slices rather than a fill, since 2 cm of fill hides the
+thing you grew it from. Both the surface and the slice mask are built the first
+time you tick it, because the distance transform is not free.
+
+The volume is measured in native space, where the millimetres are the
+patient's, not in the warped MNI copy. Across these six subjects a 2 cm margin
+is 3.3 to 7.5 times the tumour it came from, the multiplier being largest for
+the smallest tumours.
+
 The breakdown lists the layers with their volumes, clickable to show and hide,
 then one of three views: the involved parcels, the functions at risk, or the
 connectivity at risk. Whatever is selected

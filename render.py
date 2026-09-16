@@ -5,6 +5,7 @@ import os
 import nibabel as nib
 import numpy as np
 import pyvista as pv
+from scipy import ndimage
 from vtkmodules.util.numpy_support import vtk_to_numpy
 from vtkmodules.vtkRenderingCore import vtkCellPicker, vtkWindowToImageFilter
 from PIL import Image
@@ -24,6 +25,8 @@ TISSUE = {1: (242, 193, 78), 2: (63, 167, 214), 3: (228, 87, 46), 4: (142, 125, 
 CROSS = (250, 189, 47)
 LIT = (251, 241, 199)
 WHOLE = "WT"
+MARGIN = (177, 98, 134)
+MARGIN_MM = 20
 _hex = lambda t: "#%02x%02x%02x" % tuple(t)
 PANEL = (40, 40, 40)
 DIMMED = 0.10
@@ -38,6 +41,24 @@ def fit(image, size, background=PANEL):
     canvas = Image.new("RGB", (w, h), background)
     canvas.paste(scaled, ((w - scaled.width) // 2, (h - scaled.height) // 2))
     return canvas
+
+
+def grow(seg_image, brain, mm=MARGIN_MM):
+    # the planning margin, clipped to the brain because a fifth of a raw
+    # expansion lands in skull and air
+    far = ndimage.distance_transform_edt(np.asarray(seg_image.dataobj) == 0,
+                                         sampling=seg_image.header.get_zooms()[:3])
+    return (far <= mm) & brain
+
+
+def outline(mask):
+    # the boundary only, so a 2 cm envelope does not swamp the slice
+    inner = mask.copy()
+    inner[1:] &= mask[:-1]
+    inner[:-1] &= mask[1:]
+    inner[:, 1:] &= mask[:, :-1]
+    inner[:, :-1] &= mask[:, 1:]
+    return mask & ~inner
 
 
 class Scene:
@@ -168,6 +189,21 @@ class Scene:
         for actor in self.parcel_actors.values():
             actor.visibility = bool(on)
 
+    def ensure_margin(self):
+        # only built when it is asked for: the distance transform is not free
+        if "T:margin" in self.actors:
+            return
+        cache = out_dir(self.subject) / "margin_surface.npz"
+        if cache.exists():
+            held = np.load(cache)
+            points, faces = held["vertices"], held["faces"]
+        else:
+            image = nib.load(out_dir(self.subject) / "seg_in_mni.nii.gz")
+            grown = grow(image, np.asarray(nib.load(MNI).dataobj) > 0)
+            points, faces = view._tumour_surface(grown.astype(np.int16), image.affine, 1)
+            np.savez_compressed(cache, vertices=points, faces=faces)
+        self.actors["T:margin"] = self._mesh(points, faces, _hex(MARGIN), 0.25)
+
     def spotlight(self, name):
         # an untouched parcel is not in the scene, so add it only when asked for
         if name == self.lit:
@@ -232,11 +268,13 @@ class Slices:
         self.subject = subject
         self.geom, self.hidden = {}, set()
         self.involved, self.lit, self.whole = {}, None, None
+        self.margin, self.show_margin = None, False
         self.load(space)
 
     def load(self, space):
         self.space = space
         self.volumes, self.parcels, self.stripped = {}, None, True
+        self.margin = None   # a different grid needs a different one
         if space == "native":
             # fall back to the raw scans, so a subject mid-pipeline still draws
             d = stripped_dir(self.subject)
@@ -277,7 +315,7 @@ class Slices:
         x, y, z = self.cursor
         blank = np.zeros_like(self.seg) if self.parcels is None else self.parcels
         planes = []
-        for volume in (self._grey(), self.seg, blank):
+        for volume in (self._grey(), self.seg, blank, self._margin()):
             if which == "axial":
                 planes.append(volume[::-1, ::-1, z].T)
             elif which == "coronal":
@@ -296,8 +334,18 @@ class Slices:
             return nx - 1 - x, nz - 1 - z
         return ny - 1 - y, nz - 1 - z
 
+    def _margin(self):
+        if self.show_margin and self.margin is None and self.segmented:
+            path = out_dir(self.subject) / ("seg_in_mni.nii.gz" if self.space == "mni"
+                                            else "seg.nii.gz")
+            brain = self._grey() > 0
+            self.margin = self._canon(nib.Nifti1Image(
+                grow(nib.load(path), np.ones_like(brain)).astype(np.uint8),
+                nib.load(path).affine))[1] & (next(iter(self.volumes.values()))[1] > 0)
+        return self.margin if self.margin is not None else np.zeros_like(self.seg)
+
     def plane(self, which, size):
-        grey, lab, parcel = self._slab(which)
+        grey, lab, parcel, edge = self._slab(which)
         top = np.percentile(grey[grey > 0], 99) if (grey > 0).any() else 1
         rgb = np.repeat((np.clip(grey / max(top, 1) * 255, 0, 255)
                          ).astype(np.uint8)[:, :, None], 3, axis=2)
@@ -310,6 +358,11 @@ class Slices:
                 alpha[value] = 0.5 if value == self.lit else 0.22
             weight = alpha[parcel][:, :, None]
             rgb = (rgb * (1 - weight) + table[parcel] * weight).astype(np.uint8)
+
+        if self.show_margin:
+            ring = outline(edge > 0)
+            if ring.any():
+                rgb[ring] = np.array(MARGIN, dtype=np.uint8)
 
         # the whole tumour as one fill, under its three parts
         if self.whole is not None:

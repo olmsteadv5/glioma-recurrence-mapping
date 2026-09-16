@@ -39,7 +39,8 @@ SHELL_OPACITY = 0.15
 TISSUE = {"NETC": "#f2c14e", "SNFH": "#3fa7d6", "ET": "#e4572e", "RC": "#8e7dbe",
           "WT": "#d6c8af"}
 # the whole tumour as one shape, with its three parts under it
-LAYERS = [("T:WT", "tumour", TISSUE["WT"], 0),
+LAYERS = [("T:margin", "margin 2 cm", "#b16286", 0),
+          ("T:WT", "tumour", TISSUE["WT"], 0),
           ("T:SNFH", "SNFH oedema", TISSUE["SNFH"], 1),
           ("T:ET", "ET enhancing", TISSUE["ET"], 1),
           ("T:NETC", "NETC necrosis", TISSUE["NETC"], 1),
@@ -307,7 +308,7 @@ class Console(App):
         self.subject = self.subjects[0] if self.subjects else None
         self.mode, self.space, self.palette, self.listing = "3d", "native", "contrast", "parcels"
         self.scene = self.slices = self.proc = self._timer = self._clock = None
-        self.hidden_layers, self.subject_rows = {"T:WT"}, {}
+        self.hidden_layers, self.subject_rows = {"T:WT", "T:margin"}, {}
         self.layer_rows = list(LAYERS)
         self.history, self.hpos, self.started = [], 0, 0
         self.stage, self.watching = None, None
@@ -384,7 +385,7 @@ class Console(App):
                            f"rerun with ./main.py {int(subject[10:15])}[/]")
             return False
         self.subject, self.watching = subject, None
-        self.hidden_layers = {"T:WT"}
+        self.hidden_layers = {"T:WT", "T:margin"}
         overlap = self.results[subject]["atlas"]
         self.scene = render.Scene(subject, overlap, palette=self.palette)
         self.scene.set_opacity("shell", SHELL_OPACITY)
@@ -553,11 +554,14 @@ class Console(App):
         volumes = self.results[self.subject]["labels_ml"]
         regions = self.results[self.subject]["regions_ml"]
         self.layer_rows = [r for r in LAYERS if not r[0].startswith("T:")
-                           or r[0] == "T:WT" or r[0][2:] in volumes]
+                           or r[0] in ("T:WT", "T:margin") or r[0][2:] in volumes]
         for key, name, color, deep in self.layer_rows:
             on = key not in self.hidden_layers
             if key == "tracts":
                 value = str(self.scene.tract_count) if self.scene else ""
+            elif key == "T:margin":
+                grown = self.results[self.subject].get("margin_ml")
+                value = f"{grown} mL" if grown else "rerun map"
             elif key == "T:WT":
                 value = f"{regions['WT']} mL"
             else:
@@ -574,6 +578,8 @@ class Console(App):
         key = self.layer_rows[row_index][0]
         self.hidden_layers ^= {key}
         on = key not in self.hidden_layers
+        if key == "T:margin" and on:
+            self.scene.ensure_margin()
         self.scene.set_visible(key, on)
         self.sync_overlay()
         self.refresh_layers()
@@ -586,6 +592,7 @@ class Console(App):
         self.slices.hidden = {value for value, name in LABELS.items()
                               if "T:" + name in self.hidden_layers}
         self.slices.whole = None if "T:WT" in self.hidden_layers else render.TISSUE[0]
+        self.slices.show_margin = "T:margin" not in self.hidden_layers
         self.slices.involved = {}
         if not self.parcels_shown or self.slices.parcels is None:
             return

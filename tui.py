@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import textwrap
 import time
 
 from textual import events, on, work
@@ -49,6 +50,17 @@ ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
                ("parcelsynth_activations_functionalterms.csv", "parcelsynth", "334"),
                ("structuralconnectivity_metrics_mean.csv", "connectivity", "696²")]
 VIEWS = [("a", "parcels"), ("b", "functions"), ("c", "connectivity")]
+SUMMARY = {"parcels": "all parcels", "functions": "all terms", "connectivity": "all at risk"}
+ABOUT = {
+    "parcels": "Every parcel the tumour reaches, ranked by how much of that parcel "
+               "is inside it.",
+    "functions": "Each involved parcel's Parcelsynth profile, weighted by how much of "
+                 "that parcel the tumour holds, then summed. Pooled across published "
+                 "studies, not this patient.",
+    "connectivity": "For each parcel the tumour missed, what it connects to that the "
+                    "tumour took, weighted by how much of each is gone. A healthy "
+                    "population mean, not this patient.",
+}
 IDLE = "esc leaves · t returns"
 STAGES = ("fetch", "strip", "segment", "register", "map")
 HELP = [("./main.py <n>...", "the whole pipeline, about 3 min a subject"),
@@ -565,16 +577,17 @@ class Console(App):
                                   if "T:" + name in self.hidden_layers}
 
     def isolate_selected(self):
-        index = self.query_one("#parcels", ListView).index or 0
+        index = (self.query_one("#parcels", ListView).index or 0) - 1
         d = self.results[self.subject]
+        # row zero is the summary, which means nothing is singled out
+        if index < 0:
+            self.scene.unisolate()
+            self.scene.spotlight(None)
+            return
         if self.listing == "parcels":
-            # row zero is "all parcels", which means nothing is singled out
-            if index == 0:
-                self.scene.unisolate()
-                return
             rows = d["atlas"]["parcels"]
-            if index - 1 < len(rows):
-                self.scene.isolate(rows[index - 1]["parcel"])
+            if index < len(rows):
+                self.scene.isolate(rows[index]["parcel"])
         elif self.listing == "connectivity":
             if index < len(self.at_risk):
                 # the one losing input, lit up, and the involved parcels it loses
@@ -587,8 +600,6 @@ class Console(App):
             if index < len(top):
                 self.scene.isolate(n for n, _, _ in
                                    function.drivers(top[index]["term"], d["atlas"], 7))
-
-    # ------------------------------------------------------------------- list
 
     def refresh_list(self):
         d = self.results[self.subject]
@@ -603,30 +614,27 @@ class Console(App):
         if self.listing == "parcels":
             rows = d["atlas"]["parcels"]
             head.update(f"parcels involved \u00b7 {len(rows)}")
-            note = "click here or in the 3d"
-            self.row_text = [row("  all parcels", str(len(rows)), w)]
-            self.row_text += [chips.get(p["parcel"], " ") + " " +
-                              row(p["parcel"], f"{bar(p['fraction'])} {p['fraction']:>4.0%}", w - 4)
-                              for p in rows]
+            body = [chips.get(p["parcel"], " ") + " " +
+                    row(p["parcel"], f"{bar(p['fraction'])} {p['fraction']:>4.0%}", w - 4)
+                    for p in rows]
         elif self.listing == "functions":
-            top = d.get("function", [])
-            head.update(f"functions at risk \u00b7 {len(top)}")
-            note = "pooled across studies"
-            peak = max((f["score"] for f in top), default=1)
-            self.row_text = [row(f["term"], f"{bar(f['score'] / peak)} {f['score']:>5.2f}", w - 2)
-                             for f in top]
+            rows = d.get("function", [])
+            head.update(f"functions at risk \u00b7 {len(rows)}")
+            peak = max((f["score"] for f in rows), default=1)
+            body = [row(f["term"], f"{bar(f['score'] / peak)} {f['score']:>5.2f}", w - 2)
+                    for f in rows]
         else:
-            self.at_risk = connect.at_risk(d["atlas"])
-            head.update(f"connectivity at risk \u00b7 {len(self.at_risk)}")
-            note = "healthy population mean"
-            peak = max((c["share"] for c in self.at_risk), default=1)
-            self.row_text = [chips.get(c["parcel"], " ") + " " +
-                             row(c["parcel"], f"{bar(c['share'] / peak)} {c['share']:>5.0%}", w - 4)
-                             for c in self.at_risk]
+            rows = self.at_risk = connect.at_risk(d["atlas"])
+            head.update(f"connectivity at risk \u00b7 {len(rows)}")
+            peak = max((c["share"] for c in rows), default=1)
+            body = [chips.get(c["parcel"], " ") + " " +
+                    row(c["parcel"], f"{bar(c['share'] / peak)} {c['share']:>5.0%}", w - 4)
+                    for c in rows]
 
-        strip, taken = self.strip("right", VIEWS, self.listing)
-        panel.border_title = self.band(panel, "breakdown", 9, [note])
-        panel.border_subtitle = strip
+        # row zero explains the list and means nothing is singled out
+        self.row_text = [row("  " + SUMMARY[self.listing], str(len(rows)), w)] + body
+        panel.border_title = f"breakdown \u00b7 {self.listing}"
+        panel.border_subtitle = self.strip("right", VIEWS, self.listing)[0]
         panel.styles.border_subtitle_align = "left"
         for text in self.row_text:
             listing.append(ListItem(Label("  " + text)))
@@ -651,26 +659,23 @@ class Console(App):
     def refresh_detail(self, index):
         d = self.results[self.subject]
         w = max(self.query_one("#detailtext", Static).size.width, 30)
+        text = self.query_one("#detailtext", Static)
+        about = [""] + [f"[{FAINT}]{line}[/]"
+                        for line in textwrap.wrap(ABOUT[self.listing], w)]
+
+        if index == 0:
+            text.update("\n".join(self.summary(d, w) + about))
+            return
+        index -= 1
+
         if self.listing == "parcels":
             rows = d["atlas"]["parcels"]
-            if index == 0:
-                in_parcels = f"{d['atlas']['in_parcels_ml']} mL"
-                tally = {}
-                for p in rows:
-                    tally[p["tissue"]] = tally.get(p["tissue"], 0) + 1
-                lines = [f"[{FG}]{len(rows)} parcels[/]",
-                         f"[{DIM}]{row('  in tumour', in_parcels, w)}[/]", ""]
-                lines += [f"[{FAINT}]{row('  mostly ' + t, str(n), w)}[/]"
-                          for t, n in sorted(tally.items(), key=lambda kv: -kv[1])]
-                self.query_one("#detailtext", Static).update("\n".join(lines))
-                return
-            index -= 1
-            if not rows or index >= len(rows):
+            if index >= len(rows):
                 return
             p = rows[index]
             volume = f"{p['in_tumour_ml']:.2f} of {p['parcel_ml']:.2f} mL"
             lines = [f"[{FG}]{p['long_name'][:w]}[/]",
-                     f"[{FAINT}]{p['parcel']} · {p['lobe']} · mostly {p['tissue']}[/]",
+                     f"[{FAINT}]{p['parcel']} \u00b7 {p['lobe']} \u00b7 mostly {p['tissue']}[/]",
                      f"[{DIM}]{row('  in tumour', volume, w)}[/]", ""]
             terms = function.for_parcel(p["parcel"], None)
             peak = max((v for _, v in terms), default=1)
@@ -678,22 +683,21 @@ class Console(App):
             lines += [f"[{DIM}]{row('  ' + t, f'{bar(v / peak, 8)} {v:>5.2f}', w)}[/]"
                       for t, v in terms]
         elif self.listing == "connectivity":
-            if not self.at_risk or index >= len(self.at_risk):
+            if index >= len(self.at_risk):
                 return
             c = self.at_risk[index]
             info = self.parcel_info().get(c["parcel"], {})
             rows = connect.partners(c["parcel"], d["atlas"])
             lines = [f"[{FG}]{info.get('long_name', c['parcel'])[:w]}[/]",
-                     f"[{FAINT}]{c['parcel']} \u00b7 {info.get('lobe', '')} \u00b7 not in the tumour[/]",
-                     f"[{DIM}]{row('  connectivity at risk', f"{c['share']:.0%}", w)}[/]", "",
+                     f"[{FAINT}]{c['parcel']} \u00b7 {info.get('lobe', '')} \u00b7 "
+                     f"not in the tumour[/]",
+                     f"[{DIM}]{row('  at risk', f"{c['share']:.0%}", w)}[/]", "",
                      f"[{FAINT}]{row(f'{len(rows)} parcels', 'involved    of loss', w)}[/]"]
             lines += [f"[{DIM}]{row('  ' + name, f'{fraction:>8.0%}    {share:>6.1%}', w)}[/]"
                       for name, fraction, share in rows]
-            self.query_one("#detailtext", Static).update("\n".join(lines))
-            return
         else:
             top = d.get("function", [])
-            if not top or index >= len(top):
+            if index >= len(top):
                 return
             f = top[index]
             rows = function.drivers(f["term"], d["atlas"])
@@ -702,7 +706,26 @@ class Console(App):
                      f"[{FAINT}]{row(f'{len(rows)} parcels', 'involved     share', w)}[/]"]
             lines += [f"[{DIM}]{row('  ' + name, f'{fraction:>8.0%}     {share:.3f}', w)}[/]"
                       for name, fraction, share in rows]
-        self.query_one("#detailtext", Static).update("\n".join(lines))
+        text.update("\n".join(lines))
+
+    def summary(self, d, w):
+        # what the whole list adds up to, above the note on how it was built
+        if self.listing == "parcels":
+            rows = d["atlas"]["parcels"]
+            tally = {}
+            for p in rows:
+                tally[p["tissue"]] = tally.get(p["tissue"], 0) + 1
+            out = [f"[{FG}]{len(rows)} parcels[/]",
+                   f"[{DIM}]{row('  in tumour', f"{d['atlas']['in_parcels_ml']} mL", w)}[/]"]
+            return out + [f"[{FAINT}]{row('  mostly ' + t, str(n), w)}[/]"
+                          for t, n in sorted(tally.items(), key=lambda kv: -kv[1])]
+        if self.listing == "functions":
+            top = d.get("function", [])
+            return [f"[{FG}]{len(top)} terms[/]"] + [
+                f"[{DIM}]{row('  ' + f['term'], str(f['score']), w)}[/]" for f in top[:4]]
+        return [f"[{FG}]{len(self.at_risk)} parcels[/]"] + [
+            f"[{DIM}]{row('  ' + c['parcel'], f"{c['share']:.0%}", w)}[/]"
+            for c in self.at_risk[:4]]
 
     @on(ListView.Highlighted, "#parcels")
     def highlight(self, event):
@@ -717,11 +740,14 @@ class Console(App):
 
     def seek_parcel(self, index):
         # put the crosshair in the middle of it, which only mni can work out
+        index -= 1
+        if index < 0:
+            return
         if self.listing == "parcels":
             rows = self.results[self.subject]["atlas"]["parcels"]
-            if index == 0 or index - 1 >= len(rows):
+            if index >= len(rows):
                 return
-            wanted = rows[index - 1]["parcel"]
+            wanted = rows[index]["parcel"]
         elif self.listing == "connectivity":
             if index >= len(self.at_risk):
                 return
@@ -763,7 +789,7 @@ class Console(App):
             viewer.styles.border_subtitle_align = "right"
             other = "yba" if self.palette == "contrast" else "contrast"
             viewer.border_subtitle = keyed(
-                f"v slices · p {other} colours · drag rotate · scroll zoom")
+                f"v slices · p {other} colours")
         else:
             for which in render.Slices.PLANES:
                 pane = self.query_one(f"#p-{which}", Pane)

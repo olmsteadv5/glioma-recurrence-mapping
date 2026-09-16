@@ -146,8 +146,10 @@ The breakdown lists the layers with their volumes, clickable to show and hide,
 then one of three views: the involved parcels, the functions at risk, or the
 connectivity at risk. Whatever is selected
 lights up in the 3D and every other parcel drops back, so a row and a shape in
-the viewer are the same thing. The `all parcels` row at the top of the list is
-the way back: pick it and every involved parcel returns to full brightness.
+the viewer are the same thing. The first row of every list is a summary: what
+the whole list adds up to, and a note on how it was built. Picking it also
+means nothing is singled out, so every involved parcel goes back to full
+brightness.
 
 In the slice view, picking a parcel puts the crosshair inside it instead. Only
 MNI knows where the parcels are, so it switches space if it has to. It works both ways: click a parcel in the 3D and
@@ -248,7 +250,8 @@ L_SM2_B   Left supramarginal gyrus 2 B, parietal, not in the tumour
 
 This is a **healthy population mean**, the same caveat as Parcelsynth. A tumour
 displaces tracts, so this patient's real connectivity differs. It says where to
-look, not what has happened.
+look, not what has happened. That note, and the equivalent for the other two
+views, is on the first row of each list.
 
 ## Where things end up
 

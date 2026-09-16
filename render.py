@@ -24,7 +24,7 @@ CROSS = (250, 189, 47)
 LIT = (251, 241, 199)
 _hex = lambda t: "#%02x%02x%02x" % tuple(t)
 PANEL = (40, 40, 40)
-DIMMED = 0.16
+DIMMED = 0.10
 
 
 def fit(image, size, background=PANEL):

@@ -168,7 +168,7 @@ class Console(App):
     Screen { background: #282828; }
     #top { height: 1fr; }
     .box { border: round #a89984; border-title-color: #ebdbb2;
-           border-subtitle-align: right;
+           border-title-align: left; border-subtitle-align: right;
            border-title-style: bold; border-subtitle-color: #7c6f64;
            background: #282828; padding: 0; }
     #inputs { width: 34; }
@@ -256,7 +256,6 @@ class Console(App):
         self.query_one("#grid").display = False
         self.query_one("#inputs").border_title = "inputs"
         self.query_one("#inputs").border_subtitle = "click a subject"
-        self.query_one("#right").border_title = "breakdown"
         self.query_one("#shell").border_title = "pipeline"
         self.query_one("#shell").border_subtitle = IDLE
         self.query_one("#readout").border_title = "cursor"
@@ -377,13 +376,15 @@ class Console(App):
         if self.listing == "parcels":
             rows = d["atlas"]["parcels"]
             self.query_one("#listhead", Static).update(f"parcels involved · {len(rows)}")
-            panel.border_subtitle = "click here or in the 3d · f functions"
+            panel.border_title = self.band(panel, "breakdown", 9, ["f functions"])
+            panel.border_subtitle = "click here or in the 3d"
             self.row_text = [row(p["parcel"], f"{bar(p['fraction'])} {p['fraction']:>4.0%}", w - 2)
                              for p in rows]
         else:
             top = d.get("function", [])
             self.query_one("#listhead", Static).update(f"functions at risk · {len(top)}")
-            panel.border_subtitle = "meta-analytic · f parcels"
+            panel.border_title = self.band(panel, "breakdown", 9, ["f parcels"])
+            panel.border_subtitle = "meta-analytic, not this patient"
             peak = max((f["score"] for f in top), default=1)
             self.row_text = [row(f["term"], f"{bar(f['score'] / peak)} {f['score']:>5.2f}", w - 2)
                              for f in top]
@@ -477,11 +478,11 @@ class Console(App):
             w, h = max(size.width * cell.width, 64), max(size.height * cell.height, 64)
             self.scene.resize(w, h)
             widget.image = self.scene.image()
-            viewer.border_title = f"3d · {self.palette} colours"
+            title = f"3d · {self.palette} colours"
+            viewer.border_title = self.band(viewer, title, len(title), ["v slices"])
             viewer.styles.border_subtitle_align = "right"
             other = "yba" if self.palette == "contrast" else "contrast"
-            viewer.border_subtitle = (f"drag rotate · scroll zoom · p {other} colours · "
-                                      f"h reset · v slices")
+            viewer.border_subtitle = f"drag rotate · scroll zoom · p {other} colours · h reset"
         else:
             for which in render.Slices.PLANES:
                 pane = self.query_one(f"#p-{which}", Pane)
@@ -490,11 +491,11 @@ class Console(App):
                     which, (max(size.width * cell.width, 32), max(size.height * cell.height, 32)))
             self.refresh_readout()
             r = self.slices.readout()
-            viewer.border_title = f"slices · {r['space']}"
+            title = f"slices · {r['space']}"
+            viewer.border_title = self.band(viewer, title, len(title), ["v 3d"])
             strip, taken = self.modality_strip()
             viewer.styles.border_subtitle_align = "left"
-            viewer.border_subtitle = strip + self.hint(
-                viewer.outer_size.width - 6 - taken, self.slice_hints())
+            viewer.border_subtitle = self.band(viewer, strip, taken, self.slice_hints())
 
     def refresh_readout(self):
         r = self.slices.readout()
@@ -527,15 +528,16 @@ class Console(App):
     def slice_hints(self):
         # each key names what it gives you, not what you are looking at
         core = (f"s {'native' if self.space == 'mni' else 'mni'} · "
-                f"o {'hide' if self.slices.overlay else 'show'} overlay · v 3d")
-        return [f"click or pgup/pgdn · {core}", core, "v 3d"]
+                f"o {'hide' if self.slices.overlay else 'show'} overlay")
+        return [f"click or pgup/pgdn · {core}", core]
 
-    def hint(self, room, choices):
-        # carry the border line across the gap, so the two groups stay separate
+    def band(self, widget, left, taken, choices):
+        # one border line, a label at each end, the line itself drawn between
+        room = widget.outer_size.width - 6 - taken
         for text in choices:
             if len(text) + 5 <= room:
-                return f" [{DIM}]{'─' * (room - len(text) - 2)}[/] {text}"
-        return ""
+                return left + f" [{DIM}]{'─' * (room - len(text) - 2)}[/] {text}"
+        return left
 
     def click_modality(self, x):
         if self.mode != "slices" or not self.slices:

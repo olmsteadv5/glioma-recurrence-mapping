@@ -120,9 +120,12 @@ o  segmentation overlay h  reset view           q  quit
 ```
 
 Half of those only make sense in one of the two viewer modes. The ones that do
-not apply go grey in the footer rather than doing nothing silently. Along the
-viewer border each key is labelled with what it gives you, not with what you
-are already looking at, so in native space `s` reads `s mni`.
+not apply go grey in the footer rather than doing nothing silently.
+
+Each panel carries its own labels. The key that switches what the panel shows
+sits top right, the rest of the controls bottom right, and both are labelled
+with what they give you rather than with what you are already looking at, so in
+native space `s` reads `s mni`.
 
 The breakdown lists the layers with their volumes, clickable to show and hide,
 then either the involved parcels or the functions at risk. Whatever is selected

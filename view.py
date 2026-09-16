@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import pyvista as pv
 
 import tracts as tractography
-from atlas import brain, colours, label_volume, meshes, parcels
+from atlas import brain, colors, label_volume, meshes, parcels
 from paths import LABELS, MNI, out_dir
 
 TISSUE_COLOR = {1: "#f2c14e", 2: "#3fa7d6", 3: "#e4572e", 4: "#8e7dbe"}
@@ -82,7 +82,7 @@ def run(subject, overlap, *, shell_opacity=0.2, top=None, show=True, show_tracts
     index = {p["name"]: i for i, p in enumerate(info)}
 
     other = "contrast" if palette != "contrast" else "yba"
-    here, there = colours(palette), colours(other)
+    here, there = colors(palette), colors(other)
 
     involved = overlap["parcels"][:top] if top else overlap["parcels"]
 
@@ -140,7 +140,7 @@ def _dropdown(x, options, active=0):
 
 
 def _menus(parcel_traces, keep, swap, palette):
-    # Only what the legend cannot do: bulk parcel visibility, and recolouring.
+    # Only what the legend cannot do: bulk parcel visibility, and recoloring.
     if not parcel_traces:
         return []
     return [
@@ -150,9 +150,9 @@ def _menus(parcel_traces, keep, swap, palette):
             dict(label="parcels hidden", method="restyle",
                  args=[{"visible": False}, parcel_traces])]),
         _dropdown(0.62, [
-            dict(label="atlas colours" if palette != "contrast" else "high contrast",
+            dict(label="atlas colors" if palette != "contrast" else "high contrast",
                  method="restyle", args=[{"color": keep}, parcel_traces]),
-            dict(label="high contrast" if palette != "contrast" else "atlas colours",
+            dict(label="high contrast" if palette != "contrast" else "atlas colors",
                  method="restyle", args=[{"color": swap}, parcel_traces])]),
     ]
 

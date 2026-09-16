@@ -66,16 +66,16 @@ Click any entry to toggle it.
 
 Along the bottom are the things the legend cannot do: a slider for brain
 surface opacity, a dropdown to show or hide all the parcels at once, and a dropdown to
-switch the parcel colouring.
+switch the parcel coloring.
 
-Two palettes. The atlas's own colours parcels by region, so neighbours often
-look identical, only 75 distinct colours across 696 parcels. The other is
+Two palettes. The atlas's own colors parcels by region, so neighbours often
+look identical, only 75 distinct colors across 696 parcels. The other is
 YBA_696_Freeview_HighContrast.txt, where no two touching parcels share a
-colour, which is much easier to read when a tumour spans a dozen of them.
+color, which is much easier to read when a tumour spans a dozen of them.
 
 From Python, `view.run` also takes `top=20` if you only want the most involved
 parcels, `shell_opacity` for the brain surface's transparency, and `palette`
-to pick which colouring it opens with.
+to pick which coloring it opens with.
 
 ## Terminal UI
 
@@ -120,15 +120,15 @@ use is bright, and anything the current space does not carry is greyed.
 The cursor panel gives every sequence's intensity at that voxel, not just the
 one on screen, and in MNI it names the parcel under the crosshair.
 
-MNI also draws the involved parcels onto the slices, in the same colours the
+MNI also draws the involved parcels onto the slices, in the same colors the
 3D uses, under the tumour rather than over it. The selected one is brighter.
 That is why `p` works there and not in native space: native has no parcels to
-colour, so the title says which palette is on only where it means something.
+color, so the title says which palette is on only where it means something.
 
 ```
 v  3d / slices          1-4  modality           t  focus the prompt
 s  native / mni         a b c  breakdown view    x  cancel the run
-p  parcel colouring                              q  quit
+p  parcel coloring                              q  quit
 ```
 
 Half of those only make sense in one of the two viewer modes. The ones that do
@@ -140,7 +140,7 @@ each one and the current one bright. The rest of the controls sit bottom right,
 labelled with what they give you rather than with what you are looking at, so
 in native space `s` reads `s mni`.
 
-Each parcel row carries a chip in that parcel's own colour, so a shape you can
+Each parcel row carries a chip in that parcel's own color, so a shape you can
 see in the 3D can be found in the list without clicking through it. The chips
 follow the palette toggle.
 
@@ -167,7 +167,7 @@ its row is selected, drag and it rotates instead.
 
 WT, TC and ET are unions of the tissue classes, not classes themselves, which
 is why none of their volumes matches a single layer. The inputs panel spells
-out what each one contains and leaves them uncoloured, since the three colours
+out what each one contains and leaves them uncolored, since the three colors
 belong to the classes in the breakdown.
 
 Under them the panel carries `where` the tumour sits, by hemisphere and lobe,
@@ -194,7 +194,7 @@ one row per consecutive pair.
 
 `checks` holds `stages` and `atlas`, a row each. The strip row also carries
 whatever `verify.py` objected to, which used to reach you only as a traceback. A tick is quiet and carries
-how long the stage took and how long ago it ran. A cross is the only coloured
+how long the stage took and how long ago it ran. A cross is the only colored
 thing in the panel, and it opens a red line saying what is actually wrong:
 which modality never downloaded or never stripped, or that a partial rerun left
 this stage behind the one before it.

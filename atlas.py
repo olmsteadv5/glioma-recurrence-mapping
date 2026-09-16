@@ -26,7 +26,7 @@ FILES = {
 
 RESAMPLED = ATLAS_DIR / "yba_on_mni.nii.gz"
 
-# hand-made graph colouring: no two touching parcels share a colour
+# hand-made graph coloring: no two touching parcels share a color
 HIGH_CONTRAST = ATLAS_INPUT / "YBA_696_Freeview_HighContrast.txt"
 
 # the GLB has x and z negated relative to the parcel dictionary
@@ -65,7 +65,7 @@ def parcels():
 
 
 @functools.lru_cache(maxsize=4)
-def colours(palette="yba"):
+def colors(palette="yba"):
     # "yba" groups parcels by region, "contrast" makes neighbours distinguishable.
     if palette != "contrast":
         return [p["color"] for p in parcels()]

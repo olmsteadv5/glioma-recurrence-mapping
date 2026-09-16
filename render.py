@@ -49,14 +49,14 @@ class Scene:
 
         info, surf = atlas.parcels(), atlas.meshes()
         index = {p["name"]: i for i, p in enumerate(info)}
-        colours = atlas.colours(palette)
+        colors = atlas.colors(palette)
         involved = [r["parcel"] for r in overlap["parcels"]]
 
         self.actors["shell"] = self._mesh(*atlas.brain(), _hex(SHELL), 0.15)
 
         for name in involved:
             i = index[name]
-            actor = self._mesh(surf[i].vertices, surf[i].faces, _hex(colours[i]), 1.0)
+            actor = self._mesh(surf[i].vertices, surf[i].faces, _hex(colors[i]), 1.0)
             self.parcel_actors[name] = actor
 
         image = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
@@ -107,10 +107,10 @@ class Scene:
         np.savez_compressed(cache, **saved)
         return out
 
-    def _mesh(self, v, f, colour, opacity):
+    def _mesh(self, v, f, color, opacity):
         f = np.asarray(f)
         poly = pv.PolyData(np.asarray(v), np.hstack([np.full((len(f), 1), 3), f]).ravel())
-        return self.plotter.add_mesh(poly, color=colour, opacity=opacity, smooth_shading=True)
+        return self.plotter.add_mesh(poly, color=color, opacity=opacity, smooth_shading=True)
 
     def _tracts(self, seg_image, index, involved):
         labels, names = atlas.label_volume(nib.load(MNI))
@@ -193,12 +193,12 @@ class Scene:
         hit = id(self._picker.GetActor())
         return next((n for n, a in self.parcel_actors.items() if id(a) == hit), None)
 
-    def recolour(self, palette):
+    def recolor(self, palette):
         self.palette = palette
-        colours = atlas.colours(palette)
+        colors = atlas.colors(palette)
         index = {p["name"]: i for i, p in enumerate(atlas.parcels())}
         for name, actor in self.parcel_actors.items():
-            actor.prop.color = _hex(colours[index[name]])
+            actor.prop.color = _hex(colors[index[name]])
 
     def image(self):
         self.plotter.render()
@@ -294,18 +294,18 @@ class Slices:
         if self.involved:
             table = np.zeros((len(self.parcel_names) + 1, 3), dtype=np.float32)
             alpha = np.zeros(len(self.parcel_names) + 1, dtype=np.float32)
-            for value, colour in self.involved.items():
-                table[value] = colour
+            for value, color in self.involved.items():
+                table[value] = color
                 alpha[value] = 0.5 if value == self.lit else 0.22
             weight = alpha[parcel][:, :, None]
             rgb = (rgb * (1 - weight) + table[parcel] * weight).astype(np.uint8)
 
-        for value, colour in TISSUE.items():
+        for value, color in TISSUE.items():
             if value in self.hidden:
                 continue
             m = lab == value
             if m.any():
-                rgb[m] = (rgb[m] * 0.55 + np.array(colour) * 0.45).astype(np.uint8)
+                rgb[m] = (rgb[m] * 0.55 + np.array(color) * 0.45).astype(np.uint8)
 
         mx, my = self._marker(which)
         if 0 <= my < rgb.shape[0]:

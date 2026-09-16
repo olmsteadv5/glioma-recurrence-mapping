@@ -43,7 +43,7 @@ LAYERS = [("T:NETC", "NETC necrosis", TISSUE["NETC"]), ("T:SNFH", "SNFH oedema",
           ("shell", "brain surface", "#a89984"),
           ("parcels", "involved parcels", "#d3869b")]
 # WT, TC and ET are unions of the tissue classes, so they are deliberately left
-# uncoloured: any class colour on them reads as "this row is that tissue"
+# uncolored: any class color on them reads as "this row is that tissue"
 ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
                ("YBA_696.glb", "meshes", "glb"),
                ("top5k_tracts_decimated.obj", "tracts", "3001"),
@@ -287,7 +287,7 @@ class Console(App):
     """
     BINDINGS = [
         ("q", "quit", "quit"), ("v", "view", "3d/slices"), ("s", "space", "native/mni"),
-        ("p", "palette", "colours"), ("t", "shell", "prompt"),
+        ("p", "palette", "colors"), ("t", "shell", "prompt"),
         ("x", "cancel", "cancel run"),
         Binding("a", "show_list('parcels')", "parcels", show=False),
         Binding("b", "show_list('functions')", "functions", show=False),
@@ -428,7 +428,7 @@ class Console(App):
         for name in ("WT", "TC", "ET", "RC"):
             if not r.get(name):
                 continue
-            # each token names exactly one class, so it can carry that colour
+            # each token names exactly one class, so it can carry that color
             parts = [LABELS[v] for v in REGIONS[name]]
             made = "" if len(parts) == 1 else " " + "+".join(parts)
             painted = "" if len(parts) == 1 else " " + f"[{FAINT}]+[/]".join(
@@ -541,7 +541,7 @@ class Console(App):
         volumes = self.results[self.subject]["labels_ml"]
         self.layer_rows = [row_ for row_ in LAYERS
                            if not row_[0].startswith("T:") or row_[0][2:] in volumes]
-        for key, name, colour in self.layer_rows:
+        for key, name, color in self.layer_rows:
             on = key not in self.hidden_layers
             if key == "parcels":
                 value = str(len(self.scene.parcel_actors)) if self.scene else ""
@@ -550,7 +550,7 @@ class Console(App):
             else:
                 value = volumes.get(key.split(":")[-1])
                 value = f"{value} mL" if value else ""
-            out.append(f"[{colour if on else FAINT}]{'[×]' if on else '[ ]'}[/] "
+            out.append(f"[{color if on else FAINT}]{'[×]' if on else '[ ]'}[/] "
                        f"[{DIM if on else FAINT}]{row(name, value, w)}[/]")
         self.query_one("#layers", Rows).update("\n".join(out))
 
@@ -579,9 +579,9 @@ class Console(App):
         self.slices.involved = {}
         if "parcels" in self.hidden_layers or self.slices.parcels is None:
             return
-        # the same parcels the 3d draws, in the same colours
+        # the same parcels the 3d draws, in the same colors
         order = {p["name"]: i for i, p in enumerate(atlas.parcels())}
-        palette = atlas.colours(self.palette)
+        palette = atlas.colors(self.palette)
         for r in self.results[self.subject]["atlas"]["parcels"]:
             if r["parcel"] in order:
                 self.slices.involved[order[r["parcel"]] + 1] = palette[order[r["parcel"]]]
@@ -668,8 +668,8 @@ class Console(App):
         self.marked = index
 
     def chips(self):
-        # same colour the parcel has in the 3d, so a row and a shape match up
-        palette = atlas.colours(self.palette)
+        # same color the parcel has in the 3d, so a row and a shape match up
+        palette = atlas.colors(self.palette)
         return {p["name"]: "[rgb(%d,%d,%d)]█[/]" % tuple(palette[i])
                 for i, p in enumerate(atlas.parcels())}
 
@@ -804,11 +804,11 @@ class Console(App):
             w, h = max(size.width * cell.width, 64), max(size.height * cell.height, 64)
             self.scene.resize(w, h)
             widget.image = self.scene.image()
-            viewer.border_title = f"3d · {self.palette} colours"
+            viewer.border_title = f"3d · {self.palette} colors"
             viewer.styles.border_subtitle_align = "right"
             other = "yba" if self.palette == "contrast" else "contrast"
             viewer.border_subtitle = keyed(
-                f"v slices · p {other} colours")
+                f"v slices · p {other} colors")
         else:
             for which in render.Slices.PLANES:
                 pane = self.query_one(f"#p-{which}", Pane)
@@ -818,8 +818,8 @@ class Console(App):
             self.refresh_readout()
             r = self.slices.readout()
             who = "" if self.watching is None else f" · {self.watching[10:]}"
-            colours = f" · {self.palette} colours" if self.slices.involved else ""
-            viewer.border_title = f"slices · {r['space']}{who}{colours}"
+            colors = f" · {self.palette} colors" if self.slices.involved else ""
+            viewer.border_title = f"slices · {r['space']}{who}{colors}"
             strip, taken = self.strip(
                 "viewer", [(str(i), m) for i, m in enumerate(MODALITIES, start=1)],
                 r["modality"], absent=[m for m in MODALITIES if m not in r["modalities"]])
@@ -888,7 +888,7 @@ class Console(App):
         core = f"v 3d · s {'native' if self.space == 'mni' else 'mni'}"
         if self.slices.involved:
             other = "yba" if self.palette == "contrast" else "contrast"
-            return [f"{core} · p {other} colours", core]
+            return [f"{core} · p {other} colors", core]
         return [core]
 
     def band(self, widget, left, taken, choices):
@@ -971,7 +971,7 @@ class Console(App):
         if action in self.VIEW_ACTIONS and not self.scene:
             return None
         if action == "palette":
-            # the slices only carry parcels in mni, where the colours mean something
+            # the slices only carry parcels in mni, where the colors mean something
             return (self.mode == "3d" or (self.mode == "slices" and self.space == "mni")) or None
         if action == "space":
             return self.mode == "slices" or None
@@ -998,7 +998,7 @@ class Console(App):
 
     def action_palette(self):
         self.palette = "yba" if self.palette == "contrast" else "contrast"
-        self.scene.recolour(self.palette)
+        self.scene.recolor(self.palette)
         self.sync_overlay()
         self.refresh_list()
         self.draw()

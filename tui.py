@@ -56,6 +56,21 @@ def bar(fraction, n=10):
     return "█" * filled + "░" * (n - filled)
 
 
+NAMED = {"esc", "enter", "pgup/pgdn"}
+
+
+def keyed(text):
+    # the key carries the brightness, the words behind it stay quiet
+    parts = []
+    for part in text.split(" · "):
+        key, _, rest = part.partition(" ")
+        if rest and (len(key) == 1 or key in NAMED):
+            parts.append(f"[{FG}]{key}[/] [{DIM}]{rest}[/]")
+        else:
+            parts.append(f"[{DIM}]{part}[/]")
+    return f"[{DIM}] · [/]".join(parts)
+
+
 def row(left, right, width=30):
     # One list line with the right column flush to the edge.
     room = width - len(right)
@@ -257,7 +272,7 @@ class Console(App):
         self.query_one("#inputs").border_title = "inputs"
         self.query_one("#inputs").border_subtitle = "click a subject"
         self.query_one("#shell").border_title = "pipeline"
-        self.query_one("#shell").border_subtitle = IDLE
+        self.query_one("#shell").border_subtitle = keyed(IDLE)
         self.query_one("#readout").border_title = "cursor"
         self.log_write(f"[{DIM}]{len(self.results)} subjects from {RESULTS.name}[/]")
         self.log_write(f"[{FAINT}]./main.py <n> runs everything, or start at a stage: "
@@ -482,7 +497,8 @@ class Console(App):
             viewer.border_title = self.band(viewer, title, len(title), ["v slices"])
             viewer.styles.border_subtitle_align = "right"
             other = "yba" if self.palette == "contrast" else "contrast"
-            viewer.border_subtitle = f"drag rotate · scroll zoom · p {other} colours · h reset"
+            viewer.border_subtitle = keyed(
+                f"drag rotate · scroll zoom · p {other} colours · h reset")
         else:
             for which in render.Slices.PLANES:
                 pane = self.query_one(f"#p-{which}", Pane)
@@ -529,14 +545,14 @@ class Console(App):
         # each key names what it gives you, not what you are looking at
         core = (f"s {'native' if self.space == 'mni' else 'mni'} · "
                 f"o {'hide' if self.slices.overlay else 'show'} overlay")
-        return [f"click or pgup/pgdn · {core}", core]
+        return [f"pgup/pgdn slice · {core}", core]
 
     def band(self, widget, left, taken, choices):
         # one border line, a label at each end, the line itself drawn between
         room = widget.outer_size.width - 6 - taken
         for text in choices:
             if len(text) + 5 <= room:
-                return left + f" [{DIM}]{'─' * (room - len(text) - 2)}[/] {text}"
+                return left + f" [{DIM}]{'─' * (room - len(text) - 2)}[/] {keyed(text)}"
         return left
 
     def click_modality(self, x):
@@ -775,7 +791,7 @@ class Console(App):
             self.log_write(f"[{FAINT}]nothing running[/]")
 
     def busy(self, note):
-        self.query_one("#shell").border_subtitle = note
+        self.query_one("#shell").border_subtitle = keyed(note)
 
     def tick(self):
         self.busy(f"running {time.time() - self.started:.0f}s · c cancels")

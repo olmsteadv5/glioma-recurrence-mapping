@@ -38,3 +38,16 @@ def stripped_dir(subject):
 
 def modality(directory, subject, name):
     return directory / f"{subject}_{name}.nii.gz"
+
+
+STAGES = ("fetch", "strip", "segment", "register", "map")
+
+
+def stage_file(subject, stage):
+    # The file whose existence means that stage has run.
+    return {
+        "fetch": modality(raw_dir(subject), subject, "T1"),
+        "strip": modality(stripped_dir(subject), subject, "T1"),
+        "segment": out_dir(subject) / "seg.nii.gz",
+        "register": out_dir(subject) / "seg_in_mni.nii.gz",
+    }.get(stage)

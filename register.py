@@ -48,8 +48,6 @@ def run(subject, stripped, seg_path):
     seg_mni = destination / "seg_in_mni.nii.gz"
 
     kept = _metric_mask(t1, seg_path, mask)
-    if kept < 0.6:
-        print(f"  only {kept:.0%} of brain left to align on")
 
     # -mm crashes in affine mode; a global transform cannot warp locally anyway
     _greedy(["-d", 3, "-a", "-m", "NMI", "-i", MNI, t1, "-o", affine,
@@ -63,4 +61,4 @@ def run(subject, stripped, seg_path):
              "-ri", "LABEL", "0.2vox", "-rm", seg_path, seg_mni,
              "-r", warp, affine, "-threads", THREADS], log)
 
-    return seg_mni
+    return seg_mni, kept

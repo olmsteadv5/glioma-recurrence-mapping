@@ -48,6 +48,10 @@ a stage rather than picking stages out of the middle:
 It says what is missing if you start too late, rather than failing part way
 through. `--no-view` skips the browser window at the end.
 
+`--timepoint 2` fetches the follow-up scan instead of the pre-operative one.
+Not every subject has one; 36, 42 and 51 do, 2 does not. Run both and the
+inputs panel groups them under the patient and gives you the change in WT.
+
 To look at a subject you have already done, don't rerun anything, just open the
 view:
 
@@ -88,6 +92,7 @@ knows about this project, it is not a shell:
 
 ```
 ./main.py 36 42    the whole pipeline for those subjects
+--timepoint 2      on any of these, the follow-up scan
 fetch 36           \
 strip 36            |  restart at that stage and run everything after it,
 segment 36          |  same as ./main.py 36 --from <stage>
@@ -112,6 +117,9 @@ The modality strip sits in the viewer's bottom border, away from the other
 controls on the right. Press `1` to `4` or click it. The number of the one in
 use is bright, and anything the current space does not carry is greyed.
 
+The cursor panel gives every sequence's intensity at that voxel, not just the
+one on screen, and in MNI it names the parcel under the crosshair.
+
 ```
 v  3d / slices          p  parcel colouring     t  focus the prompt
 s  native / mni         f  parcels / functions  c  cancel the run
@@ -127,6 +135,10 @@ sits top right, the rest of the controls bottom right, and both are labelled
 with what they give you rather than with what you are already looking at, so in
 native space `s` reads `s mni`.
 
+Each parcel row carries a chip in that parcel's own colour, so a shape you can
+see in the 3D can be found in the list without clicking through it. The chips
+follow the palette toggle.
+
 The breakdown lists the layers with their volumes, clickable to show and hide,
 then either the involved parcels or the functions at risk. Whatever is selected
 lights up in the 3D and every other parcel drops back, so a row and a shape in
@@ -137,6 +149,17 @@ WT, TC and ET are unions of the tissue classes, not classes themselves, which
 is why none of their volumes matches a single layer. The inputs panel spells
 out what each one contains and leaves them uncoloured, since the three colours
 belong to the classes in the breakdown.
+
+Under them the panel carries `where` the tumour sits, by hemisphere and lobe,
+which is the same question the 119 parcel rows answer one at a time; `run`,
+which segmenter produced this and on what, how long it took, and how much brain
+the registration had left to align on once the lesion was masked out; and
+`stages`, how long ago each stage last wrote its output. A stage older than one
+before it is marked stale, which is what a partial rerun leaves behind.
+
+While the pipeline runs, its panel shows which stage is going and the viewer
+switches to the subject being worked on as soon as its scans land, so you are
+looking at the case you are waiting for rather than the last one.
 
 For a parcel the panel underneath gives its anatomy and its own Parcelsynth
 terms. For a function it gives the parcels that produced the score, each with

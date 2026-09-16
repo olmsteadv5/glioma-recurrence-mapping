@@ -1,6 +1,7 @@
 # Yale Brain Atlas: official parcel volume, meshes, metadata and overlap.
 
 import csv
+import functools
 import re
 import urllib.request
 
@@ -47,6 +48,7 @@ def ensure(name):
     return path
 
 
+@functools.lru_cache(maxsize=4)
 def parcels():
     # Label value i is parcels()[i-1].
     with open(ensure("YBA_696_parcel_dict.csv")) as fh:
@@ -62,6 +64,7 @@ def parcels():
     } for r in rows]
 
 
+@functools.lru_cache(maxsize=4)
 def colours(palette="yba"):
     # "yba" groups parcels by region, "contrast" makes neighbours distinguishable.
     if palette != "contrast":
@@ -76,6 +79,7 @@ def colours(palette="yba"):
     return [table[i] for i in range(1, len(parcels()) + 1)]
 
 
+@functools.lru_cache(maxsize=4)
 def meshes():
     # Per-parcel surfaces, same order as parcels().
     import trimesh

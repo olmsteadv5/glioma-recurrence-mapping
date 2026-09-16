@@ -17,12 +17,15 @@ from textual_image._terminal import get_cell_size
 from textual_image.renderable import Image as Renderable
 from textual_image.widget import Image as ImageWidget
 
+import atlas
 import function
 import render
 from paths import (ATLAS_INPUT, LABELS, MODALITIES, REGIONS, RESULTS, ROOT,
-                   stripped_dir, subject_id)
+                   STAGES, stage_file, stripped_dir, subject_id)
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\r")
+MARKER = re.compile(r"^\* (\w+)$")
+SUBJECT = re.compile(r"^UPENN-GBM-\d{5}_\d\d$")
 
 # gruvbox dark, the same values btop reads out of gruvbox_dark_v2.theme
 FG, DIM, FAINT = "#ebdbb2", "#a89984", "#7c6f64"
@@ -43,6 +46,7 @@ ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
 IDLE = "esc leaves · t returns"
 STAGES = ("fetch", "strip", "segment", "register", "map")
 HELP = [("./main.py <n>...", "the whole pipeline, about 3 min a subject"),
+        ("--timepoint 2", "on any of these, the follow-up scan"),
         ("fetch <n>...", "download the scans, then everything after"),
         ("strip <n>...", "skull strip and check, then everything after"),
         ("segment <n>...", "BraTS in docker, then everything after"),
@@ -73,6 +77,35 @@ def keyed(text):
         else:
             parts.append(f"[{DIM}]{part}[/]")
     return f"[{DIM}] · [/]".join(parts)
+
+
+def ago(when):
+    # "4m", "2d", coarse on purpose, this is freshness not a timestamp
+    gap = max(time.time() - when, 0)
+    for size, mark in ((86400, "d"), (3600, "h"), (60, "m")):
+        if gap >= size:
+            return f"{int(gap // size)}{mark} ago"
+    return f"{int(gap)}s ago"
+
+
+def spell(seconds):
+    return f"{int(seconds // 60)}m{int(seconds % 60):02d}s" if seconds >= 60 else f"{seconds}s"
+
+
+def distribution(overlap):
+    # Where the tumour sits, from the parcels it already touches.
+    side_of = {p["name"]: p["hemisphere"] for p in atlas.parcels()}
+    sides, lobes, total = {}, {}, 0.0
+    for r in overlap["parcels"]:
+        ml = r["in_tumour_ml"]
+        total += ml
+        sides[side_of.get(r["parcel"], "?")] = sides.get(side_of.get(r["parcel"], "?"), 0) + ml
+        lobes[r["lobe"]] = lobes.get(r["lobe"], 0) + ml
+    if total == 0:
+        return []
+    out = sorted(sides.items(), key=lambda kv: -kv[1])
+    out += sorted(lobes.items(), key=lambda kv: -kv[1])[:4]
+    return [(name.lower(), value / total) for name, value in out]
 
 
 def row(left, right, width=30):
@@ -242,6 +275,7 @@ class Console(App):
         self.scene = self.slices = self.proc = self._timer = self._clock = None
         self.hidden_layers, self.subject_rows = set(), {}
         self.history, self.hpos, self.started = [], 0, 0
+        self.stage, self.watching = None, None
         self.row_text, self.marked = [], None
         self.pending, self._spin, self._settle = [0.0, 0.0, 1.0], None, None
         self.modality_spans = []
@@ -303,7 +337,7 @@ class Console(App):
     # ---------------------------------------------------------------- subject
 
     def load_subject(self, subject):
-        self.subject = subject
+        self.subject, self.watching = subject, None
         self.hidden_layers = set()
         overlap = self.results[subject]["atlas"]
         self.scene = render.Scene(subject, overlap, palette=self.palette)
@@ -323,14 +357,19 @@ class Console(App):
         w = self._panel_width = self.panel_width()
         out = [f"[{FG}]subject[/]"]
         self.subject_rows = {}
-        for n, s in enumerate(self.subjects, start=1):
-            a = self.results[s]["atlas"]
-            here = s == self.subject
-            self.subject_rows[n] = s
-            left = ("› " if here else "  ") + s[10:]
+        seen = set()
+        for n, name in enumerate(self.subjects, start=1):
+            a = self.results[name]["atlas"]
+            here = name == self.subject
+            self.subject_rows[n] = name
+            patient = name[10:15]
+            # later timepoints of the same patient hang off the first one
+            label = name[10:] if patient not in seen else f"  \u21b3 _{name[16:]}"
+            seen.add(patient)
+            left = ("\u203a " if here else "  ") + label
             right = "%3dp %7.0f mL" % (len(a["parcels"]), a["tumour_ml"])
             out.append(f"[{FG if here else DIM}]{row(left, right, w)}[/]")
-        out.append(f"[{FAINT}]{'─' * w}[/]")
+        out.append(f"[{FAINT}]{'\u2500' * w}[/]")
 
         d = self.results[self.subject]
         r = d["regions_ml"]
@@ -342,15 +381,57 @@ class Console(App):
                        f"[{DIM}]{f'{r[name]} mL':>{w - 4 - len(made)}}[/]")
         in_parcels = f"{d['atlas']['in_parcels_ml']} mL"
         out.append(f"[{FAINT}]{row('  in parcels', in_parcels, w)}[/]")
-        dice = f"{d['dice']['WT']:.2f}" if d.get("dice") else "no reference"
-        out.append(f"[{FAINT}]{row('  dice WT', dice, w)}[/]")
+        out.append(f"[{FAINT}]{row('  dice WT', self.dice(d), w)}[/]")
+        other = self.sibling(self.subject)
+        if other:
+            # always earlier to later, so the sign means growth either way round
+            first, then = sorted([self.subject, other])
+            change = (self.results[then]["regions_ml"]["WT"]
+                      - self.results[first]["regions_ml"]["WT"])
+            label = f"  _{first[16:]} → _{then[16:]}"
+            out.append(f"[{WARN if change > 0 else DIM}]{row(label, f'{change:+.1f} mL', w)}[/]")
+
+        share = distribution(d["atlas"])
+        if share:
+            out.append(f"[{DIM}]where[/]")
+            out += [f"[{FAINT}]{row('  ' + name, f'{value:.0%}', w)}[/]" for name, value in share]
 
         out.append(f"[{DIM}]scans[/]")
         for m in MODALITIES:
             ok = (stripped_dir(self.subject) / f"{self.subject}_{m}.nii.gz").exists()
-            state = "stripped" if ok else "missing"
+            state = "stripped" if ok else "not stripped"
             out.append(f"[{FG if ok else FAINT}]  {m}[/]"
-                       f"[{OK if ok else BAD}]{state:>{w - len(m) - 2}}[/]")
+                       f"[{FAINT if ok else BAD}]{state:>{w - len(m) - 2}}[/]")
+
+        run = d.get("run", {})
+        out.append(f"[{DIM}]run[/]")
+        made = f"{run.get('algorithm', '?')} {run.get('device', '')}".strip()
+        out.append(f"[{FAINT}]{row('  segmenter', made, w)}[/]")
+        if "seconds" in run:
+            out.append(f"[{FAINT}]{row('  last run', spell(run['seconds']), w)}[/]")
+        if "kept" in run:
+            kept = f"{run['kept']:.0%}"
+            out.append(f"[{FAINT}]{row('  brain kept', kept, w)}[/]")
+
+        out.append(f"[{DIM}]stages[/]")
+        stamps = {}
+        for stage in STAGES:
+            path = stage_file(self.subject, stage)
+            # map writes into the shared results file, so it carries its own stamp
+            stamps[stage] = (run.get("mapped") if path is None
+                             else path.stat().st_mtime if path.exists() else None)
+            if stamps[stage] is None:
+                # a result from before this was recorded is not the same as no result
+                missing = "unknown" if stage == "map" and "atlas" in d else "not run"
+                style = FAINT if missing == "unknown" else BAD
+                out.append(f"[{FAINT}]  {stage}[/][{style}]{missing:>{w - len(stage) - 2}}[/]")
+                continue
+            # a stage older than the one before it was left behind by a rerun
+            before = [t for t in stamps.values() if t]
+            stale = len(before) > 1 and stamps[stage] < max(before[:-1])
+            out.append(f"[{FAINT}]  {stage}[/]"
+                       f"[{WARN if stale else FAINT}]"
+                       f"{(('stale, ' if stale else '') + ago(stamps[stage])):>{w - len(stage) - 2}}[/]")
 
         out.append(f"[{DIM}]atlas[/]")
         for name, label, note in ATLAS_FILES:
@@ -359,6 +440,15 @@ class Console(App):
             out.append(f"[{FG if have else FAINT}]  {label}[/]"
                        f"[{FAINT if have else BAD}]{state:>{w - len(label) - 2}}[/]")
         self.query_one("#stats", Rows).update("\n".join(out))
+
+    def dice(self, d):
+        return f"{d['dice']['WT']:.2f}" if d.get("dice") else "no reference"
+
+    def sibling(self, subject):
+        # the same patient at the other timepoint, if it has been run
+        other = next((s for s in self.subjects
+                      if s[10:15] == subject[10:15] and s != subject), None)
+        return other
 
     def click_subject(self, row_index):
         chosen = self.subject_rows.get(row_index)
@@ -425,7 +515,9 @@ class Console(App):
             title = "breakdown · parcels"
             panel.border_title = self.band(panel, title, len(title), ["f functions"])
             panel.border_subtitle = "click here or in the 3d"
-            self.row_text = [row(p["parcel"], f"{bar(p['fraction'])} {p['fraction']:>4.0%}", w - 2)
+            chips = self.chips()
+            self.row_text = [chips.get(p["parcel"], " ") + " " +
+                             row(p["parcel"], f"{bar(p['fraction'])} {p['fraction']:>4.0%}", w - 4)
                              for p in rows]
         else:
             top = d.get("function", [])
@@ -449,6 +541,12 @@ class Console(App):
                 listing.children[i].children[0].update(
                     ("› " if i == index else "  ") + self.row_text[i])
         self.marked = index
+
+    def chips(self):
+        # same colour the parcel has in the 3d, so a row and a shape match up
+        palette = atlas.colours(self.palette)
+        return {p["name"]: "[rgb(%d,%d,%d)]█[/]" % tuple(palette[i])
+                for i, p in enumerate(atlas.parcels())}
 
     def refresh_detail(self, index):
         d = self.results[self.subject]
@@ -531,7 +629,8 @@ class Console(App):
                     which, (max(size.width * cell.width, 32), max(size.height * cell.height, 32)))
             self.refresh_readout()
             r = self.slices.readout()
-            title = f"slices · {r['space']}"
+            who = "" if self.watching is None else f" · {self.watching[10:]}"
+            title = f"slices · {r['space']}{who}"
             viewer.border_title = self.band(viewer, title, len(title), ["v 3d"])
             strip, taken = self.modality_strip()
             viewer.styles.border_subtitle_align = "left"
@@ -541,11 +640,34 @@ class Console(App):
         r = self.slices.readout()
         w = max(self.query_one("#readout", Static).size.width, 24)
         place = " ".join(str(v) for v in r["coords"]) if r["coords"] else "—"
-        self.query_one("#readout", Static).update("\n".join([
-            f"[{FAINT}]{row(r['coord_space'], place, w)}[/]",
-            f"[{FAINT}]{row('voxel', ' '.join(str(v) for v in r['voxel']), w)}[/]",
-            f"[{FAINT}]{row('intensity', str(r['intensity']), w)}[/]",
-            f"[{DIM}]{row('label', r['label'], w)}[/]"]))
+        lines = [f"[{FAINT}]{row(r['coord_space'], place, w)}[/]",
+                 f"[{FAINT}]{row('voxel', ' '.join(str(v) for v in r['voxel']), w)}[/]",
+                 f"[{DIM}]{row('label', r['label'] if r['segmented'] else '—', w)}[/]"]
+        for note, ready in (("not stripped yet", r["stripped"]),
+                            ("not segmented yet", r["segmented"])):
+            if not ready:
+                lines.append(f"[{WARN}]{row('', note, w)}[/]")
+
+        # every sequence at this voxel, which is the comparison you actually make
+        lines += ["", f"[{FAINT}]signal[/]"]
+        for name, value in r["signal"].items():
+            style = FG if name == r["modality"] else FAINT
+            lines.append(f"[{style}]  {name}[/][{DIM}]{value:>{w - len(name) - 2}}[/]")
+
+        if r["parcel"]:
+            info = self.parcel_info().get(r["parcel"], {})
+            lines += ["", f"[{FAINT}]parcel[/]", f"[{FG}]  {r['parcel']}[/]",
+                      f"[{DIM}]  {info.get('long_name', '')[:w - 2]}[/]",
+                      f"[{FAINT}]  {info.get('lobe', '')}[/]"]
+        elif self.space == "mni":
+            lines += ["", f"[{FAINT}]no parcel here[/]"]
+        else:
+            lines += ["", f"[{FAINT}]s for mni to name the parcel[/]"]
+        self.query_one("#readout", Static).update("\n".join(lines))
+
+    @staticmethod
+    def parcel_info():
+        return {p["name"]: p for p in atlas.parcels()}
 
     def modality_strip(self):
         # greyed out means the current space does not carry it, mni is T1 only
@@ -679,6 +801,7 @@ class Console(App):
     def action_palette(self):
         self.palette = "yba" if self.palette == "contrast" else "contrast"
         self.scene.recolour(self.palette)
+        self.refresh_list()
         self.draw()
 
     def action_listing(self):
@@ -744,17 +867,22 @@ class Console(App):
         args = parts[1:]
 
         # a stage name is shorthand for main.py --from that stage
-        stage = "fetch"
-        if name in STAGES or name in ("main.py", "main", "run"):
-            if name in STAGES:
-                stage = name
-            if "--from" in args:
-                cut = args.index("--from")
-                stage = args[cut + 1] if cut + 1 < len(args) else ""
+        stage, timepoint = name if name in STAGES else "fetch", 1
+        for flag in ("--from", "--timepoint"):
+            if flag in args:
+                cut = args.index(flag)
+                value = args[cut + 1] if cut + 1 < len(args) else ""
                 args = args[:cut] + args[cut + 2:]
-            if stage not in STAGES:
-                self.log_write(f"[{BAD}]stages are {', '.join(STAGES)}[/]")
-                return
+                if flag == "--from":
+                    stage = value
+                elif value in ("1", "2"):
+                    timepoint = int(value)
+                else:
+                    self.log_write(f"[{BAD}]timepoint is 1 or 2[/]")
+                    return
+        if stage not in STAGES:
+            self.log_write(f"[{BAD}]stages are {', '.join(STAGES)}[/]")
+            return
 
         numbers = []
         for arg in args:
@@ -769,9 +897,9 @@ class Console(App):
             elif self.proc:
                 self.log_write(f"[{WARN}]a job is already running, cancel it first[/]")
             else:
-                self.run_pipeline(numbers, stage)
+                self.run_pipeline(numbers, stage, timepoint)
         elif name in ("show", "load"):
-            self.show_subject(numbers)
+            self.show_subject(numbers, timepoint)
         elif name in ("browser", "view.py", "view"):
             self.open_browser(numbers)
         elif name in ("cancel", "stop"):
@@ -786,11 +914,11 @@ class Console(App):
         else:
             self.log_write(f"[{BAD}]{name}: not a command. try help.[/]")
 
-    def show_subject(self, numbers):
+    def show_subject(self, numbers, timepoint=1):
         if not numbers:
             self.log_write(f"[{BAD}]usage: show <subject number>[/]")
             return
-        wanted = subject_id(numbers[0])
+        wanted = subject_id(numbers[0], timepoint)
         if wanted not in self.results:
             self.log_write(f"[{BAD}]{wanted} has no results yet[/]")
             return
@@ -818,10 +946,23 @@ class Console(App):
         self.query_one("#shell").border_subtitle = keyed(note)
 
     def tick(self):
-        self.busy(f"running {time.time() - self.started:.0f}s · c cancels")
+        done = STAGES.index(self.stage) + 1 if self.stage in STAGES else 0
+        where = f"{self.stage} {bar(done / len(STAGES), 5)} {done}/{len(STAGES)}"
+        self.busy(f"{where} · {spell(round(time.time() - self.started))} · c cancels")
+
+    def preview(self, subject):
+        # the scans exist from here on, so look at the case instead of a stale one
+        if not stage_file(subject, "fetch").exists() or subject == self.subject:
+            return
+        self.slices = render.Slices(subject, self.space)
+        self.watching = subject
+        if self.mode == "3d":
+            self.action_view()
+        else:
+            self.draw()
 
     @work(exclusive=True)
-    async def run_pipeline(self, numbers, stage="fetch"):
+    async def run_pipeline(self, numbers, stage="fetch", timepoint=1):
         self.started = time.time()
         self._clock = self.set_interval(1.0, self.tick)
         self.tick()
@@ -829,6 +970,8 @@ class Console(App):
         call = ["main.py", *[str(n) for n in numbers], "--no-view"]
         if stage != "fetch":
             call += ["--from", stage]
+        if timepoint != 1:
+            call += ["--timepoint", str(timepoint)]
         self.log_write(f"[{FAINT}]{' '.join(call)}[/]")
         # rich draws a live spinner that becomes escape-code debris in a log widget
         env = {**os.environ, "TERM": "dumb", "NO_COLOR": "1", "PYTHONUNBUFFERED": "1"}
@@ -838,11 +981,20 @@ class Console(App):
         self.refresh_bindings()
         async for raw in self.proc.stdout:
             text = ANSI.sub("", raw.decode(errors="replace")).rstrip()
-            if text:
+            if not text:
+                continue
+            found = MARKER.match(text)
+            if found:
+                self.stage = found.group(1)
+                self.tick()
+            elif SUBJECT.match(text):
+                self.log_write(f"[{FG}]{text}[/]")
+                self.preview(text)
+            else:
                 self.log_write(f"[{DIM}]{text}[/]")
         code = await self.proc.wait()
         elapsed = time.time() - self.started
-        self.proc = None
+        self.proc, self.stage = None, None
         self._clock.stop()
         self.busy(IDLE)
         self.refresh_bindings()
@@ -854,7 +1006,7 @@ class Console(App):
         self.results = json.loads(RESULTS.read_text())
         self.subjects = sorted(self.results)
         self.log_write(f"[{OK}]done in {elapsed:.0f}s[/]")
-        self.load_subject(subject_id(numbers[-1]))
+        self.load_subject(subject_id(numbers[-1], timepoint))
 
 
 if __name__ == "__main__":

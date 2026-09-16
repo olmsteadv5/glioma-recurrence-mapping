@@ -1,5 +1,7 @@
 # Offscreen rendering for the terminal UI: 3D scenes and slice planes, PIL images out.
 
+import os
+
 import nibabel as nib
 import numpy as np
 import pyvista as pv
@@ -10,7 +12,7 @@ from PIL import Image
 import atlas
 import tracts as tractography
 import view
-from paths import LABELS, MNI, MODALITIES, modality, out_dir, stripped_dir
+from paths import LABELS, MNI, MODALITIES, modality, out_dir, raw_dir, stripped_dir
 
 pv.OFF_SCREEN = True
 
@@ -57,11 +59,8 @@ class Scene:
             self.parcel_actors[name] = actor
 
         image = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
-        data = np.asarray(image.dataobj).astype(np.int16)
-        for value, name in LABELS.items():
-            s = view._tumour_surface(data, image.affine, value)
-            if s:
-                self.actors["T:" + name] = self._mesh(s[0], s[1], _hex(TISSUE[value]), 1.0)
+        for value, name in self._tumour(subject, image).items():
+            self.actors["T:" + name[0]] = self._mesh(name[1], name[2], _hex(TISSUE[value]), 1.0)
 
         lines = self._tracts(image, index, involved)
         if lines is not None:
@@ -86,6 +85,27 @@ class Scene:
         self.grab.ShouldRerenderOff()
         self.grab.SetInputBufferTypeToRGB()
         self.grab.ReadFrontBufferOff()
+
+    @staticmethod
+    def _tumour(subject, image):
+        # contouring the four labels is half a second, and it only changes
+        # when the registration does
+        cache = out_dir(subject) / "tumour_surfaces.npz"
+        if cache.exists() and cache.stat().st_mtime >= os.path.getmtime(image.get_filename()):
+            held = np.load(cache)
+            return {int(v): (LABELS[int(v)], held[f"v{v}"], held[f"f{v}"])
+                    for v in held["values"]}
+        data = np.asarray(image.dataobj).astype(np.int16)
+        out, saved = {}, {"values": []}
+        for value, name in LABELS.items():
+            surface = view._tumour_surface(data, image.affine, value)
+            if surface:
+                out[value] = (name, surface[0], surface[1])
+                saved["values"].append(value)
+                saved[f"v{value}"], saved[f"f{value}"] = surface
+        saved["values"] = np.array(saved["values"])
+        np.savez_compressed(cache, **saved)
+        return out
 
     def _mesh(self, v, f, colour, opacity):
         f = np.asarray(f)
@@ -191,9 +211,12 @@ class Slices:
 
     def load(self, space):
         self.space = space
-        self.volumes = {}
+        self.volumes, self.parcels, self.stripped = {}, None, True
         if space == "native":
+            # fall back to the raw scans, so a subject mid-pipeline still draws
             d = stripped_dir(self.subject)
+            if not modality(d, self.subject, "T1").exists():
+                d, self.stripped = raw_dir(self.subject), False
             for m in MODALITIES:
                 p = modality(d, self.subject, m)
                 if p.exists():
@@ -202,9 +225,15 @@ class Slices:
         else:
             self.volumes["T1"] = self._canon(nib.load(out_dir(self.subject) / "t1_in_mni.nii.gz"))
             seg = out_dir(self.subject) / "seg_in_mni.nii.gz"
+            labels, names = atlas.label_volume(nib.load(MNI))
+            self.parcels = nib.as_closest_canonical(
+                nib.Nifti1Image(labels, nib.load(MNI).affine)).get_fdata().astype(np.int32)
+            self.parcel_names = names
         self.affine, first = next(iter(self.volumes.values()))
         self.shape = first.shape
-        self.seg = self._canon(nib.load(seg))[1]
+        self.segmented = seg.exists()
+        self.seg = (self._canon(nib.load(seg))[1] if self.segmented
+                    else np.zeros(self.shape, dtype=np.int16))
         self.modality = "T1GD" if "T1GD" in self.volumes else next(iter(self.volumes))
         start = (np.unravel_index(np.argmax(self.seg > 0), self.seg.shape)
                  if (self.seg > 0).any() else [s // 2 for s in self.shape])
@@ -296,8 +325,15 @@ class Slices:
         label = int(self.seg[x, y, z])
         out = {"voxel": (int(x), int(y), int(z)), "label": LABELS.get(label, "background"),
                "label_value": label, "intensity": int(self._grey()[x, y, z]),
-               "space": self.space, "modality": self.modality,
-               "modalities": list(self.volumes)}
+               "space": self.space, "modality": self.modality, "stripped": self.stripped,
+               "segmented": self.segmented,
+               "modalities": list(self.volumes),
+               "signal": {m: int(v[1][x, y, z]) for m, v in self.volumes.items()},
+               "parcel": None}
+        if self.parcels is not None:
+            value = int(self.parcels[x, y, z])
+            if 0 < value <= len(self.parcel_names):
+                out["parcel"] = self.parcel_names[value - 1]
         if self.space == "mni":
             world = nib.affines.apply_affine(self.affine, [x, y, z])
             out["coords"] = tuple(round(float(v)) for v in world)

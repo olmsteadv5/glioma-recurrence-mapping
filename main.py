@@ -15,35 +15,44 @@ import register
 import segment
 import skullstrip
 import verify
-from paths import (MNI, OUTPUTS, RESULTS, modality, out_dir, raw_dir,
+from paths import (MNI, OUTPUTS, RESULTS, STAGES, modality, out_dir, raw_dir,
                    stripped_dir, subject_id)
 
 
-STAGES = ("fetch", "strip", "segment", "register", "map")
-NEEDS = {"strip": "inputs", "segment": "stripped scans", "register": "a segmentation",
-         "map": "a registered segmentation"}
+def mark(stage):
+    # the terminal UI reads these to follow along, they are not chatter
+    print(f"* {stage}", flush=True)
 
 
-def process(number, first="fetch"):
+def process(number, first="fetch", timepoint=1, was=None):
     # Stages are sequential, so starting at one means running all the later ones.
     started = time.time()
     at = STAGES.index(first)
-    subject = fetch.get(number) if at == 0 else subject_id(number)
+    subject = subject_id(number, timepoint)
+    if at == 0:
+        mark("fetch")
+        subject = fetch.get(number, timepoint)
     print(subject)
     out_dir(subject).mkdir(parents=True, exist_ok=True)
+    run = dict(was or {})
 
     stripped = stripped_dir(subject)
     if at <= 1:
+        mark("strip")
         stripped = skullstrip.run(subject)
         verify.run(subject, stripped)
 
     seg = out_dir(subject) / "seg.nii.gz"
     if at <= 2:
-        seg = segment.run(subject, stripped)
+        mark("segment")
+        seg, run["algorithm"], run["device"] = segment.run(subject, stripped)
     scores = evaluate.run(subject, seg)
 
     if at <= 3:
-        register.run(subject, stripped, seg)
+        mark("register")
+        _, run["kept"] = register.run(subject, stripped, seg)
+    run["finished"], run["seconds"] = time.time(), round(time.time() - started)
+    scores["run"] = run
 
     # printed here because the segmenter's progress spinner erases the line above it
     r = scores["regions_ml"]
@@ -55,9 +64,9 @@ def process(number, first="fetch"):
     return subject, scores
 
 
-def missing(number, first):
+def missing(number, first, timepoint=1):
     # What a later starting point assumes is already on disk.
-    subject = subject_id(number)
+    subject = subject_id(number, timepoint)
     at = STAGES.index(first)
     if at >= 1 and not raw_dir(subject).exists():
         return f"{raw_dir(subject)} is missing, start from fetch"
@@ -70,28 +79,31 @@ def missing(number, first):
     return None
 
 
-def main(numbers, first="fetch"):
+def main(numbers, first="fetch", timepoint=1):
     OUTPUTS.mkdir(parents=True, exist_ok=True)
     stored = json.loads(RESULTS.read_text()) if RESULTS.exists() else {}
     results = {}
     for number in numbers:
-        gap = missing(number, first)
+        gap = missing(number, first, timepoint)
         if gap:
             sys.exit(gap)
+        subject = subject_id(number, timepoint)
+        was = stored.get(subject, {}).get("run")
         if first == "map":
-            subject = subject_id(number)
             results[subject] = stored.get(subject, {})
             results[subject].update(evaluate.run(subject, out_dir(subject) / "seg.nii.gz"))
         else:
-            subject, scores = process(number, first)
+            subject, scores = process(number, first, timepoint, was)
             results[subject] = scores
 
+    mark("map")
     labels, names = atlas.label_volume(nib.load(MNI))
 
     for subject in results:
         overlap = atlas.overlap(out_dir(subject) / "seg_in_mni.nii.gz", labels, names)
         results[subject]["atlas"] = overlap
         results[subject]["function"] = function.for_tumour(overlap)
+        results[subject].setdefault("run", {})["mapped"] = time.time()
         top = ", ".join(f["term"] for f in results[subject]["function"][:4])
         print(f"{subject}: {overlap['in_parcels_ml']} mL in "
               f"{len(overlap['parcels'])} parcels; {top}")
@@ -108,16 +120,22 @@ if __name__ == "__main__":
     # the terminal UI is its own viewer, it passes --no-view
     show = "--no-view" not in args
     args = [a for a in args if a != "--no-view"]
-    first = "fetch"
-    if "--from" in args:
-        cut = args.index("--from")
-        first = args[cut + 1] if cut + 1 < len(args) else ""
-        args = args[:cut] + args[cut + 2:]
-    if not args or not all(a.isdigit() for a in args) or first not in STAGES:
+    first, timepoint = "fetch", "1"
+    for flag, fallback in (("--from", "fetch"), ("--timepoint", "1")):
+        if flag in args:
+            cut = args.index(flag)
+            value = args[cut + 1] if cut + 1 < len(args) else ""
+            args = args[:cut] + args[cut + 2:]
+            if flag == "--from":
+                first = value
+            else:
+                timepoint = value
+    if (not args or not all(a.isdigit() for a in args)
+            or first not in STAGES or timepoint not in ("1", "2")):
         sys.exit(f"usage: ./main.py <subject numbers> [--from {'|'.join(STAGES)}] "
-                 f"[--no-view]")
+                 f"[--timepoint 1|2] [--no-view]")
 
-    results = main([int(a) for a in args], first)
+    results = main([int(a) for a in args], first, int(timepoint))
 
     if show:
         import view

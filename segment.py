@@ -42,4 +42,4 @@ def run(subject, stripped):
     )
     if not destination.exists():
         raise RuntimeError(f"{subject}: segmenter wrote no output")
-    return destination
+    return destination, algorithm.value, "gpu" if gpu else "cpu"

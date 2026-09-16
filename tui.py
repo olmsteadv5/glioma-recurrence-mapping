@@ -272,8 +272,7 @@ class Console(App):
     BINDINGS = [
         ("q", "quit", "quit"), ("v", "view", "3d/slices"), ("s", "space", "native/mni"),
         ("p", "palette", "colours"), ("f", "listing", "parcels/functions"),
-        ("o", "overlay", "overlay"),
-        ("t", "shell", "prompt"), ("c", "cancel", "cancel run"),
+                ("t", "shell", "prompt"), ("c", "cancel", "cancel run"),
     ]
 
     def __init__(self):
@@ -355,6 +354,7 @@ class Console(App):
         self.scene = render.Scene(subject, overlap, palette=self.palette)
         self.scene.set_opacity("shell", SHELL_OPACITY)
         self.slices = render.Slices(subject, self.space)
+        self.sync_overlay()
         self.refresh_inputs()
         self.refresh_layers()
         self.refresh_list()
@@ -431,7 +431,7 @@ class Console(App):
             out.append(f"[{FAINT}]{row('  segmenter', 'not recorded', w)}[/]")
         out.append(f"[{FAINT}]{row('  dice WT', self.dice(d), w)}[/]")
         if "kept" in run:
-            out.append(f"[{FAINT}]{row('  brain kept', f"{run['kept']:.0%}", w)}[/]")
+            out.append(f"[{FAINT}]{row('  aligned on', f"{run['kept']:.0%}", w)}[/]")
 
         out.append(rule("checks"))
         out.append(f"[{DIM}]stages[/]")
@@ -532,9 +532,15 @@ class Console(App):
             self.isolate_selected()
         else:
             self.scene.set_visible(key, on)
+        self.sync_overlay()
         self.refresh_layers()
-        if self.mode == "3d":
-            self.draw()
+        self.draw()
+
+    def sync_overlay(self):
+        # the same checkbox hides a class in the slices as in the 3d
+        if self.slices:
+            self.slices.hidden = {value for value, name in LABELS.items()
+                                  if "T:" + name in self.hidden_layers}
 
     def isolate_selected(self):
         index = self.query_one("#parcels", ListView).index or 0
@@ -767,9 +773,7 @@ class Console(App):
 
     def slice_hints(self):
         # each key names what it gives you, not what you are looking at
-        core = (f"s {'native' if self.space == 'mni' else 'mni'} · "
-                f"o {'hide' if self.slices.overlay else 'show'} overlay")
-        return [core]
+        return [f"s {'native' if self.space == 'mni' else 'mni'}"]
 
     def band(self, widget, left, taken, choices):
         # one border line, a label at each end, the line itself drawn between
@@ -849,7 +853,7 @@ class Console(App):
 
     # ---------------------------------------------------------------- actions
 
-    VIEW_ACTIONS = ("view", "space", "palette", "listing", "overlay")
+    VIEW_ACTIONS = ("view", "space", "palette", "listing")
 
     def check_action(self, action, parameters):
         # grey a key out rather than let it look like it did nothing
@@ -857,7 +861,7 @@ class Console(App):
             return None
         if action == "palette":
             return self.mode == "3d" or None
-        if action in ("space", "overlay"):
+        if action == "space":
             return self.mode == "slices" or None
         if action == "cancel":
             return self.proc is not None or None
@@ -888,11 +892,6 @@ class Console(App):
             self.scene.unisolate()
         self.refresh_list()
         self.draw()
-
-    def action_overlay(self):
-        self.slices.overlay = not self.slices.overlay
-        if self.mode == "slices":
-            self.draw()
 
     def action_shell(self):
         self.set_focus(self.query_one("#cmd"))

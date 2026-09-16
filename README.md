@@ -121,9 +121,9 @@ The cursor panel gives every sequence's intensity at that voxel, not just the
 one on screen, and in MNI it names the parcel under the crosshair.
 
 ```
-v  3d / slices          p  parcel colouring     t  focus the prompt
-s  native / mni         f  parcels / functions  c  cancel the run
-o  segmentation overlay 1-4  modality           q  quit
+v  3d / slices          f  parcels / functions  t  focus the prompt
+s  native / mni         1-4  modality           c  cancel the run
+p  parcel colouring                             q  quit
 ```
 
 Half of those only make sense in one of the two viewer modes. The ones that do
@@ -137,6 +137,9 @@ native space `s` reads `s mni`.
 Each parcel row carries a chip in that parcel's own colour, so a shape you can
 see in the 3D can be found in the list without clicking through it. The chips
 follow the palette toggle.
+
+The layer checkboxes drive both views: unticking `SNFH oedema` takes it out of
+the 3D and out of the slice overlay, so there is no separate overlay key.
 
 The breakdown lists the layers with their volumes, clickable to show and hide,
 then either the involved parcels or the functions at risk. Whatever is selected
@@ -155,9 +158,10 @@ belong to the classes in the breakdown.
 
 Under them the panel carries `where` the tumour sits, by hemisphere and lobe,
 which is the same question the 119 parcel rows answer one at a time, and `run`,
-which segmenter produced this and on what, how long it took, how much brain the
-registration had left to align on once the lesion was masked out, and how long
-ago anything last changed on disk.
+which segmenter produced this and on what, how long it took, its Dice where
+there are reference labels, and `aligned on`: the share of the brain the
+registration had left to work with once the lesion was masked out of the metric.
+That last one is about a single registration, not about change over time.
 
 The panel is in two parts. `stats` holds the tumour, where it sits and how it
 was made; the lobe volumes are indented under `in parcels` because that is the

@@ -206,7 +206,7 @@ class Slices:
 
     def __init__(self, subject, space="native"):
         self.subject = subject
-        self.geom = {}
+        self.geom, self.hidden = {}, set()
         self.load(space)
 
     def load(self, space):
@@ -238,7 +238,6 @@ class Slices:
         start = (np.unravel_index(np.argmax(self.seg > 0), self.seg.shape)
                  if (self.seg > 0).any() else [s // 2 for s in self.shape])
         self.cursor = [int(v) for v in start]
-        self.overlay = True
 
     @staticmethod
     def _canon(image):
@@ -273,11 +272,12 @@ class Slices:
         top = np.percentile(grey[grey > 0], 99) if (grey > 0).any() else 1
         rgb = np.repeat((np.clip(grey / max(top, 1) * 255, 0, 255)
                          ).astype(np.uint8)[:, :, None], 3, axis=2)
-        if self.overlay:
-            for value, colour in TISSUE.items():
-                m = lab == value
-                if m.any():
-                    rgb[m] = (rgb[m] * 0.55 + np.array(colour) * 0.45).astype(np.uint8)
+        for value, colour in TISSUE.items():
+            if value in self.hidden:
+                continue
+            m = lab == value
+            if m.any():
+                rgb[m] = (rgb[m] * 0.55 + np.array(colour) * 0.45).astype(np.uint8)
 
         mx, my = self._marker(which)
         if 0 <= my < rgb.shape[0]:

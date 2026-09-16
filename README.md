@@ -137,12 +137,17 @@ a tract centreline passes through **after passing through the tumour**. For
 subject 36 that is 715 centrelines through the mass, 480 of which go on to
 reach one of 76 involved parcels, 58 of them into `L_CC_B` alone.
 
-Edges are drawn as several bowed strands rather than one line, because several
-tracts run between two places. For the tumour's spokes the strand count is the
-real centreline count on a log scale, one strand per doubling. For parcel to
-parcel it is the connection strength: `SC_Count` is normalised, so the table
-cannot give a literal number of streamlines and the strands say how strong, not
-how many.
+Edges are bundles of arcs, not lines. Where the tract geometry has the pair,
+each arc is one real centreline, bowed until the length it is drawn at is the
+length that tract actually runs: the piece of it between where it touches one
+parcel and where it touches the other. Those are not all the same. The median
+is 1.37 times the straight line between the two parcels, a tenth of them are
+over 3 times, and two tracts joining the same pair differ in length by about a
+fifth. Arcs past 1.8 times are drawn at 1.8, or a handful of long ones sweep
+across the whole chart.
+
+Where only the connectivity table has the pair, the edge is a single straight
+line: the table gives a strength with no path, and a strength has no shape.
 
 For subject 36 that is 99 parcels in the tumour and 46 tied to them, over 259
 connections and 101 spokes, laid out in a fifth of a second. Only connections

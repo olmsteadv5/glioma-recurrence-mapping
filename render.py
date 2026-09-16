@@ -1,5 +1,6 @@
 # Offscreen rendering for the terminal UI: 3D scenes and slice planes, PIL images out.
 
+import functools
 import os
 
 import nibabel as nib
@@ -266,6 +267,25 @@ class Scene:
         return Image.fromarray(pixels.reshape(height, width, 3)[::-1])
 
 
+@functools.lru_cache(maxsize=1)
+def _bows():
+    # How far to bend an arc so that it comes out a given multiple of its chord.
+    steps = np.linspace(0, 1, 32)[:, None]
+    heights = np.linspace(0, 3.2, 129)
+    grown = []
+    for height in heights:
+        curve = ((1 - steps) ** 2 * np.array([0.0, 0.0])
+                 + 2 * (1 - steps) * steps * np.array([0.5, height])
+                 + steps ** 2 * np.array([1.0, 0.0]))
+        grown.append(float(np.linalg.norm(np.diff(curve, axis=0), axis=1).sum()))
+    return np.array(grown), heights
+
+
+def bow_for(ratio):
+    grown, heights = _bows()
+    return float(np.interp(min(max(ratio, 1.0), grown[-1]), grown, heights))
+
+
 NODE_IN = (228, 87, 46)
 NODE_OUT = (168, 153, 132)
 NODE_TUMOUR = (214, 200, 175)
@@ -306,12 +326,11 @@ class Chart:
         self.screen = (self.points - low) * scale + middle
 
         # the tumour's own edges first, so the parcel structure sits on top
-        for at, count in self.spokes:
-            self._strands(pen, at, len(self.screen) - 1,
-                          min(1 + int(np.log2(count)), 6), SPOKE, gap=3.2)
-        for a, b, weight, _ in self.link:
+        for at, count, ratios in self.spokes:
+            self._strands(pen, at, len(self.screen) - 1, ratios, SPOKE)
+        for a, b, weight, _, ratios in self.link:
             shade = tuple(int(c + (170 - c) * min(weight, 1.0)) for c in EDGE)
-            self._strands(pen, a, b, 1 + int(min(weight, 1.0) * 4), shade, gap=4.0)
+            self._strands(pen, a, b, ratios, shade)
 
         for at, point in enumerate(self.screen):
             last = at == len(self.screen) - 1
@@ -324,18 +343,18 @@ class Chart:
                         width=3 if at == self.lit else 1)
         return canvas
 
-    def _strands(self, pen, a, b, many, color, gap=4.0):
-        # several tracts run between two places, so draw several, bowed apart
+    def _strands(self, pen, a, b, ratios, color):
+        # one arc per tract, bowed until its drawn length is its real length
         start, stop = self.screen[a], self.screen[b]
         along = stop - start
         span = float(np.linalg.norm(along))
         if span < 1:
             return
         side = np.array([-along[1], along[0]]) / span
-        for n in range(many):
-            bow = (n - (many - 1) / 2) * gap
-            middle = (start + stop) / 2 + side * bow * 2
-            steps = np.linspace(0, 1, 12)[:, None]
+        steps = np.linspace(0, 1, 16)[:, None]
+        for n, ratio in enumerate(ratios):
+            bow = span * bow_for(min(ratio, 1.8)) * (1 if n % 2 else -1)
+            middle = (start + stop) / 2 + side * bow
             curve = ((1 - steps) ** 2 * start + 2 * (1 - steps) * steps * middle
                      + steps ** 2 * stop)
             pen.line([tuple(point) for point in curve], fill=color, width=1)

@@ -36,11 +36,16 @@ FG, DIM, FAINT = "#ebdbb2", "#a89984", "#7c6f64"
 OK, WARN, BAD, GONE = "#b8bb26", "#fabd2f", "#fb4934", "#504945"
 SHELL_OPACITY = 0.15
 
-TISSUE = {"NETC": "#f2c14e", "SNFH": "#3fa7d6", "ET": "#e4572e", "RC": "#8e7dbe"}
-LAYERS = [("T:NETC", "NETC necrosis", TISSUE["NETC"]), ("T:SNFH", "SNFH oedema", TISSUE["SNFH"]),
-          ("T:ET", "ET enhancing", TISSUE["ET"]), ("T:RC", "RC cavity", TISSUE["RC"]),
-          ("tracts", "tracts crossing", "#689d6a"),
-          ("shell", "brain surface", "#a89984")]
+TISSUE = {"NETC": "#f2c14e", "SNFH": "#3fa7d6", "ET": "#e4572e", "RC": "#8e7dbe",
+          "WT": "#d6c8af"}
+# the whole tumour as one shape, with its three parts under it
+LAYERS = [("T:WT", "tumour", TISSUE["WT"], 0),
+          ("T:SNFH", "SNFH oedema", TISSUE["SNFH"], 1),
+          ("T:ET", "ET enhancing", TISSUE["ET"], 1),
+          ("T:NETC", "NETC necrosis", TISSUE["NETC"], 1),
+          ("T:RC", "RC cavity", TISSUE["RC"], 1),
+          ("tracts", "tracts crossing", "#689d6a", 0),
+          ("shell", "brain surface", "#a89984", 0)]
 # WT, TC and ET are unions of the tissue classes, so they are deliberately left
 # uncolored: any class color on them reads as "this row is that tissue"
 ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
@@ -302,7 +307,7 @@ class Console(App):
         self.subject = self.subjects[0] if self.subjects else None
         self.mode, self.space, self.palette, self.listing = "3d", "native", "contrast", "parcels"
         self.scene = self.slices = self.proc = self._timer = self._clock = None
-        self.hidden_layers, self.subject_rows = set(), {}
+        self.hidden_layers, self.subject_rows = {"T:WT"}, {}
         self.layer_rows = list(LAYERS)
         self.history, self.hpos, self.started = [], 0, 0
         self.stage, self.watching = None, None
@@ -379,7 +384,7 @@ class Console(App):
                            f"rerun with ./main.py {int(subject[10:15])}[/]")
             return False
         self.subject, self.watching = subject, None
-        self.hidden_layers = set()
+        self.hidden_layers = {"T:WT"}
         overlap = self.results[subject]["atlas"]
         self.scene = render.Scene(subject, overlap, palette=self.palette)
         self.scene.set_opacity("shell", SHELL_OPACITY)
@@ -546,17 +551,21 @@ class Console(App):
         self._layers_width = self.query_one("#layers", Rows).size.width
         w = max(self._layers_width, 30) - 4
         volumes = self.results[self.subject]["labels_ml"]
-        self.layer_rows = [row_ for row_ in LAYERS
-                           if not row_[0].startswith("T:") or row_[0][2:] in volumes]
-        for key, name, color in self.layer_rows:
+        regions = self.results[self.subject]["regions_ml"]
+        self.layer_rows = [r for r in LAYERS if not r[0].startswith("T:")
+                           or r[0] == "T:WT" or r[0][2:] in volumes]
+        for key, name, color, deep in self.layer_rows:
             on = key not in self.hidden_layers
             if key == "tracts":
                 value = str(self.scene.tract_count) if self.scene else ""
+            elif key == "T:WT":
+                value = f"{regions['WT']} mL"
             else:
                 value = volumes.get(key.split(":")[-1])
                 value = f"{value} mL" if value else ""
-            out.append(f"[{color if on else FAINT}]{'[×]' if on else '[ ]'}[/] "
-                       f"[{DIM if on else FAINT}]{row(name, value, w)}[/]")
+            out.append("  " * deep + f"[{color if on else FAINT}]"
+                       f"{'[\u00d7]' if on else '[ ]'}[/] "
+                       f"[{DIM if on else FAINT}]{row(name, value, w - 2 * deep)}[/]")
         self.query_one("#layers", Rows).update("\n".join(out))
 
     def click_layer(self, row_index):
@@ -576,6 +585,7 @@ class Console(App):
             return
         self.slices.hidden = {value for value, name in LABELS.items()
                               if "T:" + name in self.hidden_layers}
+        self.slices.whole = None if "T:WT" in self.hidden_layers else render.TISSUE[0]
         self.slices.involved = {}
         if not self.parcels_shown or self.slices.parcels is None:
             return

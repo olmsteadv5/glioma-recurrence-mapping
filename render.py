@@ -19,9 +19,11 @@ pv.OFF_SCREEN = True
 BG = "#282828"
 SHELL = (168, 153, 132)
 TRACT = (95, 155, 114)
-TISSUE = {1: (242, 193, 78), 2: (63, 167, 214), 3: (228, 87, 46), 4: (142, 125, 190)}
+TISSUE = {1: (242, 193, 78), 2: (63, 167, 214), 3: (228, 87, 46), 4: (142, 125, 190),
+          0: (214, 200, 175)}  # 0 is the three of them as one shape
 CROSS = (250, 189, 47)
 LIT = (251, 241, 199)
+WHOLE = "WT"
 _hex = lambda t: "#%02x%02x%02x" % tuple(t)
 PANEL = (40, 40, 40)
 DIMMED = 0.10
@@ -60,8 +62,9 @@ class Scene:
             self.parcel_actors[name] = actor
 
         image = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
-        for value, name in self._tumour(subject, image).items():
-            self.actors["T:" + name[0]] = self._mesh(name[1], name[2], _hex(TISSUE[value]), 1.0)
+        for value, (name, points, faces) in self._tumour(subject, image).items():
+            self.actors["T:" + name] = self._mesh(points, faces, _hex(TISSUE[value]),
+                                                  0.5 if value == 0 else 1.0)
 
         lines, self.tract_count = self._tracts(image, index, involved)
         if lines is not None:
@@ -93,12 +96,14 @@ class Scene:
         cache = out_dir(subject) / "tumour_surfaces.npz"
         if cache.exists() and cache.stat().st_mtime >= os.path.getmtime(image.get_filename()):
             held = np.load(cache)
-            return {int(v): (LABELS[int(v)], held[f"v{v}"], held[f"f{v}"])
-                    for v in held["values"]}
+            return {int(v): (WHOLE if int(v) == 0 else LABELS[int(v)],
+                             held[f"v{v}"], held[f"f{v}"]) for v in held["values"]}
         data = np.asarray(image.dataobj).astype(np.int16)
         out, saved = {}, {"values": []}
-        for value, name in LABELS.items():
-            surface = view._tumour_surface(data, image.affine, value)
+        # value 0 is all three classes contoured as one closed surface
+        for value, name in list(LABELS.items()) + [(0, WHOLE)]:
+            source = (data > 0).astype(np.int16) if value == 0 else data
+            surface = view._tumour_surface(source, image.affine, 1 if value == 0 else value)
             if surface:
                 out[value] = (name, surface[0], surface[1])
                 saved["values"].append(value)
@@ -226,7 +231,7 @@ class Slices:
     def __init__(self, subject, space="native"):
         self.subject = subject
         self.geom, self.hidden = {}, set()
-        self.involved, self.lit = {}, None
+        self.involved, self.lit, self.whole = {}, None, None
         self.load(space)
 
     def load(self, space):
@@ -306,8 +311,15 @@ class Slices:
             weight = alpha[parcel][:, :, None]
             rgb = (rgb * (1 - weight) + table[parcel] * weight).astype(np.uint8)
 
+        # the whole tumour as one fill, under its three parts
+        if self.whole is not None:
+            every = lab > 0
+            if every.any():
+                rgb[every] = (rgb[every] * 0.55
+                              + np.array(self.whole) * 0.45).astype(np.uint8)
+
         for value, color in TISSUE.items():
-            if value in self.hidden:
+            if value == 0 or value in self.hidden:
                 continue
             m = lab == value
             if m.any():

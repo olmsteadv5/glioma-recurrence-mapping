@@ -151,6 +151,11 @@ follow the palette toggle.
 The layer checkboxes drive both views: unticking `SNFH oedema` takes it out of
 the 3D and out of the slice overlay, so there is no separate overlay key.
 
+`tumour` above them is the three classes contoured as one closed surface rather
+than three that meet along internal faces, with its parts indented under it. It
+starts off, because its surface coincides with the outside of the three and
+turning both on washes their colors out. It is one or the other.
+
 The breakdown lists the layers with their volumes, clickable to show and hide,
 then one of three views: the involved parcels, the functions at risk, or the
 connectivity at risk. Whatever is selected

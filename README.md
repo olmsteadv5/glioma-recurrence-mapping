@@ -58,12 +58,24 @@ to pick which colouring it opens with.
 ./tui.py
 ```
 
-Four panels: subjects, a viewer, the pipeline log and a breakdown. `r` runs the
-pipeline on the selected subject and streams the log, `c` cancels. `v` switches
-the viewer between the 3D atlas and orthogonal slices, `s` switches slices
-between native and MNI, `1`-`4` pick the modality, `p` swaps the parcel
-colouring, `f` swaps the breakdown between parcels and functions, arrows rotate
-or scrub.
+Four panels: subjects and scans, a viewer, the pipeline log, and a breakdown.
+
+The viewer is either the 3D atlas, where dragging rotates and the scroll wheel
+zooms, or an ITK-SNAP style 2x2 of axial, coronal and sagittal with a cursor
+readout. Clicking or dragging in any plane moves the crosshair in all three.
+
+The breakdown has the layers with their volumes, clickable to show and hide,
+shell opacity, and a list of either the involved parcels or the functions at
+risk. Moving through the parcel list dims everything else in the 3D so you can
+see where that parcel is; enter hides it. The panel underneath shows the
+selected parcel's anatomy and its Parcelsynth terms.
+
+```
+v  3d / slices          p  parcel colouring     r  run pipeline
+s  native / mni         f  parcels / functions  c  cancel
+o  segmentation overlay h  reset view           [ ]  shell opacity
+1-4  modality           pgup/pgdn  step slice   q  quit
+```
 
 **kitty only.** It draws images with kitty's graphics protocol, which no other
 terminal here supports. Elsewhere it still runs but says the images will look

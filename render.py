@@ -7,24 +7,28 @@ import trimesh
 from PIL import Image
 
 import atlas
+import tracts as tractography
 import view
-from paths import LABELS, MODALITIES, modality, out_dir, stripped_dir
+from paths import LABELS, MNI, MODALITIES, modality, out_dir, stripped_dir
 
 pv.OFF_SCREEN = True
 
 BG = "#141414"
-SHELL = "#8f8d87"
+SHELL = (143, 141, 135)
+TRACT = (95, 155, 114)
 TISSUE = {1: (242, 193, 78), 2: (63, 167, 214), 3: (228, 87, 46), 4: (142, 125, 190)}
+CROSS = (191, 168, 127)
 _hex = lambda t: "#%02x%02x%02x" % tuple(t)
 
 
 class Scene:
-    # A persistent plotter; only the camera moves between frames.
+    # One plotter per subject; between frames only the camera moves.
 
-    def __init__(self, subject, overlap, palette="contrast", top=30, size=(700, 700)):
+    def __init__(self, subject, overlap, palette="contrast", top=40, size=(700, 540)):
+        self.subject, self.overlap, self.palette = subject, overlap, palette
         self.plotter = pv.Plotter(off_screen=True, window_size=list(size))
         self.plotter.set_background(BG)
-        self.actors = {}
+        self.actors, self.parcel_actors = {}, {}
 
         info, surf = atlas.parcels(), atlas.meshes()
         index = {p["name"]: i for i, p in enumerate(info)}
@@ -34,30 +38,50 @@ class Scene:
         rest = [surf[i] for n, i in index.items() if n not in set(involved)]
         if rest:
             shell = trimesh.util.concatenate(rest)
-            self.actors["shell"] = self._add(shell.vertices, shell.faces, SHELL, 0.15)
+            self.actors["shell"] = self._mesh(shell.vertices, shell.faces, _hex(SHELL), 0.15)
 
         for name in involved[:top]:
             i = index[name]
-            self.actors["P:" + name] = self._add(
-                surf[i].vertices, surf[i].faces, _hex(colours[i]), 0.95)
+            actor = self._mesh(surf[i].vertices, surf[i].faces, _hex(colours[i]), 0.95)
+            self.actors["P:" + name] = actor
+            self.parcel_actors[name] = actor
 
         image = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
         data = np.asarray(image.dataobj).astype(np.int16)
         for value, name in LABELS.items():
             s = view._tumour_surface(data, image.affine, value)
             if s:
-                self.actors["T:" + name] = self._add(s[0], s[1], _hex(TISSUE[value]), 1.0)
+                self.actors["T:" + name] = self._mesh(s[0], s[1], _hex(TISSUE[value]), 1.0)
+
+        lines = self._tracts(image, index, involved)
+        if lines is not None:
+            self.actors["tracts"] = self.plotter.add_mesh(
+                lines, color=_hex(TRACT), line_width=1, opacity=0.55)
 
         self.plotter.show(auto_close=False)
+        self.home = self.plotter.camera_position
 
-    def _add(self, v, f, colour, opacity):
+    def _mesh(self, v, f, colour, opacity):
         f = np.asarray(f)
         poly = pv.PolyData(np.asarray(v), np.hstack([np.full((len(f), 1), 3), f]).ravel())
         return self.plotter.add_mesh(poly, color=colour, opacity=opacity, smooth_shading=True)
 
+    def _tracts(self, seg_image, index, involved):
+        labels, names = atlas.label_volume(nib.load(MNI))
+        wanted = [index[n] + 1 for n in involved if n in index]
+        hits = tractography.crossing(tractography.centrelines(), seg_image, labels, wanted)
+        if not hits:
+            return None
+        points, cells, offset = [], [], 0
+        for line in hits:
+            points.append(line)
+            cells.append(np.hstack([[len(line)], np.arange(offset, offset + len(line))]))
+            offset += len(line)
+        return pv.PolyData(np.vstack(points), lines=np.hstack(cells))
+
     def resize(self, width, height):
         if [width, height] != list(self.plotter.window_size):
-            self.plotter.window_size = [max(width, 32), max(height, 32)]
+            self.plotter.window_size = [max(width, 64), max(height, 64)]
 
     def rotate(self, azimuth, elevation):
         # the camera.azimuth property does not rotate; these VTK methods do
@@ -68,10 +92,34 @@ class Scene:
     def zoom(self, factor):
         self.plotter.camera.Zoom(factor)
 
+    def reset(self):
+        self.plotter.camera_position = self.home
+
     def set_visible(self, key, on):
         actor = self.actors.get(key)
         if actor is not None:
             actor.visibility = bool(on)
+
+    def set_opacity(self, key, value):
+        actor = self.actors.get(key)
+        if actor is not None:
+            actor.prop.opacity = float(value)
+
+    def isolate(self, name):
+        # dim every parcel except one, for hover
+        for other, actor in self.parcel_actors.items():
+            actor.prop.opacity = 0.95 if other == name else 0.08
+
+    def unisolate(self):
+        for actor in self.parcel_actors.values():
+            actor.prop.opacity = 0.95
+
+    def recolour(self, palette):
+        self.palette = palette
+        colours = atlas.colours(palette)
+        index = {p["name"]: i for i, p in enumerate(atlas.parcels())}
+        for name, actor in self.parcel_actors.items():
+            actor.prop.color = _hex(colours[index[name]])
 
     def image(self):
         self.plotter.render()
@@ -82,13 +130,13 @@ class Slices:
     # Orthogonal planes. Volumes are reoriented to RAS so plane logic is uniform.
 
     PLANES = ("axial", "coronal", "sagittal")
+    MARKS = {"axial": ("R", "L", "A", "P"), "coronal": ("R", "L", "S", "I"),
+             "sagittal": ("A", "P", "S", "I")}
 
     def __init__(self, subject, space="native"):
-        self.subject, self.space = subject, space
-        self.volumes, self.seg = {}, None
+        self.subject = subject
+        self.geom = {}
         self.load(space)
-        self.modality = "T1GD" if "T1GD" in self.volumes else next(iter(self.volumes))
-        self.cursor = [s // 2 for s in self.shape]
 
     def load(self, space):
         self.space = space
@@ -101,14 +149,16 @@ class Slices:
                     self.volumes[m] = self._canon(nib.load(p))
             seg = out_dir(self.subject) / "seg.nii.gz"
         else:
-            p = out_dir(self.subject) / "t1_in_mni.nii.gz"
-            self.volumes["T1"] = self._canon(nib.load(p))
+            self.volumes["T1"] = self._canon(nib.load(out_dir(self.subject) / "t1_in_mni.nii.gz"))
             seg = out_dir(self.subject) / "seg_in_mni.nii.gz"
         self.affine, first = next(iter(self.volumes.values()))
         self.shape = first.shape
         self.seg = self._canon(nib.load(seg))[1]
         self.modality = "T1GD" if "T1GD" in self.volumes else next(iter(self.volumes))
-        self.cursor = [s // 2 for s in self.shape]
+        self.cursor = list(np.array(np.unravel_index(
+            np.argmax(self.seg > 0), self.seg.shape)) if (self.seg > 0).any()
+            else [s // 2 for s in self.shape])
+        self.overlay = True
 
     @staticmethod
     def _canon(image):
@@ -118,34 +168,68 @@ class Slices:
     def _grey(self):
         return self.volumes[self.modality][1]
 
-    def plane(self, which, size):
+    def _slab(self, which):
         # radiological: patient left on the viewer's right. RAS x increases right, so flip it.
         x, y, z = self.cursor
         g, s = self._grey(), self.seg
         if which == "axial":
-            grey, lab = g[::-1, ::-1, z].T, s[::-1, ::-1, z].T
-        elif which == "coronal":
-            grey, lab = g[::-1, y, ::-1].T, s[::-1, y, ::-1].T
-        else:
-            grey, lab = g[x, ::-1, ::-1].T, s[x, ::-1, ::-1].T
+            return g[::-1, ::-1, z].T, s[::-1, ::-1, z].T
+        if which == "coronal":
+            return g[::-1, y, ::-1].T, s[::-1, y, ::-1].T
+        return g[x, ::-1, ::-1].T, s[x, ::-1, ::-1].T
 
+    def _marker(self, which):
+        # where the crosshair sits inside the slab, in slab pixel coordinates
+        x, y, z = self.cursor
+        nx, ny, nz = self.shape
+        if which == "axial":
+            return nx - 1 - x, ny - 1 - y
+        if which == "coronal":
+            return nx - 1 - x, nz - 1 - z
+        return ny - 1 - y, nz - 1 - z
+
+    def plane(self, which, size):
+        grey, lab = self._slab(which)
         top = np.percentile(grey[grey > 0], 99) if (grey > 0).any() else 1
         rgb = np.repeat((np.clip(grey / max(top, 1) * 255, 0, 255)
                          ).astype(np.uint8)[:, :, None], 3, axis=2)
-        for value, colour in TISSUE.items():
-            m = lab == value
-            if m.any():
-                rgb[m] = (rgb[m] * 0.55 + np.array(colour) * 0.45).astype(np.uint8)
+        if self.overlay:
+            for value, colour in TISSUE.items():
+                m = lab == value
+                if m.any():
+                    rgb[m] = (rgb[m] * 0.55 + np.array(colour) * 0.45).astype(np.uint8)
+
+        mx, my = self._marker(which)
+        if 0 <= my < rgb.shape[0]:
+            rgb[my] = (rgb[my] * 0.45 + np.array(CROSS) * 0.55).astype(np.uint8)
+        if 0 <= mx < rgb.shape[1]:
+            rgb[:, mx] = (rgb[:, mx] * 0.45 + np.array(CROSS) * 0.55).astype(np.uint8)
 
         im = Image.fromarray(rgb)
-        w, h = size
+        w, h = max(size[0], 8), max(size[1], 8)
         scale = min(w / im.width, h / im.height)
-        return im.resize((max(int(im.width * scale), 1), max(int(im.height * scale), 1)),
-                         Image.NEAREST)
+        out = im.resize((max(int(im.width * scale), 1), max(int(im.height * scale), 1)),
+                        Image.NEAREST)
+        self.geom[which] = (scale, im.width, im.height)
+        return out
 
-    def marks(self, which):
-        return {"axial": ("R", "L", "A", "P"), "coronal": ("R", "L", "S", "I"),
-                "sagittal": ("A", "P", "S", "I")}[which]
+    def click(self, which, fx, fy):
+        # fx, fy are fractions of the rendered image, 0..1
+        scale, w, h = self.geom.get(which, (1, self.shape[0], self.shape[1]))
+        px, py = int(fx * w), int(fy * h)
+        nx, ny, nz = self.shape
+        if which == "axial":
+            self.cursor[0] = max(0, min(nx - 1, nx - 1 - px))
+            self.cursor[1] = max(0, min(ny - 1, ny - 1 - py))
+        elif which == "coronal":
+            self.cursor[0] = max(0, min(nx - 1, nx - 1 - px))
+            self.cursor[2] = max(0, min(nz - 1, nz - 1 - py))
+        else:
+            self.cursor[1] = max(0, min(ny - 1, ny - 1 - px))
+            self.cursor[2] = max(0, min(nz - 1, nz - 1 - py))
+
+    def step(self, axis, delta):
+        self.cursor[axis] = max(0, min(self.shape[axis] - 1, self.cursor[axis] + delta))
 
     def readout(self):
         # only MNI has an anatomical origin; the SRI24 affine is a corner offset,
@@ -153,13 +237,14 @@ class Slices:
         x, y, z = self.cursor
         label = int(self.seg[x, y, z])
         out = {"voxel": (x, y, z), "label": LABELS.get(label, "background"),
-               "intensity": int(self._grey()[x, y, z]),
-               "space": self.space, "modality": self.modality}
+               "label_value": label, "intensity": int(self._grey()[x, y, z]),
+               "space": self.space, "modality": self.modality,
+               "modalities": list(self.volumes)}
         if self.space == "mni":
             world = nib.affines.apply_affine(self.affine, [x, y, z])
             out["coords"] = tuple(round(float(v)) for v in world)
             out["coord_space"] = "MNI mm"
         else:
             out["coords"] = None
-            out["coord_space"] = "SRI24 grid, no anatomical origin"
+            out["coord_space"] = "SRI24 grid"
         return out

@@ -343,6 +343,11 @@ class Chart:
                       - {e[0] for e in self.link} - {e[1] for e in self.link}
                       - {s[0] for s in self.spokes})
 
+        # two thirds of the parcel to parcel lines stand for a strength with no
+        # tract behind it, so the count is of lines drawn, not tracts measured
+        self.strands = (sum(len(r) for _, _, r in self.spokes)
+                        + sum(len(e[4]) for e in self.link))
+
         self.lit, self.guest, self.zoom, self.pan = None, None, 1.0, np.zeros(2)
         self._key_was, self._key_art = None, None
         self.where = {}
@@ -515,7 +520,7 @@ class Chart:
         # a title cut into the top edge, headings over quieter rows
         font = _font(12)
         rows = sorted(self.where)
-        tall = 266 + 14 * len(rows)
+        tall = 281 + 14 * len(rows)
         if wide < 540 or high < tall + 40:
             self._scale_bar(pen, wide, high, font)
             return
@@ -562,7 +567,7 @@ class Chart:
         pen.text((step - 8, y + 16), "mL", fill=FAINT_INK, font=small, anchor="lm")
         y += 33
 
-        pen.text((x, y), "one line, one white matter link", fill=INK, font=small, anchor="lm")
+        pen.text((x, y), "one line, one link", fill=INK, font=small, anchor="lm")
         y += 17
         for color, text in ((self._tone(0.5, False), "parcel to parcel"),
                             (self._tone(0.5, True), "parcel to parcel, via the mass"),
@@ -571,7 +576,11 @@ class Chart:
             pen.text((x + 25, y), text, fill=FAINT_INK, font=font, anchor="lm")
             y += 15
         pen.arc([x, y - 6, x + 14, y + 8], 180, 360, fill=self._tone(0.5, False))
-        pen.text((x + 25, y), "bow: the tract is longer than the gap",
+        pen.text((x + 25, y), "bow: one tract, longer than the gap",
+                 fill=FAINT_INK, font=font, anchor="lm")
+        y += 15
+        pen.line([(x, y), (x + 14, y)], fill=self._tone(0.5, False), width=1)
+        pen.text((x + 25, y), "straight: connected, no tract to draw",
                  fill=FAINT_INK, font=font, anchor="lm")
         y += 24
 

@@ -942,7 +942,7 @@ class Console(App):
             viewer.styles.border_subtitle_align = "right"
             viewer.border_title = (f"graph · {len(self.chart.inside)} in the tumour "
                                    f"· {len(self.chart.nodes) - len(self.chart.inside)} "
-                                   f"connected")
+                                   f"connected · {self.chart.strands} lines")
             viewer.border_subtitle = keyed("v 3d \u00b7 click the mass to reset")
         else:
             for which in render.Slices.PLANES:

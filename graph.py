@@ -18,6 +18,16 @@ FLOOR = 0.15
 STRANDS = 8
 
 
+def sample(lengths, n=STRANDS):
+    # An even spread across the sorted lengths. Taking the first n instead drops
+    # the longest paths, which is the half of the spread that says most.
+    lengths = sorted(float(v) for v in lengths)
+    if len(lengths) <= n:
+        return lengths
+    step = (len(lengths) - 1) / (n - 1)
+    return [lengths[round(i * step)] for i in range(n)]
+
+
 @functools.lru_cache(maxsize=1)
 def edges():
     # Connection strength and distance for every parcel pair, as two matrices.
@@ -178,8 +188,7 @@ def build(subject, overlap, floor=FLOOR):
             # one arc per real tract where the geometry has them, else one
             # straight line, since a strength with no path has no shape
             real = runs.get((min(nodes[a], nodes[b]), max(nodes[a], nodes[b])))
-            ratios = ([1.0] if real is None
-                      else sorted(float(v) / straight for v in real)[:STRANDS])
+            ratios = [1.0] if real is None else sample(v / straight for v in real)
             key = (min(nodes[a], nodes[b]), max(nodes[a], nodes[b]))
             link.append((a, b, float(weight), straight, ratios, key in crossing))
 
@@ -194,9 +203,8 @@ def build(subject, overlap, floor=FLOOR):
             continue
         near = max(float(np.linalg.norm(middle[n] - tumour)), 1.0) \
             if not np.isnan(middle[n]).any() else 60.0
-        lengths = reach[n][1][:STRANDS]
         spokes.append((place[n], reach[n][0],
-                       sorted(v / near for v in lengths) or [1.0]))
+                       sample(v / near for v in reach[n][1]) or [1.0]))
     return nodes, link, np.array(to_tumour), set(inside), spokes
 
 
@@ -246,8 +254,7 @@ def attach(subject, nodes, parcel, most=12):
         straight = float(distance[n, nodes[k]]) or 1.0
         key = (min(n, nodes[k]), max(n, nodes[k]))
         real = runs.get(key)
-        ratios = ([1.0] if real is None
-                  else sorted(float(v) / straight for v in real)[:STRANDS])
+        ratios = [1.0] if real is None else sample(v / straight for v in real)
         link.append((k, weight, straight, ratios, key in crossing))
 
     middle, tumour = centres(subject)

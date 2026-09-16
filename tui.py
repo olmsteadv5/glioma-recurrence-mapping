@@ -25,7 +25,7 @@ ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\r")
 
 # gruvbox dark, the same values btop reads out of gruvbox_dark_v2.theme
 FG, DIM, FAINT = "#ebdbb2", "#a89984", "#7c6f64"
-OK, WARN, BAD = "#b8bb26", "#fabd2f", "#fb4934"
+OK, WARN, BAD, GONE = "#b8bb26", "#fabd2f", "#fb4934", "#504945"
 SHELL_OPACITY = 0.15
 
 LAYERS = [("T:NETC", "NETC necrosis", "#f2c14e"), ("T:SNFH", "SNFH oedema", "#3fa7d6"),
@@ -37,6 +37,8 @@ ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
                ("parcelsynth_activations_functionalterms.csv", "parcelsynth", "334"),
                ("structuralconnectivity_metrics_mean.csv", "connectivity", "696²")]
 IDLE = "esc leaves · t returns"
+HINTS = ["click or pgup/pgdn · s space · o overlay · v 3d",
+         "s space · o overlay · v 3d", "v 3d"]
 STAGES = ("fetch", "strip", "segment", "register", "map")
 HELP = [("./main.py <n>...", "the whole pipeline, about 3 min a subject"),
         ("fetch <n>...", "download the scans, then everything after"),
@@ -133,12 +135,14 @@ class Rows(Static):
             self.handler(event.y)
 
 
-class Modes(Static):
-    # The modality strip along the bottom of the viewer.
-    SLOT = 9
+class Viewer(Vertical):
+    # The modality strip is drawn into the bottom border, so its clicks land here.
+    SLOT, MARGIN = 8, 3
 
     def on_click(self, event):
-        self.app.click_modality((event.x - 1) // self.SLOT)
+        # clicks arrive in outer coordinates, so the bottom border is the last row
+        if event.y == self.outer_size.height - 1:
+            self.app.click_modality((event.x - self.MARGIN) // self.SLOT)
 
 
 class Prompt(Input):
@@ -166,6 +170,7 @@ class Console(App):
     Screen { background: #282828; }
     #top { height: 1fr; }
     .box { border: round #a89984; border-title-color: #ebdbb2;
+           border-subtitle-align: right;
            border-title-style: bold; border-subtitle-color: #7c6f64;
            background: #282828; padding: 0; }
     #inputs { width: 34; }
@@ -177,7 +182,6 @@ class Console(App):
     .pane { height: 1fr; border: round #504945; border-title-color: #a89984; }
     #readout { height: 1fr; border: round #504945; border-title-color: #a89984;
                padding: 0 1; }
-    #modes { height: 1; padding: 0 1; }
     #shell { height: 14; }
     #shell:focus-within { border: round #fabd2f; }
     #log { height: 1fr; background: #282828; padding: 0 1; }
@@ -230,14 +234,13 @@ class Console(App):
         with Horizontal(id="top"):
             with Vertical(id="inputs", classes="box"):
                 yield Rows(self.click_subject, id="stats")
-            with Vertical(id="viewer", classes="box"):
+            with Viewer(id="viewer", classes="box"):
                 yield Canvas(id="canvas")
                 with Grid(id="grid"):
                     yield Pane("axial", id="p-axial", classes="pane")
                     yield Pane("coronal", id="p-coronal", classes="pane")
                     yield Pane("sagittal", id="p-sagittal", classes="pane")
                     yield Static("", id="readout")
-                yield Modes("", id="modes")
             with Vertical(id="right", classes="box"):
                 yield Rows(self.click_layer, id="layers")
                 yield Static("", id="listhead")
@@ -252,7 +255,6 @@ class Console(App):
 
     def on_mount(self):
         self.query_one("#grid").display = False
-        self.query_one("#modes").display = False
         self.query_one("#inputs").border_title = "inputs"
         self.query_one("#inputs").border_subtitle = "click a subject"
         self.query_one("#right").border_title = "breakdown"
@@ -477,6 +479,7 @@ class Console(App):
             self.scene.resize(w, h)
             widget.image = self.scene.image()
             viewer.border_title = f"3d · {self.palette} colours"
+            viewer.styles.border_subtitle_align = "right"
             viewer.border_subtitle = "drag rotate · scroll zoom · p colours · h reset · v slices"
         else:
             for which in render.Slices.PLANES:
@@ -487,7 +490,10 @@ class Console(App):
             self.refresh_readout()
             r = self.slices.readout()
             viewer.border_title = f"slices · {r['space']} · {r['modality']}"
-            viewer.border_subtitle = "click or pgup/pgdn · s space · o overlay · v 3d"
+            strip, taken = self.modality_strip()
+            viewer.styles.border_subtitle_align = "left"
+            viewer.border_subtitle = strip + self.hint(
+                viewer.outer_size.width - 6 - taken, HINTS)
 
     def refresh_readout(self):
         r = self.slices.readout()
@@ -499,13 +505,24 @@ class Console(App):
             f"[{FAINT}]{row('intensity', str(r['intensity']), w)}[/]",
             f"[{DIM}]{row('label', r['label'], w)}[/]"]))
 
-        # greyed out means that space does not carry it, mni is T1 only
-        here = r["modalities"]
-        out = []
+    def modality_strip(self):
+        # greyed out means the current space does not carry it, mni is T1 only
+        r = self.slices.readout()
+        out, width = [], 0
         for i, name in enumerate(MODALITIES, start=1):
-            style = FG if name == r["modality"] else DIM if name in here else "#504945"
-            out.append(f"[{style}]{f'{i} {name}':<{Modes.SLOT}}[/]")
-        self.query_one("#modes", Modes).update("".join(out))
+            style = FG if name == r["modality"] else DIM if name in r["modalities"] else GONE
+            label = f"{i} {name}"
+            label = label if i == len(MODALITIES) else label.ljust(Viewer.SLOT)
+            out.append(f"[{style}]{label}[/]")
+            width += len(label)
+        return "".join(out), width
+
+    def hint(self, room, choices):
+        # the widest hint that still leaves a gap after the strip, or nothing
+        for text in choices:
+            if len(text) + 2 <= room:
+                return " " * (room - len(text)) + text
+        return ""
 
     def click_modality(self, slot):
         if not (self.mode == "slices" and self.slices and 0 <= slot < len(MODALITIES)):
@@ -592,8 +609,7 @@ class Console(App):
     def action_view(self):
         self.mode = "slices" if self.mode == "3d" else "3d"
         self.query_one("#canvas").display = self.mode == "3d"
-        for widget in ("#grid", "#modes"):
-            self.query_one(widget).display = self.mode == "slices"
+        self.query_one("#grid").display = self.mode == "slices"
         self.refresh_bindings()
         self.call_after_refresh(self.draw)
 

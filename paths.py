@@ -15,7 +15,7 @@ SYNTHSTRIP = Path("/opt/freesurfer/bin/mri_synthstrip")
 
 MODALITIES = ("T1", "T1GD", "T2", "FLAIR")
 LABELS = {1: "NETC", 2: "SNFH", 3: "ET", 4: "RC"}
-REGIONS = {"ET": (3,), "TC": (1, 3), "WT": (1, 2, 3)}
+REGIONS = {"ET": (3,), "TC": (1, 3), "WT": (1, 2, 3), "RC": (4,)}
 
 THREADS = "12"
 

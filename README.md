@@ -123,8 +123,7 @@ one on screen, and in MNI it names the parcel under the crosshair.
 ```
 v  3d / slices          p  parcel colouring     t  focus the prompt
 s  native / mni         f  parcels / functions  c  cancel the run
-o  segmentation overlay h  reset view           q  quit
-1-4  modality
+o  segmentation overlay 1-4  modality           q  quit
 ```
 
 Half of those only make sense in one of the two viewer modes. The ones that do
@@ -161,8 +160,13 @@ registration had left to align on once the lesion was masked out, and how long
 ago anything last changed on disk.
 
 The panel is in two parts. `stats` holds the tumour, where it sits and how it
-was made; the hemisphere and lobe volumes are indented under `in parcels`
-because that is the volume they add up to.
+was made; the lobe volumes are indented under `in parcels` because that is the
+volume they add up to, and they sit under a hemisphere only when the tumour is
+in both, since otherwise the hemisphere is the whole of it.
+
+There are four tissue classes but only three of them usually appear. `RC`, the
+resection cavity, is a post-treatment class, so its region row and its layer
+show up only on a subject that has one.
 
 Between them, `changes` appears when a patient has more than one timepoint,
 one row per consecutive pair.

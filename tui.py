@@ -32,8 +32,10 @@ FG, DIM, FAINT = "#ebdbb2", "#a89984", "#7c6f64"
 OK, WARN, BAD, GONE = "#b8bb26", "#fabd2f", "#fb4934", "#504945"
 SHELL_OPACITY = 0.15
 
-LAYERS = [("T:NETC", "NETC necrosis", "#f2c14e"), ("T:SNFH", "SNFH oedema", "#3fa7d6"),
-          ("T:ET", "ET enhancing", "#e4572e"), ("tracts", "tracts crossing", "#689d6a"),
+TISSUE = {"NETC": "#f2c14e", "SNFH": "#3fa7d6", "ET": "#e4572e", "RC": "#8e7dbe"}
+LAYERS = [("T:NETC", "NETC necrosis", TISSUE["NETC"]), ("T:SNFH", "SNFH oedema", TISSUE["SNFH"]),
+          ("T:ET", "ET enhancing", TISSUE["ET"]), ("T:RC", "RC cavity", TISSUE["RC"]),
+          ("tracts", "tracts crossing", "#689d6a"),
           ("shell", "brain surface", "#a89984"),
           ("parcels", "involved parcels", "#d3869b")]
 # WT, TC and ET are unions of the tissue classes, so they are deliberately left
@@ -93,19 +95,24 @@ def spell(seconds):
 
 
 def distribution(overlap):
-    # Where the tumour sits, from the parcels it already touches, in mL.
+    # Lobes under the hemisphere they belong to, and only when both are involved.
     side_of = {p["name"]: p["hemisphere"] for p in atlas.parcels()}
-    sides, lobes, total = {}, {}, 0.0
+    tree = {}
     for r in overlap["parcels"]:
-        ml = r["in_tumour_ml"]
-        total += ml
-        sides[side_of.get(r["parcel"], "?")] = sides.get(side_of.get(r["parcel"], "?"), 0) + ml
-        lobes[r["lobe"]] = lobes.get(r["lobe"], 0) + ml
-    if total == 0:
+        side = tree.setdefault(side_of.get(r["parcel"], "?"), {})
+        side[r["lobe"]] = side.get(r["lobe"], 0) + r["in_tumour_ml"]
+    order = sorted(tree.items(), key=lambda kv: -sum(kv[1].values()))
+    if not order:
         return []
-    out = sorted(sides.items(), key=lambda kv: -kv[1])
-    out += sorted(lobes.items(), key=lambda kv: -kv[1])[:4]
-    return [(name.lower(), round(value, 2)) for name, value in out]
+    if len(order) == 1:
+        return [(0, name.lower(), round(ml, 2))
+                for name, ml in sorted(order[0][1].items(), key=lambda kv: -kv[1])]
+    out = []
+    for side, lobes in order:
+        out.append((0, side.lower(), round(sum(lobes.values()), 2)))
+        out += [(1, name.lower(), round(ml, 2))
+                for name, ml in sorted(lobes.items(), key=lambda kv: -kv[1])]
+    return out
 
 
 def row(left, right, width=30):
@@ -265,7 +272,7 @@ class Console(App):
     BINDINGS = [
         ("q", "quit", "quit"), ("v", "view", "3d/slices"), ("s", "space", "native/mni"),
         ("p", "palette", "colours"), ("f", "listing", "parcels/functions"),
-        ("o", "overlay", "overlay"), ("h", "home", "reset view"),
+        ("o", "overlay", "overlay"),
         ("t", "shell", "prompt"), ("c", "cancel", "cancel run"),
     ]
 
@@ -277,6 +284,7 @@ class Console(App):
         self.mode, self.space, self.palette, self.listing = "3d", "native", "contrast", "parcels"
         self.scene = self.slices = self.proc = self._timer = self._clock = None
         self.hidden_layers, self.subject_rows = set(), {}
+        self.layer_rows = list(LAYERS)
         self.history, self.hpos, self.started = [], 0, 0
         self.stage, self.watching = None, None
         self.row_text, self.marked = [], None
@@ -388,17 +396,22 @@ class Console(App):
         r = d["regions_ml"]
         out.append(rule("stats"))
         out.append(f"[{DIM}]tumour[/]")
-        for name in ("WT", "TC", "ET"):
-            made = ("" if len(REGIONS[name]) == 1
-                    else " " + "+".join(LABELS[v] for v in REGIONS[name]))
-            out.append(f"[{FG}]  {name}[/][{FAINT}]{made}[/]"
+        for name in ("WT", "TC", "ET", "RC"):
+            if not r.get(name):
+                continue
+            # each token names exactly one class, so it can carry that colour
+            parts = [LABELS[v] for v in REGIONS[name]]
+            made = "" if len(parts) == 1 else " " + "+".join(parts)
+            painted = "" if len(parts) == 1 else " " + f"[{FAINT}]+[/]".join(
+                f"[{TISSUE[t]}]{t}[/]" for t in parts)
+            out.append(f"[{FG}]  {name}[/]{painted}"
                        f"[{DIM}]{f'{r[name]} mL':>{w - 4 - len(made)}}[/]")
         in_parcels = f"{d['atlas']['in_parcels_ml']} mL"
-        out.append(f"[{FAINT}]{row('  in parcels', in_parcels, w)}[/]")
-        # indented under the line they break down, in the same unit as it
-        out += [f"[{FAINT}]{row('    ' + name, f'{value} mL', w)}[/]"
-                for name, value in distribution(d["atlas"])]
-        out.append(f"[{FAINT}]{row('  dice WT', self.dice(d), w)}[/]")
+        out.append(f"[{FAINT}]  in parcels[/]"
+                   f"[{DIM}]{in_parcels:>{w - 12}}[/]")
+        # nested under the line they break down, in the same unit as it
+        out += [f"[{FAINT}]{row('    ' + '  ' * deep + name, f'{value} mL', w)}[/]"
+                for deep, name, value in distribution(d["atlas"])]
         group = [s for s in self.subjects if s[10:15] == self.subject[10:15]]
         if len(group) > 1:
             out.append(f"[{DIM}]changes[/]")
@@ -406,7 +419,7 @@ class Console(App):
                 change = (self.results[after]["regions_ml"]["WT"]
                           - self.results[before]["regions_ml"]["WT"])
                 label = f"  _{before[16:]} \u2192 _{after[16:]} WT"
-                out.append(f"[{WARN if change > 0 else DIM}]"
+                out.append(f"[{WARN if change > 0 else FAINT}]"
                            f"{row(label, f'{change:+.1f} mL', w)}[/]")
 
         run = d.get("run", {})
@@ -416,6 +429,7 @@ class Console(App):
             out.append(f"[{FAINT}]{row(made, spell(run['seconds']) if 'seconds' in run else '', w)}[/]")
         else:
             out.append(f"[{FAINT}]{row('  segmenter', 'not recorded', w)}[/]")
+        out.append(f"[{FAINT}]{row('  dice WT', self.dice(d), w)}[/]")
         if "kept" in run:
             out.append(f"[{FAINT}]{row('  brain kept', f"{run['kept']:.0%}", w)}[/]")
 
@@ -491,7 +505,9 @@ class Console(App):
         self._layers_width = self.query_one("#layers", Rows).size.width
         w = max(self._layers_width, 30) - 4
         volumes = self.results[self.subject]["labels_ml"]
-        for key, name, colour in LAYERS:
+        self.layer_rows = [row_ for row_ in LAYERS
+                           if not row_[0].startswith("T:") or row_[0][2:] in volumes]
+        for key, name, colour in self.layer_rows:
             on = key not in self.hidden_layers
             if key == "parcels":
                 value = str(len(self.scene.parcel_actors)) if self.scene else ""
@@ -505,9 +521,9 @@ class Console(App):
         self.query_one("#layers", Rows).update("\n".join(out))
 
     def click_layer(self, row_index):
-        if not (0 <= row_index < len(LAYERS) and self.scene):
+        if not (0 <= row_index < len(self.layer_rows) and self.scene):
             return
-        key = LAYERS[row_index][0]
+        key = self.layer_rows[row_index][0]
         self.hidden_layers ^= {key}
         on = key not in self.hidden_layers
         if key == "parcels":
@@ -682,7 +698,7 @@ class Console(App):
             viewer.styles.border_subtitle_align = "right"
             other = "yba" if self.palette == "contrast" else "contrast"
             viewer.border_subtitle = keyed(
-                f"drag rotate · scroll zoom · p {other} colours · h reset")
+                f"drag rotate · scroll zoom · p {other} colours")
         else:
             for which in render.Slices.PLANES:
                 pane = self.query_one(f"#p-{which}", Pane)
@@ -833,13 +849,13 @@ class Console(App):
 
     # ---------------------------------------------------------------- actions
 
-    VIEW_ACTIONS = ("view", "space", "palette", "listing", "overlay", "home")
+    VIEW_ACTIONS = ("view", "space", "palette", "listing", "overlay")
 
     def check_action(self, action, parameters):
         # grey a key out rather than let it look like it did nothing
         if action in self.VIEW_ACTIONS and not self.scene:
             return None
-        if action in ("palette", "home"):
+        if action == "palette":
             return self.mode == "3d" or None
         if action in ("space", "overlay"):
             return self.mode == "slices" or None
@@ -876,12 +892,6 @@ class Console(App):
     def action_overlay(self):
         self.slices.overlay = not self.slices.overlay
         if self.mode == "slices":
-            self.draw()
-
-    def action_home(self):
-        if self.scene:
-            self.scene.reset()
-            self.scene.unisolate()
             self.draw()
 
     def action_shell(self):

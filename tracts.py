@@ -5,14 +5,15 @@ import numpy as np
 from atlas import ensure
 from paths import ATLAS_DIR
 
-CACHE = ATLAS_DIR / "tract_centrelines.npz"
+CACHE = ATLAS_DIR / "tract_centrelines_geodesic.npz"
 
 # the OBJ is Y-up, atlas space is (x, -z, y)
 AXES = (0, 2, 1)
 SIGNS = np.array([1.0, -1.0, 1.0])
 
 MIN_VERTICES = 12
-STEP_MM = 4.0
+# one step per voxel, so a line cannot straddle a parcel without landing in it
+STEP_MM = 1.0
 
 
 def _parse_obj(path):
@@ -25,18 +26,47 @@ def _parse_obj(path):
     return np.array(vertices)[:, AXES] * SIGNS, np.array(faces)
 
 
-def _centreline(points, step=STEP_MM):
-    # Average the tube down to a line along its long axis.
-    centre = points.mean(0)
-    axis = np.linalg.svd(points - centre, full_matrices=False)[2][0]
-    t = (points - centre) @ axis
-    span = t.max() - t.min()
+def _smooth(line, rounds=2):
+    # the mesh is coarse enough that a 1 mm slice often holds a single surface
+    # vertex, so the raw line zigzags round the tube and reads 9% long
+    for _ in range(rounds):
+        line = line.copy()
+        line[1:-1] = (line[:-2] + 2 * line[1:-1] + line[2:]) / 4
+    return line
+
+
+def _resample(line, step=STEP_MM):
+    # even steps along the path, so measuring and voxel lookups both walk it
+    walked = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(line, axis=0), axis=1))])
+    if walked[-1] < step:
+        return line
+    want = np.arange(0, walked[-1], step)
+    return np.stack([np.interp(want, walked, line[:, k]) for k in range(3)], axis=1)
+
+
+def _centreline(points, edges, step=STEP_MM):
+    # Order the tube by distance along its own surface, not by a straight axis.
+    # A hooked bundle has both limbs at the same place on its long axis, so
+    # projecting onto that axis averages them together and cuts the corner.
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import dijkstra
+
+    length = np.linalg.norm(points[edges[:, 0]] - points[edges[:, 1]], axis=1)
+    mesh = coo_matrix((length, (edges[:, 0], edges[:, 1])), shape=(len(points),) * 2)
+    far = dijkstra(mesh, directed=False, indices=0)
+    end = int(np.nanargmax(np.where(np.isfinite(far), far, -1)))
+    along = dijkstra(mesh, directed=False, indices=end)
+    along[~np.isfinite(along)] = 0.0
+
+    span = along.max()
     if span < step:
         return None
     bins = max(int(span / step), 2)
-    index = np.clip(((t - t.min()) / span * bins).astype(int), 0, bins - 1)
+    index = np.clip((along / span * bins).astype(int), 0, bins - 1)
     line = [points[index == b].mean(0) for b in range(bins) if (index == b).any()]
-    return np.array(line) if len(line) >= 2 else None
+    if len(line) < 3:
+        return np.array(line) if len(line) >= 2 else None
+    return _resample(_smooth(np.array(line)))
 
 
 def centrelines():
@@ -56,7 +86,11 @@ def centrelines():
 
     lines = []
     for component in np.where(np.bincount(label) >= MIN_VERTICES)[0]:
-        line = _centreline(vertices[label == component])
+        where = np.where(label == component)[0]
+        place = np.full(len(vertices), -1)
+        place[where] = np.arange(len(where))
+        mine = (place[edges[:, 0]] >= 0) & (place[edges[:, 1]] >= 0)
+        line = _centreline(vertices[where], place[edges[mine]])
         if line is not None:
             lines.append(line)
 

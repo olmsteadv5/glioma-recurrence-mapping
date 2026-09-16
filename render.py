@@ -429,17 +429,23 @@ class Chart:
         near = self._neighbours()
 
         self._blobs(canvas, wide, high)
+        # a line stays lit only if the picked node is one of its two ends. the
+        # neighbours themselves stay lit, but the lines between them do not,
+        # which used to read as the picked parcel reaching further than it does
+        free = near is None
         for at, count, ratios in self.spokes:
+            own = at == self.lit
             self._strands(pen, self.screen[at], self.screen[-1], ratios,
-                          self._shade(SPOKE, near is None or at in near))
+                          self._shade(SPOKE, free or own), 3 if own else 2)
         for a, b, weight, _, ratios, crosses in self.link:
+            own = self.lit in (a, b)
             self._strands(pen, self.screen[a], self.screen[b], ratios,
-                          self._shade(self._tone(weight, crosses),
-                                      near is None or a in near or b in near))
+                          self._shade(self._tone(weight, crosses), free or own),
+                          3 if own else 2)
         if self.guest is not None:
             for k, weight, _, ratios, crosses in self.guest["link"]:
                 self._strands(pen, self.screen[k], self.guest["screen"], ratios,
-                              self._tone(weight, crosses))
+                              self._tone(weight, crosses), 3)
         self._nodes(pen, near)
         if self.guest is not None:
             self._guest(pen)
@@ -629,7 +635,7 @@ class Chart:
             pen.line([(end, y - 3), (end, y + 3)], fill=INK)
         pen.text((34 + bar, y), "50 mm between parcel centres", fill=INK, font=font, anchor="lm")
 
-    def _strands(self, pen, start, stop, ratios, color):
+    def _strands(self, pen, start, stop, ratios, color, width=2):
         # one arc per tract, bowed until its drawn length is its real length
         along = stop - start
         span = float(np.linalg.norm(along))
@@ -642,7 +648,7 @@ class Chart:
             middle = (start + stop) / 2 + side * bow
             curve = ((1 - steps) ** 2 * start + 2 * (1 - steps) * steps * middle
                      + steps ** 2 * stop)
-            pen.line([tuple(point) for point in curve], fill=color, width=2)
+            pen.line([tuple(point) for point in curve], fill=color, width=width)
 
     def pick(self, x, y, reach=14):
         if not len(self.screen):

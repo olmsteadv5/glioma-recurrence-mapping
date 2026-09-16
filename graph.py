@@ -85,7 +85,7 @@ def bundles():
     import itertools
     import tracts as tractography
 
-    cache = ATLAS_DIR / "graph_bundles2.npz"
+    cache = ATLAS_DIR / "graph_bundles_middles.npz"
     if cache.exists():
         held = np.load(cache)
         return {tuple(k): v for k, v in zip(held["pairs"], np.split(
@@ -109,11 +109,13 @@ def bundles():
             np.linalg.norm(np.diff(points, axis=0), axis=1))])
         seen = [int(v) - 1 for v in np.unique(at) if v > 0]
         for a, b in itertools.combinations(sorted(seen), 2):
-            # the piece of this tract that actually runs from one to the other
+            # middle of the run in one parcel to middle of the run in the other,
+            # to match the centre to centre gap the chart draws it across. the
+            # nearest touching points instead would measure edge to edge, which
+            # is near zero for parcels that share a border
             here, there = np.where(at == a + 1)[0], np.where(at == b + 1)[0]
-            gap = np.abs(here[:, None] - there[None, :])
-            i, j = np.unravel_index(np.argmin(gap), gap.shape)
-            runs[(a, b)].append(abs(float(walked[here[i]] - walked[there[j]])))
+            runs[(a, b)].append(abs(float(walked[int(np.median(here))]
+                                          - walked[int(np.median(there))])))
 
     pairs = sorted(runs)
     lengths = np.concatenate([runs[k] for k in pairs]) if pairs else np.zeros(0)
@@ -148,14 +150,13 @@ def through(subject):
         walked = np.concatenate([[0.0], np.cumsum(
             np.linalg.norm(np.diff(points, axis=0), axis=1))])
         mass = np.where(tumour[keep[:, 0], keep[:, 1], keep[:, 2]])[0]
+        middle = int(np.median(mass))
         for value in np.unique(at):
             if value <= 0:
                 continue
             there = np.where(at == value)[0]
-            gap = np.abs(mass[:, None] - there[None, :])
-            i, j = np.unravel_index(np.argmin(gap), gap.shape)
             hits[int(value) - 1].append(
-                max(abs(float(walked[mass[i]] - walked[there[j]])), 1.0))
+                max(abs(float(walked[middle] - walked[int(np.median(there))])), 1.0))
         # this tract crosses the mass, so every pair it joins is affected
         reached = sorted(int(v) - 1 for v in np.unique(at) if v > 0)
         crossing.update(itertools.combinations(reached, 2))

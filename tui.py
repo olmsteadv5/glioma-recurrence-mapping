@@ -872,17 +872,12 @@ class Console(App):
         elif self.mode == "slices":
             self.seek_parcel(index)
         elif self.mode == "graph" and self.chart is not None:
-            self.light_node(index)
+            self.light_node()
 
-    def light_node(self, index):
-        self.chart.lit = None
-        if self.listing != "parcels":
-            return
-        rows = self.parcel_rows
-        if index < len(rows):
-            wanted = rows[index]["parcel"]
-            self.chart.lit = next((n for n in range(len(self.chart.nodes))
-                                   if self.chart.name(n) == wanted), None)
+    def light_node(self):
+        # whichever list is up, its row is about one parcel first
+        names = self.selected_parcels()
+        self.chart.focus(names[0] if names else None)
 
     def seek_parcel(self, index):
         # put the crosshair in the middle of it, which only mni can work out
@@ -939,7 +934,7 @@ class Console(App):
             if self.chart is None:
                 self.chart = render.Chart(self.subject,
                                           self.results[self.subject]["atlas"])
-                self.light_node(self.query_one("#parcels", ListView).index or 0)
+                self.light_node()
             widget = self.query_one("#board", Board)
             size = widget.content_size
             widget.image = self.chart.image(
@@ -1058,7 +1053,7 @@ class Console(App):
         if name in names and self.listing == "parcels":
             self.select_row(names.index(name))
         else:
-            self.chart.lit = at
+            self.chart.focus(name)
             self.draw()
 
     def pick_parcel(self, column, line):

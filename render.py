@@ -327,6 +327,7 @@ class Chart:
     def __init__(self, subject, overlap):
         import connect
         import graph
+        self.subject = subject
         (self.nodes, self.link, to_tumour,
          self.inside, self.spokes) = graph.build(subject, overlap)
         self.points = graph.layout(len(self.nodes), self.link, to_tumour)
@@ -337,8 +338,8 @@ class Chart:
         lost = {r["parcel"]: r["in_tumour_ml"] for r in overlap["parcels"]}
         self.lost = [lost.get(self.names[n], 0.0) for n in self.nodes]
         self.most = max(self.lost, default=1.0) or 1.0
-        risk = {c["parcel"]: c["share"] for c in connect.at_risk(overlap)}
-        self.risk = [risk.get(self.names[n], 0.0) for n in self.nodes]
+        self._share = {c["parcel"]: c["share"] for c in connect.at_risk(overlap)}
+        self.risk = [self._share.get(self.names[n], 0.0) for n in self.nodes]
 
         # no edge and no spoke reaches these, so they are drawn hollow rather
         # than left looking like the layout dropped them
@@ -346,7 +347,7 @@ class Chart:
                       - {e[0] for e in self.link} - {e[1] for e in self.link}
                       - {s[0] for s in self.spokes})
 
-        self.lit, self.zoom, self.pan = None, 1.0, np.zeros(2)
+        self.lit, self.guest, self.zoom, self.pan = None, None, 1.0, np.zeros(2)
         self._key_was, self._key_art = None, None
         self.where = {}
         self.screen, self.scale = np.zeros((0, 2)), 1.0
@@ -355,6 +356,29 @@ class Chart:
         if at is None or at >= len(self.nodes):
             return None
         return self.names[self.nodes[at]]
+
+    def focus(self, parcel):
+        # the node for the picked row: the one already drawn, or a guest placed
+        # by its real distances, since three quarters of the connectivity rows
+        # name a parcel too weakly tied to have made the chart
+        import graph
+        self.lit = self.guest = None
+        if parcel is None:
+            return
+        self.lit = next((n for n in range(len(self.nodes))
+                         if self.names[self.nodes[n]] == parcel), None)
+        if self.lit is not None:
+            return
+        made = graph.attach(self.subject, self.nodes, parcel)
+        if made is None:
+            return
+        n, link, far = made
+        info = atlas.parcels()[n]
+        self.guest = {"name": parcel, "link": link,
+                      "lobe": (info["hemisphere"], info["lobe"]),
+                      "risk": self._share.get(parcel, 0.0),
+                      "point": graph.settle(self.points, link, far),
+                      "screen": np.zeros(2)}
 
     def move(self, zoom=1.0, pan=(0.0, 0.0)):
         self.zoom = float(np.clip(self.zoom * zoom, 0.4, 12.0))
@@ -368,8 +392,12 @@ class Chart:
         low, span = self.points.min(0), np.ptp(self.points, axis=0)
         span[span == 0] = 1
         self.scale = float(min((wide - 2 * pad) / span[0], (high - 2 * pad) / span[1]) * self.zoom)
-        middle = np.array([wide, high]) / 2
-        self.screen = (self.points - low - span / 2) * self.scale + middle + self.pan
+        self._shift = -low - span / 2
+        self._origin = np.array([wide, high]) / 2 + self.pan
+        self.screen = (self.points + self._shift) * self.scale + self._origin
+        if self.guest is not None:
+            self.guest["screen"] = ((self.guest["point"] + self._shift) * self.scale
+                                    + self._origin)
 
     def image(self, size):
         wide, high = max(size[0], 64), max(size[1], 64)
@@ -382,20 +410,44 @@ class Chart:
 
         self._blobs(canvas, wide, high)
         for at, count, ratios in self.spokes:
-            self._strands(pen, at, len(self.screen) - 1, ratios,
+            self._strands(pen, self.screen[at], self.screen[-1], ratios,
                           self._shade(SPOKE, near is None or at in near))
         for a, b, weight, _, ratios, crosses in self.link:
-            base = THROUGH if crosses else EDGE
-            tone = tuple(int(c + (190 - c) * min(weight, 1.0)) for c in base)
-            self._strands(pen, a, b, ratios,
-                          self._shade(tone, near is None or a in near or b in near))
+            self._strands(pen, self.screen[a], self.screen[b], ratios,
+                          self._shade(self._tone(weight, crosses),
+                                      near is None or a in near or b in near))
+        if self.guest is not None:
+            for k, weight, _, ratios, crosses in self.guest["link"]:
+                self._strands(pen, self.screen[k], self.guest["screen"], ratios,
+                              self._tone(weight, crosses))
         self._nodes(pen, near)
+        if self.guest is not None:
+            self._guest(pen)
         self._labels(pen, near)
         self._key(canvas, pen, wide, high)
         return canvas
 
+    @staticmethod
+    def _tone(weight, crosses):
+        base = THROUGH if crosses else EDGE
+        return tuple(int(c + (190 - c) * min(weight, 1.0)) for c in base)
+
+    def _guest(self, pen):
+        # nothing of it is gone, so it draws at the smallest size the key shows
+        point, wide = self.guest["screen"], 3.0
+        pen.ellipse([point[0] - wide, point[1] - wide, point[0] + wide, point[1] + wide],
+                    fill=NODE_OUT, outline=LIT, width=3)
+        if self.guest["risk"] > 0.02:
+            grow = wide + 2 + 5 * min(self.guest["risk"] / 0.3, 1.0)
+            pen.ellipse([point[0] - grow, point[1] - grow,
+                         point[0] + grow, point[1] + grow], outline=RISK)
+        pen.text((point[0], point[1] - 14), self.guest["name"], fill=LIT,
+                 font=_font(11), anchor="ms")
+
     def _neighbours(self):
         # while a node is picked, its own edges stay lit and the rest fall back
+        if self.guest is not None:
+            return {k for k, *_ in self.guest["link"]}
         if self.lit is None:
             return None
         near = {self.lit}
@@ -557,9 +609,8 @@ class Chart:
             pen.line([(end, y - 3), (end, y + 3)], fill=INK)
         pen.text((34 + bar, y), "50 mm apart", fill=INK, font=font, anchor="lm")
 
-    def _strands(self, pen, a, b, ratios, color):
+    def _strands(self, pen, start, stop, ratios, color):
         # one arc per tract, bowed until its drawn length is its real length
-        start, stop = self.screen[a], self.screen[b]
         along = stop - start
         span = float(np.linalg.norm(along))
         if span < 1:

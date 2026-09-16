@@ -224,3 +224,47 @@ def layout(count_of_nodes, link, to_tumour, rounds=120):
         step = (weight * ratio)[:, :, None] * (points[:, None] - points[None])
         points = (weight @ points + step.sum(1)) / np.maximum(scale, 1e-9)[:, None]
     return points
+
+
+def attach(subject, nodes, parcel, most=12):
+    # One more parcel for a chart already built: a connectivity row can name
+    # something too weakly tied to have made the node set, and a row that
+    # highlights nothing is worse than a weak edge drawn honestly.
+    count, distance = edges()
+    names = [p["name"] for p in parcels()]
+    if parcel not in names or names.index(parcel) in nodes:
+        return None
+    n = names.index(parcel)
+    runs, (_, crossing) = bundles(), through(subject)
+    order = sorted(range(len(nodes)), key=lambda k: -count[n, nodes[k]])[:most]
+
+    link = []
+    for k in order:
+        weight = float(count[n, nodes[k]])
+        if weight <= 0:
+            continue
+        straight = float(distance[n, nodes[k]]) or 1.0
+        key = (min(n, nodes[k]), max(n, nodes[k]))
+        real = runs.get(key)
+        ratios = ([1.0] if real is None
+                  else sorted(float(v) / straight for v in real)[:STRANDS])
+        link.append((k, weight, straight, ratios, key in crossing))
+
+    middle, tumour = centres(subject)
+    far = (float(np.linalg.norm(middle[n] - tumour))
+           if not np.isnan(middle[n]).any() else 60.0)
+    return n, link, far
+
+
+def settle(points, link, far, rounds=60):
+    # Where that one node goes among nodes already placed: the same stress rule
+    # as the layout, with everything but this one held still.
+    fixed = np.array([points[k] for k, *_ in link] + [points[-1]])
+    target = np.array([edge[2] for edge in link] + [far], dtype=float)
+    weight = 1.0 / np.maximum(target, 1e-6) ** 2
+    at = fixed.mean(0) + 1.0
+    for _ in range(rounds):
+        gap = np.maximum(np.linalg.norm(at - fixed, axis=1), 1e-6)
+        pull = fixed + (at - fixed) * (target / gap)[:, None]
+        at = (weight[:, None] * pull).sum(0) / weight.sum()
+    return at

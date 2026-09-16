@@ -69,7 +69,6 @@ class Scene:
 
         self._picker = None
         self.plotter.show(auto_close=False)
-        self.home = self.plotter.camera_position
 
         # nothing is watching this window, so never wait on its vertical blank.
         # pyvista's own screenshot reads the front buffer, which only updates on
@@ -138,9 +137,6 @@ class Scene:
 
     def zoom(self, factor):
         self.plotter.camera.Zoom(factor)
-
-    def reset(self):
-        self.plotter.camera_position = self.home
 
     def set_visible(self, key, on):
         actor = self.actors.get(key)

@@ -100,7 +100,7 @@ register 36         |
 map 36             /
 show 36            load a subject into the viewer
 browser 36         that subject in a separate browser window
-cancel             stop the running job
+cancel             stop the job, and the segmenter's container with it
 clear              clear the log
 help               list the commands
 ```
@@ -163,6 +163,9 @@ there are reference labels, and `aligned on`: the share of the brain the
 registration had left to work with once the lesion was masked out of the metric.
 That last one is about a single registration, not about change over time.
 
+Click a subject or focus the panel and arrow through them; it scrolls to keep
+the chosen one in view, and steps over any whose outputs have been deleted.
+
 The panel is in two parts. `stats` holds the tumour, where it sits and how it
 was made; the lobe volumes are indented under `in parcels` because that is the
 volume they add up to, and they sit under a hemisphere only when the tumour is
@@ -175,7 +178,8 @@ show up only on a subject that has one.
 Between them, `changes` appears when a patient has more than one timepoint,
 one row per consecutive pair.
 
-`checks` holds `stages` and `atlas`, a row each. A tick is quiet and carries
+`checks` holds `stages` and `atlas`, a row each. The strip row also carries
+whatever `verify.py` objected to, which used to reach you only as a traceback. A tick is quiet and carries
 how long the stage took and how long ago it ran. A cross is the only coloured
 thing in the panel, and it opens a red line saying what is actually wrong:
 which modality never downloaded or never stripped, or that a partial rerun left

@@ -22,6 +22,17 @@ def cuda_available():
         return False
 
 
+def stop():
+    # brats detaches its container, so killing python leaves inference running
+    listed = subprocess.run(["docker", "ps", "--format", "{{.ID}} {{.Image}}"],
+                            capture_output=True, text=True)
+    running = [line.split()[0] for line in listed.stdout.splitlines()
+               if line.split()[1].startswith("brainles/")]
+    if running:
+        subprocess.run(["docker", "stop", *running], capture_output=True)
+    return len(running)
+
+
 def run(subject, stripped):
     # About 3 minutes per subject on CPU.
     gpu = cuda_available()

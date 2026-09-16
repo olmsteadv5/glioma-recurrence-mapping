@@ -20,8 +20,9 @@ from textual_image.widget import Image as ImageWidget
 import atlas
 import function
 import render
+import segment
 from paths import (ATLAS_INPUT, LABELS, MODALITIES, REGIONS, RESULTS, ROOT,
-                   STAGES, raw_dir, stage_file, stripped_dir, subject_id)
+                   STAGES, out_dir, raw_dir, stage_file, stripped_dir, subject_id)
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\r")
 MARKER = re.compile(r"^\* (\w+)$")
@@ -180,16 +181,24 @@ class Pane(ImageWidget, Renderable=Renderable):
         self.app.schedule_draw()
 
 
-class Rows(Static):
+class Rows(Static, can_focus=True):
     # Click-addressable list; the app decides what a row click means.
 
-    def __init__(self, handler=None, **kwargs):
+    def __init__(self, handler=None, stepper=None, **kwargs):
         super().__init__("", **kwargs)
-        self.handler = handler
+        self.handler, self.stepper = handler, stepper
+        self.can_focus = stepper is not None
 
     def on_click(self, event):
         if self.handler:
+            self.focus()
             self.handler(event.y)
+
+    def on_key(self, event):
+        if self.stepper and event.key in ("up", "down"):
+            self.stepper(-1 if event.key == "up" else 1)
+            event.stop()
+            event.prevent_default()
 
 
 class Viewer(Vertical):
@@ -230,7 +239,7 @@ class Console(App):
            border-title-align: left; border-subtitle-align: right;
            border-title-style: bold; border-subtitle-color: #7c6f64;
            background: #282828; padding: 0; }
-    #inputs { width: 34; }
+    #inputs { width: 34; scrollbar-gutter: stable; }
     #stats { height: auto; padding: 0 1; }
     #viewer { width: 1fr; }
     #right { width: 46; }
@@ -240,7 +249,7 @@ class Console(App):
     #readout { height: 1fr; border: round #504945; border-title-color: #a89984;
                padding: 0 1; }
     #shell { height: 14; }
-    #shell:focus-within { border: round #fabd2f; }
+    #shell:focus-within, #inputs:focus-within { border: round #fabd2f; }
     #log { height: 1fr; background: #282828; padding: 0 1; }
     #line { height: 1; padding: 0 1; }
     #sigil { width: 2; color: #b8bb26; text-style: bold; }
@@ -295,8 +304,8 @@ class Console(App):
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="top"):
-            with Vertical(id="inputs", classes="box"):
-                yield Rows(self.click_subject, id="stats")
+            with VerticalScroll(id="inputs", classes="box"):
+                yield Rows(self.click_subject, self.step_subject, id="stats")
             with Viewer(id="viewer", classes="box"):
                 yield Canvas(id="canvas")
                 with Grid(id="grid"):
@@ -320,7 +329,7 @@ class Console(App):
     def on_mount(self):
         self.query_one("#grid").display = False
         self.query_one("#inputs").border_title = "inputs"
-        self.query_one("#inputs").border_subtitle = "click a subject"
+        self.query_one("#inputs").border_subtitle = "click or arrow a subject"
         self.query_one("#shell").border_title = "pipeline"
         self.query_one("#shell").border_subtitle = keyed(IDLE)
         self.query_one("#readout").border_title = "cursor"
@@ -348,6 +357,13 @@ class Console(App):
     # ---------------------------------------------------------------- subject
 
     def load_subject(self, subject):
+        # results.json can outlive the files it describes, and that is not fatal
+        missing = [name for name in ("seg.nii.gz", "seg_in_mni.nii.gz")
+                   if not (out_dir(subject) / name).exists()]
+        if missing:
+            self.log_write(f"[{BAD}]{subject}: {', '.join(missing)} is gone, "
+                           f"rerun with ./main.py {int(subject[10:15])}[/]")
+            return False
         self.subject, self.watching = subject, None
         self.hidden_layers = set()
         overlap = self.results[subject]["atlas"]
@@ -359,6 +375,7 @@ class Console(App):
         self.refresh_layers()
         self.refresh_list()
         self.draw()
+        return True
 
     def panel_width(self):
         # The panel loses a column whenever its scrollbar appears.
@@ -479,7 +496,12 @@ class Console(App):
         if stage == "strip":
             short = [m for m in MODALITIES
                      if not (stripped_dir(self.subject) / f"{self.subject}_{m}.nii.gz").exists()]
-            return ", ".join(short) + " not stripped" if short else None
+            if short:
+                return ", ".join(short) + " not stripped"
+            found = out_dir(self.subject) / "verify.txt"
+            if found.exists() and found.read_text().strip():
+                return found.read_text().strip().splitlines()[0]
+            return None
         if stage == "map" and "atlas" not in d:
             return "no parcel overlap"
         return None
@@ -497,6 +519,18 @@ class Console(App):
         chosen = self.subject_rows.get(row_index)
         if chosen and chosen != self.subject:
             self.load_subject(chosen)
+
+    def step_subject(self, delta):
+        # arrow keys through the list, and keep the chosen row on screen
+        if not self.subjects:
+            return
+        at = self.subjects.index(self.subject) if self.subject in self.subjects else 0
+        # step past any whose files have gone rather than stopping dead on them
+        for step in range(at + delta, len(self.subjects) if delta > 0 else -1, delta):
+            if self.load_subject(self.subjects[step]):
+                break
+        line = next((n for n, name in self.subject_rows.items() if name == self.subject), 0)
+        self.query_one("#inputs").scroll_to(y=max(0, line - 3), animate=False)
 
     # ----------------------------------------------------------------- layers
 
@@ -1004,11 +1038,13 @@ class Console(App):
                          stderr=subprocess.DEVNULL, start_new_session=True)
 
     def action_cancel(self):
-        if self.proc:
-            self.proc.terminate()
-            self.log_write(f"[{WARN}]cancelled[/]")
-        else:
+        if not self.proc:
             self.log_write(f"[{FAINT}]nothing running[/]")
+            return
+        self.proc.terminate()
+        # the segmenter runs detached, so it needs stopping in its own right
+        stopped = segment.stop()
+        self.log_write(f"[{WARN}]cancelled{', stopped the segmenter' if stopped else ''}[/]")
 
     def busy(self, note):
         self.query_one("#shell").border_subtitle = keyed(note)

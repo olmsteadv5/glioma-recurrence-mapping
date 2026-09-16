@@ -3,7 +3,7 @@
 import nibabel as nib
 import numpy as np
 
-from paths import MODALITIES, modality
+from paths import MODALITIES, modality, out_dir
 
 SHAPE = (240, 240, 155)
 ZOOMS = (1.0, 1.0, 1.0)
@@ -39,5 +39,8 @@ def run(subject, directory):
         if not np.allclose(affine, reference, atol=1e-4):
             problems.append(f"{name}: affine differs - not co-registered")
 
+    # written before raising, so the panel can say what was wrong afterwards
+    out_dir(subject).mkdir(parents=True, exist_ok=True)
+    (out_dir(subject) / "verify.txt").write_text("\n".join(problems))
     if problems:
         raise RuntimeError(f"{subject}:\n  " + "\n  ".join(problems))

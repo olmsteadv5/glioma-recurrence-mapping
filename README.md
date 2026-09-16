@@ -202,8 +202,16 @@ The breakdown lists the layers with their volumes, clickable to show and hide,
 then one of three views: the involved parcels, the functions at risk, or the
 connectivity at risk. Whatever is selected
 lights up in the 3D and every other parcel drops back, so a row and a shape in
-the viewer are the same thing. Every list opens with the same two rows, which
-are the only control over how much of the atlas is drawn:
+the viewer are the same thing. Selecting one hides the rest outright rather
+than fading them.
+
+The parcel list follows the layers: it shows the parcels the visible layers are
+actually drawing. Untick `ET enhancing` and the parcels that are mostly
+enhancing leave the list; tick `new in the later` and it becomes the parcels
+that piece of the recurrence touches.
+
+Every list opens with the same two rows, which are the only control over how
+much of the atlas is drawn:
 
 ```
   no parcels            nothing, so the tumour is clear

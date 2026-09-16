@@ -30,7 +30,7 @@ COMPARE = {"both": (235, 219, 178), "new": (251, 73, 52), "gone": (142, 192, 124
 MARGIN_MM = 20
 _hex = lambda t: "#%02x%02x%02x" % tuple(t)
 PANEL = (40, 40, 40)
-DIMMED = 0.10
+DIMMED = 0.0
 
 
 def fit(image, size, background=PANEL):

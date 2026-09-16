@@ -49,3 +49,20 @@ def surfaces(first, second):
         if made:
             out[name] = made
     return out
+
+
+@functools.lru_cache(maxsize=8)
+def parcels_in(first, second, which):
+    # Which parcels each piece of the difference actually touches.
+    import nibabel as nib
+    from atlas import label_volume
+    from paths import MNI
+
+    labels, names = label_volume(nib.load(MNI))
+    parts = _split(first, second)[0]
+    out = set()
+    for name in which:
+        for value in np.unique(labels[parts[name]]):
+            if value > 0:
+                out.add(names[int(value) - 1])
+    return frozenset(out)

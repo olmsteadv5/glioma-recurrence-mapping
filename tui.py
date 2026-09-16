@@ -333,6 +333,7 @@ class Console(App):
         self.history, self.hpos, self.started = [], 0, 0
         self.stage, self.watching = None, None
         self.row_text, self.marked, self.at_risk = [], None, []
+        self.parcel_rows = []
         self.parcels_shown = True
         self.pending, self._spin, self._settle = [0.0, 0.0, 1.0], None, None
         self.strip_spans = {}
@@ -611,6 +612,22 @@ class Console(App):
                        f"[{DIM if on else FAINT}]{row(name, value, w - 2 * deep)}[/]")
         self.query_one("#layers", Rows).update("\n".join(out))
 
+    def shown_parcels(self):
+        # the parcels the layers are actually drawing, which is what the list shows
+        rows = self.results[self.subject]["atlas"]["parcels"]
+        change = tuple(k[2:] for k, *_ in LAYERS
+                       if k.startswith("C:") and k not in self.hidden_layers)
+        if change and self.pair():
+            touched = compare.parcels_in(*self.pair(), change)
+            return [r for r in rows if r["parcel"] in touched]
+        # only the classes this subject actually has; RC is usually absent
+        present = self.results[self.subject]["labels_ml"]
+        classes = {name for name in LABELS.values()
+                   if name in present and "T:" + name not in self.hidden_layers}
+        if not classes:
+            return rows if "T:WT" not in self.hidden_layers else []
+        return [r for r in rows if r["tissue"] in classes]
+
     def apply_layers(self):
         # the one place that turns the checkbox states into what is drawn
         if not self.scene:
@@ -655,6 +672,7 @@ class Console(App):
             self.scene.ensure_compare(*self.pair())
         self.apply_layers()
         self.refresh_layers()
+        self.refresh_list()
         self.draw()
 
     def sync_overlay(self):
@@ -694,7 +712,7 @@ class Console(App):
             self.scene.unisolate()
             return
         if self.listing == "parcels":
-            rows = d["atlas"]["parcels"]
+            rows = self.parcel_rows
             if index < len(rows):
                 self.scene.isolate(rows[index]["parcel"])
         elif self.listing == "connectivity":
@@ -720,8 +738,8 @@ class Console(App):
         head = self.query_one("#listhead", Static)
 
         if self.listing == "parcels":
-            rows = d["atlas"]["parcels"]
-            head.update(f"parcels involved \u00b7 {len(rows)}")
+            rows = self.parcel_rows = self.shown_parcels()
+            head.update(f"parcels shown \u00b7 {len(rows)}")
             body = [chips.get(p["parcel"], " ") + " " +
                     row(p["parcel"], f"{bar(p['fraction'])} {p['fraction']:>4.0%}", w - 2)
                     for p in rows]
@@ -784,7 +802,7 @@ class Console(App):
         index -= 2
 
         if self.listing == "parcels":
-            rows = d["atlas"]["parcels"]
+            rows = self.parcel_rows
             if index >= len(rows):
                 return
             p = rows[index]
@@ -826,7 +844,7 @@ class Console(App):
     def summary(self, d, w):
         # what the whole list adds up to, above the note on how it was built
         if self.listing == "parcels":
-            rows = d["atlas"]["parcels"]
+            rows = self.parcel_rows
             tally = {}
             for p in rows:
                 tally[p["tissue"]] = tally.get(p["tissue"], 0) + 1
@@ -863,7 +881,7 @@ class Console(App):
         self.chart.lit = None
         if index < 0 or self.listing != "parcels":
             return
-        rows = self.results[self.subject]["atlas"]["parcels"]
+        rows = self.parcel_rows
         if index < len(rows):
             wanted = rows[index]["parcel"]
             self.chart.lit = next((n for n in range(len(self.chart.nodes))
@@ -876,7 +894,7 @@ class Console(App):
         if index < 0:
             return
         if self.listing == "parcels":
-            rows = self.results[self.subject]["atlas"]["parcels"]
+            rows = self.parcel_rows
             if index >= len(rows):
                 return
             wanted = rows[index]["parcel"]
@@ -1041,8 +1059,7 @@ class Console(App):
         name = None if at is None else self.chart.name(at)
         if name is None:
             return
-        rows = self.results[self.subject]["atlas"]["parcels"]
-        names = [r["parcel"] for r in rows]
+        names = [r["parcel"] for r in self.parcel_rows]
         if name in names and self.listing == "parcels":
             self.select_row(names.index(name) + 2)
         else:
@@ -1058,7 +1075,9 @@ class Console(App):
                                line * cell.height + cell.height // 2)
         if name is None:
             return
-        names = [r["parcel"] for r in self.results[self.subject]["atlas"]["parcels"]]
+        names = [r["parcel"] for r in self.parcel_rows]
+        if name not in names:
+            return
         if self.listing != "parcels":
             self.listing = "parcels"
             self.refresh_list()

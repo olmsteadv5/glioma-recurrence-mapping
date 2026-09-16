@@ -47,3 +47,22 @@ def for_tumour(overlap, n=20, kind="functional"):
     order = np.argsort(-total)[:n]
     return [{"term": words[i], "score": round(float(total[i]), 2)}
             for i in order if total[i] > 0]
+
+
+def drivers(term, overlap, n=8, kind="functional"):
+    # Which involved parcels put that term near the top, and by how much.
+    words, scores, names = terms(kind)
+    if term not in words:
+        return []
+    column = words.index(term)
+    index = {name: i for i, name in enumerate(names)}
+
+    rows = [(r["parcel"], r["fraction"]) for r in overlap["parcels"] if r["parcel"] in index]
+    total = sum(f for _, f in rows)
+    if total == 0:
+        return []
+
+    out = [(name, fraction, float(scores[index[name], column]) * fraction / total)
+           for name, fraction in rows]
+    out.sort(key=lambda t: -t[2])
+    return [(name, fraction, round(share, 3)) for name, fraction, share in out[:n] if share > 0]

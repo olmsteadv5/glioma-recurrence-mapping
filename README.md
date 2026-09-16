@@ -61,13 +61,14 @@ to pick which colouring it opens with.
 Four panels: the inputs down the left, a viewer, a breakdown on the right, and
 the pipeline along the bottom.
 
-The pipeline panel is a real prompt. Press `t` or click it, type a command,
-press enter. Up and down walk the history, escape gives the keyboard back.
+The pipeline panel is a prompt. Press `t` or click it, type a command, press
+enter. Up and down walk the history, escape gives the keyboard back. It only
+knows about this project, it is not a shell:
 
 ```
 ./main.py 36 42    segment and map those subjects
-./view.py 36       open the browser view
 cancel             stop the running job
+browser [n]        open the 3D view in a separate browser window
 clear              clear the log
 help               list the commands
 ```
@@ -76,18 +77,26 @@ The viewer is either the 3D atlas, where dragging rotates and the scroll wheel
 zooms, or an ITK-SNAP style 2x2 of axial, coronal and sagittal with a cursor
 readout. Clicking or dragging in any plane moves the crosshair in all three.
 
-The breakdown has the layers with their volumes, clickable to show and hide,
-and a list of either the involved parcels or the functions at risk. Moving
-through the parcel list dims everything else in the 3D so you can see where
-that parcel is; enter hides it. The panel underneath shows the selected
-parcel's anatomy and its Parcelsynth terms.
-
 ```
 v  3d / slices          p  parcel colouring     t  focus the prompt
 s  native / mni         f  parcels / functions  c  cancel the run
 o  segmentation overlay h  reset view           q  quit
-1-4  modality           pgup/pgdn  step slice
+1-4  modality           pgup/pgdn  step slice   space  hide a parcel
 ```
+
+Half of those only make sense in one of the two viewer modes. The ones that do
+not apply go grey in the footer rather than doing nothing silently.
+
+The breakdown lists the layers with their volumes, clickable to show and hide,
+then either the involved parcels or the functions at risk. **Clicking a row
+only selects it**, so you can read the panel underneath; space or enter is what
+hides a parcel. Whatever is selected lights up in the 3D and everything else
+dims.
+
+For a parcel the panel underneath gives its anatomy and its own Parcelsynth
+terms. For a function it gives the parcels that produced the score, each with
+how much of it the tumour occupies and what that contributed. Those shares add
+up to the score.
 
 **kitty only.** It draws images with kitty's graphics protocol, which no other
 terminal here supports. Elsewhere it still runs but says the images will look
@@ -96,7 +105,7 @@ poor. The browser viewer is the portable one.
 Slices default to **native** space, because that has all four modalities and is
 undistorted. MNI has only T1 and is a warped brain, but it is the only space
 where atlas coordinates mean anything, so the readout shows MNI mm there and
-says "no anatomical origin" in native.
+says "SRI24 grid" in native.
 
 ## Functions at risk
 

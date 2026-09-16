@@ -117,10 +117,11 @@ class Scene:
         if actor is not None:
             actor.prop.opacity = float(value)
 
-    def isolate(self, name):
-        # dim every parcel except one, for hover
+    def isolate(self, names):
+        # dim every parcel except the named ones
+        keep = {names} if isinstance(names, str) else set(names)
         for other, actor in self.parcel_actors.items():
-            actor.prop.opacity = 1.0 if other == name else 0.06
+            actor.prop.opacity = 1.0 if other in keep else 0.06
 
     def unisolate(self):
         for actor in self.parcel_actors.values():
@@ -167,9 +168,9 @@ class Slices:
         self.shape = first.shape
         self.seg = self._canon(nib.load(seg))[1]
         self.modality = "T1GD" if "T1GD" in self.volumes else next(iter(self.volumes))
-        self.cursor = list(np.array(np.unravel_index(
-            np.argmax(self.seg > 0), self.seg.shape)) if (self.seg > 0).any()
-            else [s // 2 for s in self.shape])
+        start = (np.unravel_index(np.argmax(self.seg > 0), self.seg.shape)
+                 if (self.seg > 0).any() else [s // 2 for s in self.shape])
+        self.cursor = [int(v) for v in start]
         self.overlay = True
 
     @staticmethod
@@ -255,7 +256,7 @@ class Slices:
         # so reporting it as coordinates would be misleading
         x, y, z = self.cursor
         label = int(self.seg[x, y, z])
-        out = {"voxel": (x, y, z), "label": LABELS.get(label, "background"),
+        out = {"voxel": (int(x), int(y), int(z)), "label": LABELS.get(label, "background"),
                "label_value": label, "intensity": int(self._grey()[x, y, z]),
                "space": self.space, "modality": self.modality,
                "modalities": list(self.volumes)}

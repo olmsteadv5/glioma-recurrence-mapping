@@ -142,6 +142,10 @@ class Scene:
         for actor in self.parcel_actors.values():
             actor.prop.opacity = 1.0
 
+    def show_parcels(self, on):
+        for actor in self.parcel_actors.values():
+            actor.visibility = bool(on)
+
     def pick(self, x, y):
         # ray cast against the parcels only, so the shell cannot intercept
         if self._picker is None:

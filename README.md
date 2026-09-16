@@ -133,6 +133,10 @@ lights up in the 3D and every other parcel drops back, so a row and a shape in
 the viewer are the same thing. It works both ways: click a parcel in the 3D and
 its row is selected, drag and it rotates instead.
 
+The last two layers are the parcels themselves: `involved parcels` hides them
+all, and `dim the others` is what makes the selected one stand out. Uncheck it
+to hold every involved parcel at full brightness while you move down the list.
+
 For a parcel the panel underneath gives its anatomy and its own Parcelsynth
 terms. For a function it gives the parcels that produced the score, each with
 how much of it the tumour occupies and what that contributed. Those shares add

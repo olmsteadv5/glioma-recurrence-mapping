@@ -30,7 +30,9 @@ SHELL_OPACITY = 0.15
 
 LAYERS = [("T:NETC", "NETC necrosis", "#f2c14e"), ("T:SNFH", "SNFH oedema", "#3fa7d6"),
           ("T:ET", "ET enhancing", "#e4572e"), ("tracts", "tracts crossing", "#689d6a"),
-          ("shell", "brain surface", "#a89984")]
+          ("shell", "brain surface", "#a89984"),
+          ("parcels", "involved parcels", "#d3869b"),
+          ("focus", "dim the others", "#d3869b")]
 ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
                ("YBA_696.glb", "meshes", "glb"),
                ("top5k_tracts_decimated.obj", "tracts", "3001"),
@@ -364,20 +366,46 @@ class Console(App):
         volumes = self.results[self.subject]["labels_ml"]
         for key, name, colour in LAYERS:
             on = key not in self.hidden_layers
-            value = volumes.get(key.split(":")[-1])
-            value = f"{value} mL" if value else ""
+            if key == "parcels":
+                value = str(len(self.scene.parcel_actors)) if self.scene else ""
+            elif key == "focus":
+                value = ""
+            else:
+                value = volumes.get(key.split(":")[-1])
+                value = f"{value} mL" if value else ""
             out.append(f"[{colour if on else FAINT}]{'[×]' if on else '[ ]'}[/] "
                        f"[{DIM if on else FAINT}]{row(name, value, w)}[/]")
         self.query_one("#layers", Rows).update("\n".join(out))
 
     def click_layer(self, row_index):
-        if 0 <= row_index < len(LAYERS):
-            key = LAYERS[row_index][0]
-            self.hidden_layers ^= {key}
-            self.scene.set_visible(key, key not in self.hidden_layers)
-            self.refresh_layers()
-            if self.mode == "3d":
-                self.draw()
+        if not (0 <= row_index < len(LAYERS) and self.scene):
+            return
+        key = LAYERS[row_index][0]
+        self.hidden_layers ^= {key}
+        on = key not in self.hidden_layers
+        if key == "parcels":
+            self.scene.show_parcels(on)
+        elif key == "focus":
+            # off means every involved parcel stays at full brightness
+            self.isolate_selected() if on else self.scene.unisolate()
+        else:
+            self.scene.set_visible(key, on)
+        self.refresh_layers()
+        if self.mode == "3d":
+            self.draw()
+
+    def isolate_selected(self):
+        index = self.query_one("#parcels", ListView).index or 0
+        d = self.results[self.subject]
+        if self.listing == "parcels":
+            rows = d["atlas"]["parcels"]
+            if index < len(rows):
+                self.scene.isolate(rows[index]["parcel"])
+        else:
+            top = d.get("function", [])
+            if index < len(top):
+                self.scene.isolate(n for n, _, _ in
+                                   function.drivers(top[index]["term"], d["atlas"], 7))
 
     # ------------------------------------------------------------------- list
 
@@ -453,20 +481,9 @@ class Console(App):
         index = event.list_view.index or 0
         self.mark_row(index)
         self.refresh_detail(index)
-        if self.mode != "3d" or not self.scene:
+        if self.mode != "3d" or not self.scene or "focus" in self.hidden_layers:
             return
-        d = self.results[self.subject]
-        if self.listing == "parcels":
-            rows = d["atlas"]["parcels"]
-            if index >= len(rows):
-                return
-            self.scene.isolate(rows[index]["parcel"])
-        else:
-            top = d.get("function", [])
-            if index >= len(top):
-                return
-            self.scene.isolate(n for n, _, _ in
-                               function.drivers(top[index]["term"], d["atlas"], 7))
+        self.isolate_selected()
         self.draw()
 
 

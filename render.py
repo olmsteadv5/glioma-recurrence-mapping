@@ -220,6 +220,7 @@ class Slices:
     def __init__(self, subject, space="native"):
         self.subject = subject
         self.geom, self.hidden = {}, set()
+        self.involved, self.lit = {}, None
         self.load(space)
 
     def load(self, space):
@@ -263,12 +264,16 @@ class Slices:
     def _slab(self, which):
         # radiological: patient left on the viewer's right. RAS x increases right, so flip it.
         x, y, z = self.cursor
-        g, s = self._grey(), self.seg
-        if which == "axial":
-            return g[::-1, ::-1, z].T, s[::-1, ::-1, z].T
-        if which == "coronal":
-            return g[::-1, y, ::-1].T, s[::-1, y, ::-1].T
-        return g[x, ::-1, ::-1].T, s[x, ::-1, ::-1].T
+        blank = np.zeros_like(self.seg) if self.parcels is None else self.parcels
+        planes = []
+        for volume in (self._grey(), self.seg, blank):
+            if which == "axial":
+                planes.append(volume[::-1, ::-1, z].T)
+            elif which == "coronal":
+                planes.append(volume[::-1, y, ::-1].T)
+            else:
+                planes.append(volume[x, ::-1, ::-1].T)
+        return planes
 
     def _marker(self, which):
         # where the crosshair sits inside the slab, in slab pixel coordinates
@@ -281,10 +286,20 @@ class Slices:
         return ny - 1 - y, nz - 1 - z
 
     def plane(self, which, size):
-        grey, lab = self._slab(which)
+        grey, lab, parcel = self._slab(which)
         top = np.percentile(grey[grey > 0], 99) if (grey > 0).any() else 1
         rgb = np.repeat((np.clip(grey / max(top, 1) * 255, 0, 255)
                          ).astype(np.uint8)[:, :, None], 3, axis=2)
+        # parcels first, so the tumour still wins wherever they overlap
+        if self.involved:
+            table = np.zeros((len(self.parcel_names) + 1, 3), dtype=np.float32)
+            alpha = np.zeros(len(self.parcel_names) + 1, dtype=np.float32)
+            for value, colour in self.involved.items():
+                table[value] = colour
+                alpha[value] = 0.5 if value == self.lit else 0.22
+            weight = alpha[parcel][:, :, None]
+            rgb = (rgb * (1 - weight) + table[parcel] * weight).astype(np.uint8)
+
         for value, colour in TISSUE.items():
             if value in self.hidden:
                 continue

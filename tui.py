@@ -572,9 +572,19 @@ class Console(App):
 
     def sync_overlay(self):
         # the same checkbox hides a class in the slices as in the 3d
-        if self.slices:
-            self.slices.hidden = {value for value, name in LABELS.items()
-                                  if "T:" + name in self.hidden_layers}
+        if not self.slices:
+            return
+        self.slices.hidden = {value for value, name in LABELS.items()
+                              if "T:" + name in self.hidden_layers}
+        self.slices.involved = {}
+        if "parcels" in self.hidden_layers or self.slices.parcels is None:
+            return
+        # the same parcels the 3d draws, in the same colours
+        order = {p["name"]: i for i, p in enumerate(atlas.parcels())}
+        palette = atlas.colours(self.palette)
+        for r in self.results[self.subject]["atlas"]["parcels"]:
+            if r["parcel"] in order:
+                self.slices.involved[order[r["parcel"]] + 1] = palette[order[r["parcel"]]]
 
     def isolate_selected(self):
         index = (self.query_one("#parcels", ListView).index or 0) - 1
@@ -763,6 +773,8 @@ class Console(App):
             return
         if self.space != "mni":
             self.action_space()
+        order = {p["name"]: i for i, p in enumerate(atlas.parcels())}
+        self.slices.lit = order.get(wanted, -1) + 1
         if self.slices.centre(wanted):
             self.draw()
 
@@ -806,7 +818,8 @@ class Console(App):
             self.refresh_readout()
             r = self.slices.readout()
             who = "" if self.watching is None else f" · {self.watching[10:]}"
-            viewer.border_title = f"slices · {r['space']}{who}"
+            colours = f" · {self.palette} colours" if self.slices.involved else ""
+            viewer.border_title = f"slices · {r['space']}{who}{colours}"
             strip, taken = self.strip(
                 "viewer", [(str(i), m) for i, m in enumerate(MODALITIES, start=1)],
                 r["modality"], absent=[m for m in MODALITIES if m not in r["modalities"]])
@@ -872,7 +885,11 @@ class Console(App):
 
     def slice_hints(self):
         # each key names what it gives you, not what you are looking at
-        return [f"v 3d · s {'native' if self.space == 'mni' else 'mni'}"]
+        core = f"v 3d · s {'native' if self.space == 'mni' else 'mni'}"
+        if self.slices.involved:
+            other = "yba" if self.palette == "contrast" else "contrast"
+            return [f"{core} · p {other} colours", core]
+        return [core]
 
     def band(self, widget, left, taken, choices):
         # one border line, a label at each end, the line itself drawn between
@@ -954,7 +971,8 @@ class Console(App):
         if action in self.VIEW_ACTIONS and not self.scene:
             return None
         if action == "palette":
-            return self.mode == "3d" or None
+            # the slices only carry parcels in mni, where the colours mean something
+            return (self.mode == "3d" or (self.mode == "slices" and self.space == "mni")) or None
         if action == "space":
             return self.mode == "slices" or None
         if action == "cancel":
@@ -973,12 +991,15 @@ class Console(App):
     def action_space(self):
         self.space = "mni" if self.space == "native" else "native"
         self.slices.load(self.space)
+        self.sync_overlay()
+        self.refresh_bindings()
         if self.mode == "slices":
             self.draw()
 
     def action_palette(self):
         self.palette = "yba" if self.palette == "contrast" else "contrast"
         self.scene.recolour(self.palette)
+        self.sync_overlay()
         self.refresh_list()
         self.draw()
 

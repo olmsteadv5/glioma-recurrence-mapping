@@ -120,6 +120,11 @@ use is bright, and anything the current space does not carry is greyed.
 The cursor panel gives every sequence's intensity at that voxel, not just the
 one on screen, and in MNI it names the parcel under the crosshair.
 
+MNI also draws the involved parcels onto the slices, in the same colours the
+3D uses, under the tumour rather than over it. The selected one is brighter.
+That is why `p` works there and not in native space: native has no parcels to
+colour, so the title says which palette is on only where it means something.
+
 ```
 v  3d / slices          1-4  modality           t  focus the prompt
 s  native / mni         a b c  breakdown view    x  cancel the run

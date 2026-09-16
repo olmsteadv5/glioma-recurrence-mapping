@@ -113,9 +113,28 @@ help               list the commands
 changing the atlas or function code. It runs with `--no-view`, since the viewer
 is already sitting next to the prompt.
 
-The viewer is either the 3D atlas, where dragging rotates and the scroll wheel
-zooms, or an ITK-SNAP style 2x2 of axial, coronal and sagittal with a cursor
-readout. Clicking or dragging in any plane moves the crosshair in all three.
+`v` cycles the viewer through three: the 3D atlas, where dragging rotates and
+the scroll wheel zooms; an ITK-SNAP style 2x2 of axial, coronal and sagittal
+with a cursor readout, where clicking or dragging in any plane moves the
+crosshair in all three; and the graph.
+
+## The graph
+
+Every parcel the tumour reaches is a node, every white matter connection
+between them is an edge, and the tumour itself is the large node in the middle.
+Orange nodes are inside the tumour, grey ones are outside it but tied to it by
+white matter. Clicking a node selects its parcel, and selecting a parcel lights
+its node.
+
+The nodes are placed by stress majorisation, so **the gaps on screen are the
+real distances between the parcels**, to a median of 10%. That uses
+`SC_EuclDist`, the centre to centre distance: `SC_Length` would be the mean
+streamline length but it is clamped, with over half the edges sitting at
+exactly its maximum of 168.8 mm, so it cannot carry lengths.
+
+For subject 36 that is 99 parcels in the tumour and 46 tied to them, over 259
+connections, laid out in a fifth of a second. Only connections at or above 15%
+of the strongest are drawn, or the chart is a solid mat.
 
 The modality strip sits in the viewer's bottom border, away from the other
 controls on the right. Press `1` to `4` or click it. The number of the one in

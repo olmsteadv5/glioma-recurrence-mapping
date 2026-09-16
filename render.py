@@ -8,7 +8,7 @@ import pyvista as pv
 from scipy import ndimage
 from vtkmodules.util.numpy_support import vtk_to_numpy
 from vtkmodules.vtkRenderingCore import vtkCellPicker, vtkWindowToImageFilter
-from PIL import Image
+from PIL import Image, ImageDraw
 
 import atlas
 import tracts as tractography
@@ -264,6 +264,66 @@ class Scene:
         width, height, _ = data.GetDimensions()
         pixels = vtk_to_numpy(data.GetPointData().GetScalars())
         return Image.fromarray(pixels.reshape(height, width, 3)[::-1])
+
+
+NODE_IN = (228, 87, 46)
+NODE_OUT = (168, 153, 132)
+NODE_TUMOUR = (214, 200, 175)
+EDGE = (80, 73, 69)
+
+
+class Chart:
+    # The tumour's neighbourhood as a node chart, laid out so the gaps between
+    # nodes are the real distances between the parcels.
+
+    def __init__(self, subject, overlap):
+        import graph
+        self.nodes, self.link, to_tumour, self.inside = graph.build(subject, overlap)
+        self.points = graph.layout(len(self.nodes), self.link, to_tumour)
+        self.names = [p["name"] for p in atlas.parcels()]
+        self.lit = None
+        self.screen = np.zeros((0, 2))
+
+    def name(self, at):
+        if at is None or at >= len(self.nodes):
+            return None
+        return self.names[self.nodes[at]]
+
+    def image(self, size):
+        wide, high = max(size[0], 64), max(size[1], 64)
+        canvas = Image.new("RGB", (wide, high), PANEL)
+        if not len(self.points):
+            return canvas
+        pen = ImageDraw.Draw(canvas)
+
+        pad = 24
+        low, span = self.points.min(0), np.ptp(self.points, axis=0)
+        span[span == 0] = 1
+        scale = min((wide - 2 * pad) / span[0], (high - 2 * pad) / span[1])
+        middle = (np.array([wide, high]) - span * scale) / 2
+        self.screen = (self.points - low) * scale + middle
+
+        for a, b, weight, _ in self.link:
+            shade = tuple(int(c + (150 - c) * min(weight, 1.0)) for c in EDGE)
+            pen.line([tuple(self.screen[a]), tuple(self.screen[b])], fill=shade, width=1)
+
+        for at, point in enumerate(self.screen):
+            last = at == len(self.screen) - 1
+            wide_ = 11 if last else 5
+            color = (NODE_TUMOUR if last else
+                     NODE_IN if self.nodes[at] in self.inside else NODE_OUT)
+            box = [point[0] - wide_, point[1] - wide_, point[0] + wide_, point[1] + wide_]
+            pen.ellipse(box, fill=color,
+                        outline=LIT if at == self.lit else PANEL,
+                        width=3 if at == self.lit else 1)
+        return canvas
+
+    def pick(self, x, y, reach=14):
+        if not len(self.screen):
+            return None
+        gap = np.linalg.norm(self.screen - np.array([x, y]), axis=1)
+        at = int(np.argmin(gap))
+        return at if gap[at] <= reach else None
 
 
 class Slices:

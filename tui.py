@@ -60,6 +60,7 @@ ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
                ("top5k_tracts_decimated.obj", "tracts", "3001"),
                ("parcelsynth_activations_functionalterms.csv", "parcelsynth", "334"),
                ("structuralconnectivity_metrics_mean.csv", "connectivity", "696²")]
+VIEWERS = ("3d", "slices", "graph")
 VIEWS = [("a", "parcels"), ("b", "functions"), ("c", "connectivity")]
 SUMMARY = {"parcels": "all parcels", "functions": "all terms", "connectivity": "all at risk"}
 NONE = "no parcels"
@@ -181,6 +182,16 @@ class Canvas(ImageWidget, Renderable=Renderable):
         self.app.schedule_draw()
 
 
+class Board(ImageWidget, Renderable=Renderable):
+    # The node chart: click a node to select its parcel.
+
+    def on_click(self, event):
+        self.app.pick_node(event.x, event.y)
+
+    def on_resize(self, event):
+        self.app.schedule_draw()
+
+
 class Pane(ImageWidget, Renderable=Renderable):
     # One slice plane: click or drag to move the crosshair.
 
@@ -265,6 +276,7 @@ class Console(App):
     #right { width: 46; }
     #grid { layout: grid; grid-size: 2 2; grid-gutter: 0; height: 1fr; }
     #canvas { height: 1fr; }
+    #board { height: 1fr; }
     .pane { height: 1fr; border: round #504945; border-title-color: #a89984; }
     #readout { height: 1fr; border: round #504945; border-title-color: #a89984;
                padding: 0 1; }
@@ -313,7 +325,8 @@ class Console(App):
         self.subjects = sorted(self.results)
         self.subject = self.subjects[0] if self.subjects else None
         self.mode, self.space, self.palette, self.listing = "3d", "native", "contrast", "parcels"
-        self.scene = self.slices = self.proc = self._timer = self._clock = None
+        self.scene = self.slices = self.chart = None
+        self.proc = self._timer = self._clock = None
         self.hidden_layers, self.subject_rows = {"T:margin",
                                           "C:both", "C:new", "C:gone"}, {}
         self.layer_rows = list(LAYERS)
@@ -334,6 +347,7 @@ class Console(App):
                 yield Rows(self.click_subject, id="stats")
             with Bordered(id="viewer", classes="box"):
                 yield Canvas(id="canvas")
+                yield Board(id="board")
                 with Grid(id="grid"):
                     yield Pane("axial", id="p-axial", classes="pane")
                     yield Pane("coronal", id="p-coronal", classes="pane")
@@ -354,6 +368,7 @@ class Console(App):
 
     def on_mount(self):
         self.query_one("#grid").display = False
+        self.query_one("#board").display = False
         self.query_one("#inputs").border_title = "inputs"
         self.query_one("#inputs").border_subtitle = "click a subject"
         self.query_one("#shell").border_title = "pipeline"
@@ -396,7 +411,7 @@ class Console(App):
         overlap = self.results[subject]["atlas"]
         self.scene = render.Scene(subject, overlap, palette=self.palette)
         self.scene.set_opacity("shell", SHELL_OPACITY)
-        self.slices = render.Slices(subject, self.space)
+        self.slices, self.chart = render.Slices(subject, self.space), None
         self.apply_layers()
         self.refresh_inputs()
         self.refresh_layers()
@@ -835,7 +850,20 @@ class Console(App):
             self.isolate_selected()
         elif self.mode == "slices":
             self.seek_parcel(index)
+        elif self.mode == "graph" and self.chart is not None:
+            self.light_node(index)
         self.draw()
+
+    def light_node(self, index):
+        index -= 2
+        self.chart.lit = None
+        if index < 0 or self.listing != "parcels":
+            return
+        rows = self.results[self.subject]["atlas"]["parcels"]
+        if index < len(rows):
+            wanted = rows[index]["parcel"]
+            self.chart.lit = next((n for n in range(len(self.chart.nodes))
+                                   if self.chart.name(n) == wanted), None)
 
     def seek_parcel(self, index):
         # put the crosshair in the middle of it, which only mni can work out
@@ -890,8 +918,20 @@ class Console(App):
             viewer.border_title = f"3d · {self.palette} colors"
             viewer.styles.border_subtitle_align = "right"
             other = "yba" if self.palette == "contrast" else "contrast"
-            viewer.border_subtitle = keyed(
-                f"v slices · p {other} colors")
+            viewer.border_subtitle = keyed(f"v slices · p {other} colors")
+        elif self.mode == "graph":
+            if self.chart is None:
+                self.chart = render.Chart(self.subject,
+                                          self.results[self.subject]["atlas"])
+            widget = self.query_one("#board", Board)
+            size = widget.content_size
+            widget.image = self.chart.image(
+                (max(size.width * cell.width, 64), max(size.height * cell.height, 64)))
+            viewer.styles.border_subtitle_align = "right"
+            viewer.border_title = (f"graph · {len(self.chart.inside)} in the tumour "
+                                   f"· {len(self.chart.nodes) - len(self.chart.inside)} "
+                                   f"connected")
+            viewer.border_subtitle = keyed("v 3d")
         else:
             for which in render.Slices.PLANES:
                 pane = self.query_one(f"#p-{which}", Pane)
@@ -968,7 +1008,7 @@ class Console(App):
 
     def slice_hints(self):
         # each key names what it gives you, not what you are looking at
-        core = f"v 3d · s {'native' if self.space == 'mni' else 'mni'}"
+        core = f"v graph · s {'native' if self.space == 'mni' else 'mni'}"
         if self.slices.involved:
             other = "yba" if self.palette == "contrast" else "contrast"
             return [f"{core} · p {other} colors", core]
@@ -985,6 +1025,24 @@ class Console(App):
     def pick_modality(self, name):
         if self.mode == "slices" and name in self.slices.readout()["modalities"]:
             self.slices.modality = name
+            self.draw()
+
+    def pick_node(self, column, line):
+        # a node clicked in the chart becomes the selected row in the list
+        if self.mode != "graph" or self.chart is None:
+            return
+        cell = get_cell_size()
+        at = self.chart.pick(column * cell.width + cell.width // 2,
+                             line * cell.height + cell.height // 2)
+        name = None if at is None else self.chart.name(at)
+        if name is None:
+            return
+        rows = self.results[self.subject]["atlas"]["parcels"]
+        names = [r["parcel"] for r in rows]
+        if name in names and self.listing == "parcels":
+            self.select_row(names.index(name) + 2)
+        else:
+            self.chart.lit = at
             self.draw()
 
     def pick_parcel(self, column, line):
@@ -1065,9 +1123,10 @@ class Console(App):
         return True
 
     def action_view(self):
-        self.mode = "slices" if self.mode == "3d" else "3d"
+        self.mode = VIEWERS[(VIEWERS.index(self.mode) + 1) % len(VIEWERS)]
         self.query_one("#canvas").display = self.mode == "3d"
         self.query_one("#grid").display = self.mode == "slices"
+        self.query_one("#board").display = self.mode == "graph"
         self.refresh_bindings()
         self.call_after_refresh(self.draw)
 

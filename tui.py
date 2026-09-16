@@ -1080,12 +1080,26 @@ class Console(App):
         name = self.chart.name(at)
         if name is None:
             return
-        names = [r["parcel"] for r in self.parcel_rows]
-        if name in names and self.listing == "parcels":
-            self.select_row(names.index(name) + 1)
-        else:
+        # a parcel the tumour overlaps is a row in the parcel list, one it
+        # missed is a row in connectivity, so open whichever list holds it
+        overlapped = self.chart.nodes[at] in self.chart.inside
+        wanted = "parcels" if overlapped else "connectivity"
+        where = self.rows_of(wanted)
+        if name not in where:
+            # too weakly tied for a connectivity row, so light it where it is
             self.chart.focus(name)
             self.draw()
+        elif self.listing == wanted:
+            self.select_row(where.index(name) + 1)
+        else:
+            self.action_show_list(wanted)
+            self.call_after_refresh(self.select_row, where.index(name) + 1)
+
+    def rows_of(self, listing):
+        # what a list is offering, without having had to show it yet
+        if listing == "parcels":
+            return [r["parcel"] for r in self.shown_parcels()]
+        return [c["parcel"] for c in connect.at_risk(self.results[self.subject]["atlas"])]
 
     def pick_parcel(self, column, line):
         # a parcel clicked in the 3d becomes the selected row in the list

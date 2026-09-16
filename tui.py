@@ -133,6 +133,14 @@ class Rows(Static):
             self.handler(event.y)
 
 
+class Modes(Static):
+    # The modality strip along the bottom of the viewer.
+    SLOT = 9
+
+    def on_click(self, event):
+        self.app.click_modality((event.x - 1) // self.SLOT)
+
+
 class Prompt(Input):
     # Escape gives the keyboard back, up and down walk the history.
     BINDINGS = [("escape", "leave", "leave the prompt")]
@@ -169,6 +177,7 @@ class Console(App):
     .pane { height: 1fr; border: round #504945; border-title-color: #a89984; }
     #readout { height: 1fr; border: round #504945; border-title-color: #a89984;
                padding: 0 1; }
+    #modes { height: 1; padding: 0 1; }
     #shell { height: 14; }
     #shell:focus-within { border: round #fabd2f; }
     #log { height: 1fr; background: #282828; padding: 0 1; }
@@ -228,6 +237,7 @@ class Console(App):
                     yield Pane("coronal", id="p-coronal", classes="pane")
                     yield Pane("sagittal", id="p-sagittal", classes="pane")
                     yield Static("", id="readout")
+                yield Modes("", id="modes")
             with Vertical(id="right", classes="box"):
                 yield Rows(self.click_layer, id="layers")
                 yield Static("", id="listhead")
@@ -242,6 +252,7 @@ class Console(App):
 
     def on_mount(self):
         self.query_one("#grid").display = False
+        self.query_one("#modes").display = False
         self.query_one("#inputs").border_title = "inputs"
         self.query_one("#inputs").border_subtitle = "click a subject"
         self.query_one("#right").border_title = "breakdown"
@@ -476,24 +487,33 @@ class Console(App):
             self.refresh_readout()
             r = self.slices.readout()
             viewer.border_title = f"slices · {r['space']} · {r['modality']}"
-            viewer.border_subtitle = "click to move · s space · o overlay · v 3d"
+            viewer.border_subtitle = "click or pgup/pgdn · s space · o overlay · v 3d"
 
     def refresh_readout(self):
         r = self.slices.readout()
         w = max(self.query_one("#readout", Static).size.width, 24)
         place = " ".join(str(v) for v in r["coords"]) if r["coords"] else "—"
-        lines = [f"[{FAINT}]{row(r['coord_space'], place, w)}[/]",
-                 f"[{FAINT}]{row('voxel', ' '.join(str(v) for v in r['voxel']), w)}[/]",
-                 f"[{FAINT}]{row('intensity', str(r['intensity']), w)}[/]",
-                 f"[{DIM}]{row('label', r['label'], w)}[/]", "",
-                 f"[{FAINT}]modality[/]"]
-        picks = [f"[{FG}]{i} {m:<6}[/]" if m == r["modality"] else f"[{FAINT}]{i} {m:<6}[/]"
-                 for i, m in enumerate(r["modalities"], start=1)]
-        lines += ["".join(picks[i:i + 2]) for i in range(0, len(picks), 2)]
-        if len(r["modalities"]) == 1:
-            lines.append(f"[{FAINT}]mni carries t1 only[/]")
-        lines += ["", f"[{FAINT}]pgup/pgdn steps the slice[/]"]
-        self.query_one("#readout", Static).update("\n".join(lines))
+        self.query_one("#readout", Static).update("\n".join([
+            f"[{FAINT}]{row(r['coord_space'], place, w)}[/]",
+            f"[{FAINT}]{row('voxel', ' '.join(str(v) for v in r['voxel']), w)}[/]",
+            f"[{FAINT}]{row('intensity', str(r['intensity']), w)}[/]",
+            f"[{DIM}]{row('label', r['label'], w)}[/]"]))
+
+        # greyed out means that space does not carry it, mni is T1 only
+        here = r["modalities"]
+        out = []
+        for i, name in enumerate(MODALITIES, start=1):
+            style = FG if name == r["modality"] else DIM if name in here else "#504945"
+            out.append(f"[{style}]{f'{i} {name}':<{Modes.SLOT}}[/]")
+        self.query_one("#modes", Modes).update("".join(out))
+
+    def click_modality(self, slot):
+        if not (self.mode == "slices" and self.slices and 0 <= slot < len(MODALITIES)):
+            return
+        name = MODALITIES[slot]
+        if name in self.slices.readout()["modalities"]:
+            self.slices.modality = name
+            self.draw()
 
     def pick_parcel(self, column, line):
         # a parcel clicked in the 3d becomes the selected row in the list
@@ -572,7 +592,8 @@ class Console(App):
     def action_view(self):
         self.mode = "slices" if self.mode == "3d" else "3d"
         self.query_one("#canvas").display = self.mode == "3d"
-        self.query_one("#grid").display = self.mode == "slices"
+        for widget in ("#grid", "#modes"):
+            self.query_one(widget).display = self.mode == "slices"
         self.refresh_bindings()
         self.call_after_refresh(self.draw)
 

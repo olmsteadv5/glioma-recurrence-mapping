@@ -108,6 +108,9 @@ The viewer is either the 3D atlas, where dragging rotates and the scroll wheel
 zooms, or an ITK-SNAP style 2x2 of axial, coronal and sagittal with a cursor
 readout. Clicking or dragging in any plane moves the crosshair in all three.
 
+The modality strip along the bottom of the viewer is `1` to `4`, or click it.
+The one in use is bright, one the current space does not carry is greyed.
+
 ```
 v  3d / slices          p  parcel colouring     t  focus the prompt
 s  native / mni         f  parcels / functions  c  cancel the run

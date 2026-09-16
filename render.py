@@ -556,8 +556,9 @@ class Slices:
         return ny - 1 - y, nz - 1 - z
 
     def canon_mask(self, mask):
-        # someone else's MNI array, reoriented the way these slices are
-        reference = nib.load(out_dir(self.subject) / "seg_in_mni.nii.gz")
+        # someone else's array on this space's grid, reoriented the way these are
+        name = "seg_in_mni.nii.gz" if self.space == "mni" else "seg.nii.gz"
+        reference = nib.load(out_dir(self.subject) / name)
         return self._canon(nib.Nifti1Image(mask.astype(np.uint8), reference.affine))[1] > 0
 
     def _margin(self):

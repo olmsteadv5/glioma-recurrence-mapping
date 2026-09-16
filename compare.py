@@ -5,7 +5,9 @@ import functools
 import nibabel as nib
 import numpy as np
 
-from paths import out_dir
+import subprocess
+
+from paths import THREADS, modality, out_dir, stripped_dir
 
 PARTS = ("both", "new", "gone")
 
@@ -66,3 +68,36 @@ def parcels_in(first, second, which):
             if value > 0:
                 out.add(names[int(value) - 1])
     return frozenset(out)
+
+
+def _inverse(subject):
+    # the way back from MNI, computed once and kept
+    warp = out_dir(subject) / "warp.nii.gz"
+    back = out_dir(subject) / "warp_inverse.nii.gz"
+    if not back.exists():
+        subprocess.run(["greedy", "-d", "3", "-iw", str(warp), str(back),
+                        "-threads", THREADS], capture_output=True)
+    return back
+
+
+def native(subject, first, second):
+    # The three pieces in this subject's own space, not the atlas's.
+    out, reference = {}, modality(stripped_dir(subject), subject, "T1")
+    if not reference.exists():
+        return {}
+    back = _inverse(subject)
+    source = nib.load(out_dir(first) / "seg_in_mni.nii.gz")
+    for name, mask in masks(first, second).items():
+        dest = out_dir(subject) / f"compare_{name}.nii.gz"
+        if not dest.exists():
+            held = out_dir(subject) / f"compare_{name}_mni.nii.gz"
+            nib.save(nib.Nifti1Image(mask.astype(np.uint8), source.affine), held)
+            subprocess.run(
+                ["greedy", "-d", "3", "-rf", str(reference), "-ri", "LABEL", "0.2vox",
+                 "-rm", str(held), str(dest), "-r",
+                 str(out_dir(subject) / "affine.mat") + ",-1", str(back),
+                 "-threads", THREADS], capture_output=True)
+            held.unlink(missing_ok=True)
+        if dest.exists():
+            out[name] = np.asarray(nib.load(dest).dataobj) > 0
+    return out

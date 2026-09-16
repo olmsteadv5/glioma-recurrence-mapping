@@ -710,10 +710,16 @@ class Console(App):
         self.slices.show_margin = "T:margin" not in self.hidden_layers
         self.slices.compare = {}
         pair = self.pair()
-        if pair and self.space == "mni":
-            for name, mask in compare.masks(*pair).items():
-                if "C:" + name not in self.hidden_layers:
-                    self.slices.compare[name] = self.slices.canon_mask(mask)
+        wanted = [k[2:] for k, *_ in LAYERS
+                  if k.startswith("C:") and k not in self.hidden_layers]
+        if pair and wanted:
+            # in mni the pieces are already on the grid; in native they are
+            # brought back through this subject's own inverse warp
+            source = (compare.masks(*pair) if self.space == "mni"
+                      else compare.native(self.subject, *pair))
+            for name in wanted:
+                if name in source:
+                    self.slices.compare[name] = self.slices.canon_mask(source[name])
         self.slices.involved = {}
         if not self.parcels_shown or self.slices.parcels is None:
             return

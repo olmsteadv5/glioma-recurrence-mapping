@@ -53,9 +53,12 @@ def run(subject, stripped, seg_path):
     _greedy(["-d", 3, "-a", "-m", "NMI", "-i", MNI, t1, "-o", affine,
              "-ia-image-centers", "-n", "100x100x50", "-threads", THREADS], log)
 
-    # -mm only works with NCC. this is the stage mass effect actually breaks
+    # -mm only works with NCC. this is the stage mass effect actually breaks.
+    # -oinv gets the way back for free, which is what puts MNI work in this
+    # subject's own space later
     _greedy(["-d", 3, "-m", "NCC", "2x2x2", "-i", MNI, t1, "-mm", mask,
-             "-it", affine, "-o", warp, "-n", "100x50x20", "-threads", THREADS], log)
+             "-it", affine, "-o", warp, "-oinv", destination / "warp_inverse.nii.gz",
+             "-n", "100x50x20", "-threads", THREADS], log)
 
     _greedy(["-d", 3, "-rf", MNI, "-rm", t1, destination / "t1_in_mni.nii.gz",
              "-ri", "LABEL", "0.2vox", "-rm", seg_path, seg_mni,

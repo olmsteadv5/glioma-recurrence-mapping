@@ -211,8 +211,15 @@ surface, which are context rather than parts of it.
 For a patient with two timepoints, a second rule divides off three more: what both scans have in cream, what is new in the later one in
 red, and what has gone since the first in green. They draw the same tissue the
 tumour layers do, so the two groups are exclusive: ticking one of these unticks
-the tumour, and ticking the tumour unticks these. They are computed in MNI, the only frame the two
-share, and they are the shapes behind the Dice in `changes`.
+the tumour, and ticking the tumour unticks these. They are computed in MNI, the only frame the two share, and they are the shapes
+behind the Dice in `changes`. On the slices they draw in either space: in
+native they come back through this subject's own inverse warp, so they sit on
+the scan rather than on the atlas. Round tripping a segmentation through that
+inverse returns it at Dice 0.996.
+
+The volumes differ between the two, 61 mL of shared tumour in MNI against 54 in
+native, because the warp stretches the brain. The native figure is the
+patient's.
 
 Every layer draws in both views. The margin is an outline on the slices and the
 rest are fills, so anything you tick shows up whichever viewer you are in.

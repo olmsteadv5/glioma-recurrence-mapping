@@ -113,6 +113,11 @@ says "SRI24 grid" in native.
 function terms. For a tumour it sums those profiles, weighting each involved
 parcel by how much of it the tumour occupies.
 
+Almost every term comes out above zero, so the list is cut at a score of 0.01
+rather than at a rank. That leaves 170 to 230 terms, which is a real tail, not
+a top ten. Reading a term gives the parcels that produced its score and what
+each contributed; those shares add up to the score.
+
 ```
 UPENN-GBM-00036_11   movement, sensorimotor, finger, hand   left sensorimotor
 UPENN-GBM-00002_11   pain, noxious, auditory, listen        right amygdala, insula

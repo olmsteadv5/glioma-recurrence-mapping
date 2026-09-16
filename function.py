@@ -31,7 +31,7 @@ def for_parcel(parcel, n=8, kind="functional"):
     return [(words[i], round(float(row[i]), 2)) for i in order if row[i] > 0]
 
 
-def for_tumour(overlap, n=20, kind="functional"):
+def for_tumour(overlap, kind="functional"):
     # Each involved parcel's profile, weighted by how much of that parcel is destroyed.
     words, scores, names = terms(kind)
     index = {name: i for i, name in enumerate(names)}
@@ -43,13 +43,13 @@ def for_tumour(overlap, n=20, kind="functional"):
     if weights.sum() == 0:
         return []
 
+    # every term scores something, so cut on the score rather than on a rank
     total = (scores * weights[:, None]).sum(0) / weights.sum()
-    order = np.argsort(-total)[:n]
     return [{"term": words[i], "score": round(float(total[i]), 2)}
-            for i in order if total[i] > 0]
+            for i in np.argsort(-total) if round(float(total[i]), 2) >= 0.01]
 
 
-def drivers(term, overlap, n=8, kind="functional"):
+def drivers(term, overlap, n=None, kind="functional"):
     # Which involved parcels put that term near the top, and by how much.
     words, scores, names = terms(kind)
     if term not in words:

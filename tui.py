@@ -401,13 +401,13 @@ class Console(App):
             if not top or index >= len(top):
                 return
             f = top[index]
-            rows = function.drivers(f["term"], d["atlas"], 7)
+            rows = function.drivers(f["term"], d["atlas"])
             lines = [f"[{FG}]{f['term']}[/]",
                      f"[{FAINT}]{row('weighted score', str(f['score']), w)}[/]", "",
-                     f"[{FAINT}]built from these parcels[/]",
+                     f"[{FAINT}]built from {len(rows)} parcels, strongest first[/]",
                      f"[{FAINT}]{row('', 'involved     share', w)}[/]"]
             lines += [f"[{DIM}]{row('  ' + name, f'{fraction:>8.0%}     {share:.3f}', w)}[/]"
-                      for name, fraction, share in rows]
+                      for name, fraction, share in rows[:7]]
         self.query_one("#detail", Static).update("\n".join(lines))
 
     @on(ListView.Highlighted, "#parcels")
@@ -427,7 +427,8 @@ class Console(App):
             top = d.get("function", [])
             if index >= len(top):
                 return
-            self.scene.isolate(n for n, _, _ in function.drivers(top[index]["term"], d["atlas"], 7))
+            self.scene.isolate(n for n, _, _ in
+                               function.drivers(top[index]["term"], d["atlas"], 7))
         self.draw()
 
 

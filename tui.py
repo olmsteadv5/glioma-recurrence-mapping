@@ -1071,8 +1071,12 @@ class Console(App):
         if self.mode != "graph" or self.chart is None:
             return
         cell = get_cell_size()
-        at = self.chart.pick(column * cell.width + cell.width // 2,
-                             line * cell.height + cell.height // 2)
+        x = column * cell.width + cell.width // 2
+        y = line * cell.height + cell.height // 2
+        if self.chart.tabbed(x, y):
+            self.draw()
+            return
+        at = self.chart.pick(x, y)
         if at is None:
             return
         if at == len(self.chart.screen) - 1:

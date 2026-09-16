@@ -1,4 +1,4 @@
-# Register SRI24 -> MNI152 (the YBA reference space), carrying the tumour along.
+# Register SRI24 -> MNI152 (the YBA reference space), carrying the tumor along.
 
 import subprocess
 
@@ -22,7 +22,7 @@ def _greedy(args, log):
 
 
 def _metric_mask(t1_path, seg_path, dest):
-    # Brain minus the tumour, so the lesion cannot drive the alignment.
+    # Brain minus the tumor, so the lesion cannot drive the alignment.
     image = nib.load(t1_path)
     brain = np.asarray(image.dataobj) > 0
     lesion = np.asarray(nib.load(seg_path).dataobj) > 0

@@ -1,4 +1,4 @@
-# Parcelsynth: which functions each parcel is associated with, and what a tumour threatens.
+# Parcelsynth: which functions each parcel is associated with, and what a tumor threatens.
 
 import csv
 import functools
@@ -31,7 +31,7 @@ def for_parcel(parcel, n=8, kind="functional"):
     return [(words[i], round(float(row[i]), 2)) for i in order if round(float(row[i]), 2) >= 0.01]
 
 
-def for_tumour(overlap, kind="functional"):
+def for_tumor(overlap, kind="functional"):
     # Each involved parcel's profile, weighted by how much of that parcel is destroyed.
     words, scores, names = terms(kind)
     index = {name: i for i, name in enumerate(names)}

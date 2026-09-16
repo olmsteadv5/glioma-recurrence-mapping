@@ -1,7 +1,7 @@
-# Brain tumour segmentation on UPenn-GBM
+# Brain tumor segmentation on UPenn-GBM
 
 Segments glioma MRI with the BraTS competition algorithms, then works out which
-Yale Brain Atlas parcels the tumour sits in and which white matter tracts run
+Yale Brain Atlas parcels the tumor sits in and which white matter tracts run
 through it. Opens a 3D view at the end.
 
 ## Setup
@@ -59,8 +59,8 @@ view:
 ./view.py 36
 ```
 
-Every parcel the tumour touches gets drawn. The legend is the main control:
-tumour tissue classes first, then the tracts, then the brain surface, then the
+Every parcel the tumor touches gets drawn. The legend is the main control:
+tumor tissue classes first, then the tracts, then the brain surface, then the
 parcels in order of involvement, so the things you care about are not buried.
 Click any entry to toggle it.
 
@@ -68,10 +68,10 @@ Along the bottom are the things the legend cannot do: a slider for brain
 surface opacity, a dropdown to show or hide all the parcels at once, and a dropdown to
 switch the parcel coloring.
 
-Two palettes. The atlas's own colors parcels by region, so neighbours often
+Two palettes. The atlas's own colors parcels by region, so neighbors often
 look identical, only 75 distinct colors across 696 parcels. The other is
 YBA_696_Freeview_HighContrast.txt, where no two touching parcels share a
-color, which is much easier to read when a tumour spans a dozen of them.
+color, which is much easier to read when a tumor spans a dozen of them.
 
 From Python, `view.run` also takes `top=20` if you only want the most involved
 parcels, `shell_opacity` for the brain surface's transparency, and `palette`
@@ -120,26 +120,28 @@ crosshair in all three; and the graph.
 
 ## The graph
 
-Every parcel the tumour reaches is a node, every white matter connection
-between them is an edge, and the tumour itself is the large node in the middle.
-Orange nodes are inside the tumour, grey ones are outside it but tied to it by
-white matter. Clicking a node selects its parcel, and selecting a parcel lights
-its node. Drag to pan, scroll to zoom, `h` to put it back.
+Every parcel the tumor reaches is a node, every white matter connection
+between them is an edge, and the tumor itself is the large node in the middle.
+Orange nodes are parcels the tumor overlaps, aqua ones are parcels it misses
+that are tied to an overlapped one by white matter, and the yellow hub is the
+mass. Clicking a node opens whichever list has a row for that parcel, orange
+into `parcels` and aqua into `connectivity`, and selecting a row lights its
+node. Drag to pan, scroll to zoom, click the mass to put it back.
 
-A node's **area** is how much of that parcel the tumour took, from 0 to 2.9 mL
-on subject 36. A **ring** around an outside node is how much of its
-connectivity runs into the tumour, so the ones about to lose the most stand
-out. An edge is **brighter** when one of its tracts passes through the mass,
-which for subject 36 is 39 of the 259 edges. Picking a node dims everything
-that is not it or its neighbours.
+A node's **area** is how much of that parcel is inside the tumor, from 0 to
+2.9 mL on subject 36. Lines come in three colors: blue-gray parcel to parcel,
+amber where a tract crossing the mass joins the pair, rose from a parcel into
+the mass. For subject 36 that is 183, 258 and 595 arcs. Picking a node dims
+everything else and keeps only the lines that touch it; the lines between its
+neighbors dim too, since the parcel does not reach along them.
 
-Zoom past about twice and every node is labelled; below that only the picked
+Zoom past about twice and every node is labeled; below that only the picked
 node and what it connects to. The bar at the bottom is 50 mm, which means
 something because the gaps are real distances.
 
 Each region gets a soft ground under its parcels, and a region is a hemisphere
 and a lobe, not a lobe. Subject 36 has 55 left frontal parcels and 8 right
-frontal ones whose centres land 79 units apart, so one ground for both stretched
+frontal ones whose centers land 79 units apart, so one ground for both stretched
 across half the picture and named neither. They are `left frontal` and `right
 frontal` now, right dimmer than left, and they are named in the key rather than
 on the chart.
@@ -148,22 +150,23 @@ They still overlap, because the layout is connectivity and not anatomy, and
 parcels from different regions genuinely interleave in it.
 
 The key says what every channel means, including the one that is easiest to
-misread: three sized dots with the millilitres they stand for, so a bigger dot
-is a number rather than an impression.
+misread: three sized dots with the milliliters they stand for, so a bigger dot
+is a number rather than an impression. Every row carries its own count, so the
+key doubles as the tally for what is on screen.
 
-The nodes are placed by stress majorisation, so **the gaps on screen are the
+The nodes are placed by stress majorization, so **the gaps on screen are the
 real distances between the parcels**, to a median of 10%. That uses
-`SC_EuclDist`, the centre to centre distance: `SC_Length` would be the mean
+`SC_EuclDist`, the center to center distance: `SC_Length` would be the mean
 streamline length but it is clamped, with over half the edges sitting at
 exactly its maximum of 168.8 mm, so it cannot carry lengths.
 
-The tumour's own edges are real geometry: a spoke is drawn to every parcel that
-a tract centreline passes through **after passing through the tumour**. For
-subject 36 that is 715 centrelines through the mass, 480 of which go on to
-reach one of 76 involved parcels, 58 of them into `L_CC_B` alone.
+The tumor's own edges are real geometry: a spoke is drawn to every parcel that
+a tract centerline passes through **after passing through the tumor**. For
+subject 36 that is 803 centerlines through the mass, 676 of which go on to
+reach a parcel, 218 of them into `L_CC_B` alone.
 
 Edges are bundles of arcs, not lines. Where the tract geometry has the pair,
-each arc is one real centreline, bowed until the length it is drawn at is the
+each arc is one real centerline, bowed until the length it is drawn at is the
 length that tract actually runs: the piece of it between where it touches one
 parcel and where it touches the other. Those are not all the same. The median
 is 1.37 times the straight line between the two parcels, a tenth of them are
@@ -174,19 +177,19 @@ across the whole chart.
 Where only the connectivity table has the pair, the edge is a single straight
 line: the table gives a strength with no path, and a strength has no shape.
 
-For subject 36 that is 99 parcels in the tumour and 46 tied to them, over 259
+For subject 36 that is 99 parcels in the tumor and 46 tied to them, over 259
 connections and 101 spokes, laid out in a fifth of a second. Only connections
 at or above 15% of the strongest are drawn, or the chart is a solid mat.
 
 The modality strip sits in the viewer's bottom border, away from the other
 controls on the right. Press `1` to `4` or click it. The number of the one in
-use is bright, and anything the current space does not carry is greyed.
+use is bright, and anything the current space does not carry is grayed.
 
 The cursor panel gives every sequence's intensity at that voxel, not just the
 one on screen, and in MNI it names the parcel under the crosshair.
 
 MNI also draws the involved parcels onto the slices, in the same colors the
-3D uses, under the tumour rather than over it. The selected one is brighter.
+3D uses, under the tumor rather than over it. The selected one is brighter.
 That is why `p` works there and not in native space: native has no parcels to
 color, so the title says which palette is on only where it means something.
 
@@ -197,57 +200,57 @@ p  parcel coloring                              q  quit
 ```
 
 Half of those only make sense in one of the two viewer modes. The ones that do
-not apply go grey in the footer rather than doing nothing silently.
+not apply go gray in the footer rather than doing nothing silently.
 
 Each panel carries a strip along its bottom left of the things it can show —
 the four modalities in the viewer, the three breakdown views — with the key for
 each one and the current one bright. The rest of the controls sit bottom right,
-labelled with what they give you rather than with what you are looking at, so
+labeled with what they give you rather than with what you are looking at, so
 in native space `s` reads `s mni`.
 
 Each parcel row carries a chip in that parcel's own color, so a shape you can
 see in the 3D can be found in the list without clicking through it. The chips
 follow the palette toggle.
 
-The layer checkboxes drive both views: unticking `SNFH oedema` takes it out of
+The layer checkboxes drive both views: unticking `SNFH edema` takes it out of
 the 3D and out of the slice overlay, so there is no separate overlay key.
 
-`tumour` above them is the three classes contoured as one closed surface rather
+`tumor` above them is the three classes contoured as one closed surface rather
 than three that meet along internal faces, with its parts indented under it. It
 is a real parent: unticking it takes the parts with it, and it draws its own
 combined shape only when none of the parts is on, so the two can never wash
 each other out.
 
-A rule separates the tumour and its margin from the tracts and the brain
+A rule separates the tumor and its margin from the tracts and the brain
 surface, which are context rather than parts of it.
 
 For a patient with two timepoints, a second rule divides off three more: what both scans have in cream, what is new in the later one in
 red, and what has gone since the first in green. They draw the same tissue the
-tumour layers do, so the two groups are exclusive: ticking one of these unticks
-the tumour, and ticking the tumour unticks these. They are computed in MNI, the only frame the two share, and they are the shapes
+tumor layers do, so the two groups are exclusive: ticking one of these unticks
+the tumor, and ticking the tumor unticks these. They are computed in MNI, the only frame the two share, and they are the shapes
 behind the Dice in `changes`. On the slices they draw in either space: in
 native they come back through this subject's own inverse warp, so they sit on
 the scan rather than on the atlas. Round tripping a segmentation through that
 inverse returns it at Dice 0.996.
 
-The volumes differ between the two, 61 mL of shared tumour in MNI against 54 in
+The volumes differ between the two, 61 mL of shared tumor in MNI against 54 in
 native, because the warp stretches the brain. The native figure is the
 patient's.
 
 Every layer draws in both views. The margin is an outline on the slices and the
 rest are fills, so anything you tick shows up whichever viewer you are in.
 
-`margin 2 cm` above that is the whole tumour grown by 20 mm, the usual CTV
+`margin 2 cm` above that is the whole tumor grown by 20 mm, the usual CTV
 expansion, **clipped to the brain**: a fifth to a quarter of a raw expansion
 lands in skull and air, which would put subject 36 at 751 mL instead of 549.
 It is an outline on the slices rather than a fill, since 2 cm of fill hides the
 thing you grew it from. Both the surface and the slice mask are built the first
 time you tick it, because the distance transform is not free.
 
-The volume is measured in native space, where the millimetres are the
+The volume is measured in native space, where the millimeters are the
 patient's, not in the warped MNI copy. Across these six subjects a 2 cm margin
-is 3.3 to 7.5 times the tumour it came from, the multiplier being largest for
-the smallest tumours.
+is 3.3 to 7.5 times the tumor it came from, the multiplier being largest for
+the smallest tumors.
 
 The breakdown lists the layers with their volumes, clickable to show and hide,
 then one of three views: the involved parcels, the functions at risk, or the
@@ -276,7 +279,7 @@ is why none of their volumes matches a single layer. The inputs panel spells
 out what each one contains and leaves them uncolored, since the three colors
 belong to the classes in the breakdown.
 
-Under them the panel carries `where` the tumour sits, by hemisphere and lobe,
+Under them the panel carries `where` the tumor sits, by hemisphere and lobe,
 which is the same question the 119 parcel rows answer one at a time, and `run`,
 which segmenter produced this and on what, how long it took, its Dice where
 there are reference labels, and `aligned on`: the share of the brain the
@@ -286,9 +289,9 @@ That last one is about a single registration, not about change over time.
 Click a subject or focus the panel and arrow through them; it scrolls to keep
 the chosen one in view, and steps over any whose outputs have been deleted.
 
-The panel is in two parts. `stats` holds the tumour, where it sits and how it
+The panel is in two parts. `stats` holds the tumor, where it sits and how it
 was made; the lobe volumes are indented under `in parcels` because that is the
-volume they add up to, and they sit under a hemisphere only when the tumour is
+volume they add up to, and they sit under a hemisphere only when the tumor is
 in both, since otherwise the hemisphere is the whole of it.
 
 There are four tissue classes but only three of them usually appear. `RC`, the
@@ -296,12 +299,12 @@ resection cavity, is a post-treatment class, so its region row and its layer
 show up only on a subject that has one.
 
 Between them, `changes` appears when a patient has more than one timepoint: the
-change in WT, how many parcels the tumour newly reaches or has left, the Dice
-between the two tumours, and how much of the later one sits inside the earlier
+change in WT, how many parcels the tumor newly reaches or has left, the Dice
+between the two tumors, and how much of the later one sits inside the earlier
 one's footprint. Subject 36 comes back at Dice 0.56 with 91% of the recurrence
 inside where the original was.
 
-Those two are not the same question. Dice is low because the tumour shrank, not
+Those two are not the same question. Dice is low because the tumor shrank, not
 because it moved; containment says it came back in the same place.
 
 `checks` holds `stages` and `atlas`, a row each. The strip row also carries
@@ -317,7 +320,7 @@ looking at the case you are waiting for rather than the last one.
 
 For a parcel the panel underneath gives its anatomy and its own Parcelsynth
 terms, and for a function every parcel that produced the score, with how much
-of it the tumour occupies and what that contributed; those shares add up to the
+of it the tumor occupies and what that contributed; those shares add up to the
 score. Both lists are complete and the panel scrolls.
 
 **kitty only.** It draws images with kitty's graphics protocol, which no other
@@ -332,8 +335,8 @@ says "SRI24 grid" in native.
 ## Functions at risk
 
 `function.py` reads Parcelsynth, which scores all 696 parcels against 334
-function terms. For a tumour it sums those profiles, weighting each involved
-parcel by how much of it the tumour occupies.
+function terms. For a tumor it sums those profiles, weighting each involved
+parcel by how much of it the tumor occupies.
 
 Almost every term comes out above zero, so the list is cut at a score of 0.01
 rather than at a rank. That leaves 170 to 230 terms, which is a real tail, not
@@ -355,7 +358,7 @@ margin.
 `connect.py` reads the Yale structural connectivity table. It is an edge list,
 not a matrix: 241,860 rows, one per parcel pair, with sixteen metrics each. It
 folds `SC_Count` into a 696x696 array, cached, and then for each parcel the
-tumour has **not** touched, sums the connections it has into parcels the tumour
+tumor has **not** touched, sums the connections it has into parcels the tumor
 **has**, weighted by how much of each of those is gone.
 
 That answers a question the overlap cannot: which intact regions are losing
@@ -364,13 +367,13 @@ involved parcels it connects to, and the panel underneath lists those with how
 much of the loss each accounts for.
 
 ```
-L_SM2_B   Left supramarginal gyrus 2 B, parietal, not in the tumour
+L_SM2_B   Left supramarginal gyrus 2 B, parietal, not in the tumor
           25% of its connectivity at risk
           L_SM1_D  52% involved, 18.8% of the loss
           L_SM1_E  71% involved, 18.7% of the loss
 ```
 
-This is a **healthy population mean**, the same caveat as Parcelsynth. A tumour
+This is a **healthy population mean**, the same caveat as Parcelsynth. A tumor
 displaces tracts, so this patient's real connectivity differs. It says where to
 look, not what has happened. That note, and the equivalent for the other two
 views, is on the first row of each list.
@@ -397,7 +400,7 @@ segment.py     BraTS in Docker
 evaluate.py    volumes and Dice
 register.py    SRI24 to MNI152
 atlas.py       atlas volume, meshes, parcel overlap
-tracts.py      tract centrelines
+tracts.py      tract centerlines
 view.py        3D view, also runnable on its own
 tui.py         terminal UI
 render.py      offscreen 3D and slice images for the TUI
@@ -407,7 +410,7 @@ paths.py       shared paths
 
 ## Worth knowing
 
-The faint grey brain is one closed surface contoured out of MNI152, not the 696
+The faint gray brain is one closed surface contoured out of MNI152, not the 696
 parcel meshes. Those are 754 separate closed bodies, so stacking them as a
 translucent shell piles up alpha along every view ray until the involved
 parcels inside end up darker than the context around them.

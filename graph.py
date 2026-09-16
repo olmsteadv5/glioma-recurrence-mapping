@@ -1,4 +1,4 @@
-# The tumour's neighbourhood as a node chart: parcels, and the tracts between them.
+# The tumor's neighborhood as a node chart: parcels, and the tracts between them.
 
 import csv
 import functools
@@ -13,7 +13,7 @@ from connect import FILE
 from paths import MNI, out_dir
 
 # SC_Length is clamped: over half the edges sit at its maximum. SC_EuclDist is
-# the real centre to centre distance, so that is what sets the drawn lengths.
+# the real center to center distance, so that is what sets the drawn lengths.
 FLOOR = 0.15
 STRANDS = 8
 
@@ -55,8 +55,8 @@ def edges():
 
 
 @functools.lru_cache(maxsize=4)
-def centres(subject):
-    # Every parcel's middle, and the tumour's, in MNI millimetres.
+def centers(subject):
+    # Every parcel's middle, and the tumor's, in MNI millimeters.
     labels, names = label_volume(nib.load(MNI))
     affine = nib.load(MNI).affine
     middle = np.full((len(names), 3), np.nan, dtype=np.float32)
@@ -72,13 +72,13 @@ def centres(subject):
 
     seg = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
     hit = np.argwhere(np.asarray(seg.dataobj) > 0)
-    tumour = nib.affines.apply_affine(seg.affine, hit.mean(0)) if len(hit) else np.zeros(3)
-    return middle, tumour
+    tumor = nib.affines.apply_affine(seg.affine, hit.mean(0)) if len(hit) else np.zeros(3)
+    return middle, tumor
 
 
 @functools.lru_cache(maxsize=1)
 def bundles():
-    # Every centreline's real length, filed under the parcels it runs between.
+    # Every centerline's real length, filed under the parcels it runs between.
     # Tracts curve: the median one is 2.2 times the straight line it spans, and
     # two tracts joining the same pair differ in length by about a fifth.
     import collections
@@ -97,7 +97,7 @@ def bundles():
     shape = np.array(labels.shape)
 
     runs = collections.defaultdict(list)
-    for line in tractography.centrelines():
+    for line in tractography.centerlines():
         ijk = np.rint(nib.affines.apply_affine(inverse, line)).astype(int)
         keep = np.all((ijk >= 0) & (ijk < shape), axis=1)
         if keep.sum() < 2:
@@ -110,7 +110,7 @@ def bundles():
         seen = [int(v) - 1 for v in np.unique(at) if v > 0]
         for a, b in itertools.combinations(sorted(seen), 2):
             # middle of the run in one parcel to middle of the run in the other,
-            # to match the centre to centre gap the chart draws it across. the
+            # to match the center to center gap the chart draws it across. the
             # nearest touching points instead would measure edge to edge, which
             # is near zero for parcels that share a border
             here, there = np.where(at == a + 1)[0], np.where(at == b + 1)[0]
@@ -127,29 +127,29 @@ def bundles():
 
 @functools.lru_cache(maxsize=4)
 def through(subject):
-    # How many tract centrelines run through both the tumour and each parcel.
+    # How many tract centerlines run through both the tumor and each parcel.
     import collections
     import tracts as tractography
 
     labels, names = label_volume(nib.load(MNI))
     seg = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
-    tumour = np.asarray(seg.dataobj) > 0
+    tumor = np.asarray(seg.dataobj) > 0
     inverse = np.linalg.inv(seg.affine)
-    shape = np.array(tumour.shape)
+    shape = np.array(tumor.shape)
 
     import itertools
 
     hits, crossing = collections.defaultdict(list), set()
-    for line in tractography.centrelines():
+    for line in tractography.centerlines():
         ijk = np.rint(nib.affines.apply_affine(inverse, line)).astype(int)
         keep = ijk[np.all((ijk >= 0) & (ijk < shape), axis=1)]
-        if not len(keep) or not tumour[keep[:, 0], keep[:, 1], keep[:, 2]].any():
+        if not len(keep) or not tumor[keep[:, 0], keep[:, 1], keep[:, 2]].any():
             continue
         at = labels[keep[:, 0], keep[:, 1], keep[:, 2]]
         points = line[np.all((ijk >= 0) & (ijk < shape), axis=1)]
         walked = np.concatenate([[0.0], np.cumsum(
             np.linalg.norm(np.diff(points, axis=0), axis=1))])
-        mass = np.where(tumour[keep[:, 0], keep[:, 1], keep[:, 2]])[0]
+        mass = np.where(tumor[keep[:, 0], keep[:, 1], keep[:, 2]])[0]
         middle = int(np.median(mass))
         for value in np.unique(at):
             if value <= 0:
@@ -193,29 +193,29 @@ def build(subject, overlap, floor=FLOOR):
             key = (min(nodes[a], nodes[b]), max(nodes[a], nodes[b]))
             link.append((a, b, float(weight), straight, ratios, key in crossing))
 
-    middle, tumour = centres(subject)
-    # the tumour is the last node, its distance to each parcel being the real one
-    to_tumour = [float(np.linalg.norm(middle[n] - tumour))
+    middle, tumor = centers(subject)
+    # the tumor is the last node, its distance to each parcel being the real one
+    to_tumor = [float(np.linalg.norm(middle[n] - tumor))
                  if not np.isnan(middle[n]).any() else 60.0 for n in nodes]
-    # and its edges are real: centrelines that pass through the mass and the parcel
+    # and its edges are real: centerlines that pass through the mass and the parcel
     spokes = []
     for n in nodes:
         if not reach.get(n):
             continue
-        near = max(float(np.linalg.norm(middle[n] - tumour)), 1.0) \
+        near = max(float(np.linalg.norm(middle[n] - tumor)), 1.0) \
             if not np.isnan(middle[n]).any() else 60.0
         spokes.append((place[n], reach[n][0],
                        sample(v / near for v in reach[n][1]) or [1.0]))
-    return nodes, link, np.array(to_tumour), set(inside), spokes
+    return nodes, link, np.array(to_tumor), set(inside), spokes
 
 
-def layout(count_of_nodes, link, to_tumour, rounds=120):
-    # Stress majorisation: put the nodes where the drawn gaps match the real ones.
+def layout(count_of_nodes, link, to_tumor, rounds=120):
+    # Stress majorization: put the nodes where the drawn gaps match the real ones.
     total = count_of_nodes + 1
     target = np.zeros((total, total), dtype=np.float32)
     for a, b, _, far, _, _ in link:
         target[a, b] = target[b, a] = far or 60.0
-    target[:count_of_nodes, -1] = target[-1, :count_of_nodes] = to_tumour
+    target[:count_of_nodes, -1] = target[-1, :count_of_nodes] = to_tumor
 
     known = csr_matrix(np.where(target > 0, target, 0))
     full = shortest_path(known, directed=False)
@@ -258,8 +258,8 @@ def attach(subject, nodes, parcel, most=12):
         ratios = [1.0] if real is None else sample(v / straight for v in real)
         link.append((k, weight, straight, ratios, key in crossing))
 
-    middle, tumour = centres(subject)
-    far = (float(np.linalg.norm(middle[n] - tumour))
+    middle, tumor = centers(subject)
+    far = (float(np.linalg.norm(middle[n] - tumor))
            if not np.isnan(middle[n]).any() else 60.0)
     return n, link, far
 

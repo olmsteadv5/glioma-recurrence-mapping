@@ -1,11 +1,11 @@
-# White matter tract centrelines from the official top-5000 tract mesh.
+# White matter tract centerlines from the official top-5000 tract mesh.
 
 import numpy as np
 
 from atlas import ensure
 from paths import ATLAS_DIR
 
-CACHE = ATLAS_DIR / "tract_centrelines_geodesic.npz"
+CACHE = ATLAS_DIR / "tract_centerlines_geodesic.npz"
 
 # the OBJ is Y-up, atlas space is (x, -z, y)
 AXES = (0, 2, 1)
@@ -44,7 +44,7 @@ def _resample(line, step=STEP_MM):
     return np.stack([np.interp(want, walked, line[:, k]) for k in range(3)], axis=1)
 
 
-def _centreline(points, edges, step=STEP_MM):
+def _centerline(points, edges, step=STEP_MM):
     # Order the tube by distance along its own surface, not by a straight axis.
     # A hooked bundle has both limbs at the same place on its long axis, so
     # projecting onto that axis averages them together and cuts the corner.
@@ -69,7 +69,7 @@ def _centreline(points, edges, step=STEP_MM):
     return _resample(_smooth(np.array(line)))
 
 
-def centrelines():
+def centerlines():
     # One line per bundle. Slow to build, so cache it.
     if CACHE.exists():
         data = np.load(CACHE)
@@ -90,7 +90,7 @@ def centrelines():
         place = np.full(len(vertices), -1)
         place[where] = np.arange(len(where))
         mine = (place[edges[:, 0]] >= 0) & (place[edges[:, 1]] >= 0)
-        line = _centreline(vertices[where], place[edges[mine]])
+        line = _centerline(vertices[where], place[edges[mine]])
         if line is not None:
             lines.append(line)
 
@@ -104,8 +104,8 @@ def crossing(lines, seg_img, labels, involved):
     # Lines through the mass, and lines that miss it but clip an involved parcel.
     import nibabel as nib
 
-    tumour = np.asarray(seg_img.dataobj) > 0
-    shape = np.array(tumour.shape)
+    tumor = np.asarray(seg_img.dataobj) > 0
+    shape = np.array(tumor.shape)
     inverse = np.linalg.inv(seg_img.affine)
     wanted = list(set(involved))
 
@@ -116,7 +116,7 @@ def crossing(lines, seg_img, labels, involved):
         if not inside.any():
             continue
         sel = ijk[inside]
-        if tumour[sel[:, 0], sel[:, 1], sel[:, 2]].any():
+        if tumor[sel[:, 0], sel[:, 1], sel[:, 2]].any():
             mass.append(line)
         elif wanted and np.isin(labels[sel[:, 0], sel[:, 1], sel[:, 2]], wanted).any():
             nearby.append(line)

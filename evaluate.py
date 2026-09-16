@@ -1,4 +1,4 @@
-# Tumour volumes, and Dice against reference labels where they exist.
+# Tumor volumes, and Dice against reference labels where they exist.
 
 import nibabel as nib
 import numpy as np

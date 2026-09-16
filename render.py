@@ -23,7 +23,7 @@ pv.OFF_SCREEN = True
 def _panel(base=(40, 40, 40)):
     # kitty draws cell backgrounds at background_opacity but graphics fully
     # opaque, so an image painted #282828 comes out lighter than the panels
-    # around it. paint it the colour those panels actually composite to.
+    # around it. paint it the color those panels actually composite to.
     where = os.environ.get("KITTY_CONFIG_DIRECTORY", os.path.expanduser("~/.config/kitty"))
     opacity = 1.0
     try:
@@ -104,7 +104,7 @@ class Scene:
             self.parcel_actors[name] = actor
 
         image = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
-        for value, (name, points, faces) in self._tumour(subject, image).items():
+        for value, (name, points, faces) in self._tumor(subject, image).items():
             self.actors["T:" + name] = self._mesh(points, faces, _hex(TISSUE[value]),
                                                   0.5 if value == 0 else 1.0)
 
@@ -135,10 +135,10 @@ class Scene:
         self.grab.ReadFrontBufferOff()
 
     @staticmethod
-    def _tumour(subject, image):
+    def _tumor(subject, image):
         # contouring the four labels is half a second, and it only changes
         # when the registration does
-        cache = out_dir(subject) / "tumour_surfaces.npz"
+        cache = out_dir(subject) / "tumor_surfaces.npz"
         if cache.exists() and cache.stat().st_mtime >= os.path.getmtime(image.get_filename()):
             held = np.load(cache)
             return {int(v): (WHOLE if int(v) == 0 else LABELS[int(v)],
@@ -148,7 +148,7 @@ class Scene:
         # value 0 is all three classes contoured as one closed surface
         for value, name in list(LABELS.items()) + [(0, WHOLE)]:
             source = (data > 0).astype(np.int16) if value == 0 else data
-            surface = view._tumour_surface(source, image.affine, 1 if value == 0 else value)
+            surface = view._tumor_surface(source, image.affine, 1 if value == 0 else value)
             if surface:
                 out[value] = (name, surface[0], surface[1])
                 saved["values"].append(value)
@@ -166,7 +166,7 @@ class Scene:
         # the whole set, then the two ways a line earns its place in it
         labels, names = atlas.label_volume(nib.load(MNI))
         wanted = [index[n] + 1 for n in involved if n in index]
-        mass, nearby = tractography.crossing(tractography.centrelines(),
+        mass, nearby = tractography.crossing(tractography.centerlines(),
                                              seg_image, labels, wanted)
         return [("tracts", TRACT, mass + nearby), ("tracts:mass", TRACT_MASS, mass),
                 ("tracts:near", TRACT_NEAR, nearby)]
@@ -224,7 +224,7 @@ class Scene:
         else:
             image = nib.load(out_dir(self.subject) / "seg_in_mni.nii.gz")
             grown = grow(image, np.asarray(nib.load(MNI).dataobj) > 0)
-            points, faces = view._tumour_surface(grown.astype(np.int16), image.affine, 1)
+            points, faces = view._tumor_surface(grown.astype(np.int16), image.affine, 1)
             np.savez_compressed(cache, vertices=points, faces=faces)
         self.actors["T:margin"] = self._mesh(points, faces, _hex(MARGIN), 0.25)
 
@@ -325,13 +325,13 @@ def bow_for(ratio):
 
 NODE_IN = (228, 87, 46)
 NODE_OUT = (131, 165, 152)
-NODE_TUMOUR = (250, 189, 47)
+NODE_TUMOR = (250, 189, 47)
 # one hue per kind of link: cool where the mass is not in the path, warm where
 # it is. strength brightens a line without draining its hue
 EDGE = (84, 102, 112)
 SPOKE = (152, 100, 108)
 THROUGH = (154, 112, 72)
-# the interface palette, so the key is the same greys as every other panel
+# the interface palette, so the key is the same grays as every other panel
 INK = (168, 153, 132)
 FAINT_INK = (124, 111, 100)
 BRIGHT_INK = (235, 219, 178)
@@ -351,20 +351,20 @@ def _ground(side, lobe, lift=0.62):
 
 
 class Chart:
-    # The tumour's neighbourhood as a node chart, laid out so the gaps between
+    # The tumor's neighborhood as a node chart, laid out so the gaps between
     # nodes are the real distances between the parcels.
 
     def __init__(self, subject, overlap):
         import graph
         self.subject = subject
-        (self.nodes, self.link, to_tumour,
+        (self.nodes, self.link, to_tumor,
          self.inside, self.spokes) = graph.build(subject, overlap)
-        self.points = graph.layout(len(self.nodes), self.link, to_tumour)
+        self.points = graph.layout(len(self.nodes), self.link, to_tumor)
         info = atlas.parcels()
         self.names = [p["name"] for p in info]
         self.lobes = [(info[n]["hemisphere"], info[n]["lobe"]) for n in self.nodes]
 
-        lost = {r["parcel"]: r["in_tumour_ml"] for r in overlap["parcels"]}
+        lost = {r["parcel"]: r["in_tumor_ml"] for r in overlap["parcels"]}
         self.lost = [lost.get(self.names[n], 0.0) for n in self.nodes]
         self.most = max(self.lost, default=1.0) or 1.0
         # no edge and no spoke reaches these, so they are drawn hollow rather
@@ -444,11 +444,11 @@ class Chart:
             return canvas
         pen = ImageDraw.Draw(canvas)
         self._place(wide, high)
-        near = self._neighbours()
+        near = self._neighbors()
 
         self._blobs(canvas, wide, high)
         # a line stays lit only if the picked node is one of its two ends. the
-        # neighbours themselves stay lit, but the lines between them do not,
+        # neighbors themselves stay lit, but the lines between them do not,
         # which used to read as the picked parcel reaching further than it does
         free = near is None
         for at, count, ratios in self.spokes:
@@ -485,7 +485,7 @@ class Chart:
         pen.text((point[0], point[1] - 14), self.guest["name"], fill=LIT,
                  font=_font(11), anchor="ms")
 
-    def _neighbours(self):
+    def _neighbors(self):
         # while a node is picked, its own edges stay lit and the rest fall back
         if self.guest is not None:
             return {k for k, *_ in self.guest["link"]}
@@ -537,9 +537,9 @@ class Chart:
             last = at == len(self.screen) - 1
             if last:
                 wide = 11
-                color = NODE_TUMOUR
+                color = NODE_TUMOR
             else:
-                # area says how much of that parcel the tumour took
+                # area says how much of that parcel the tumor took
                 wide = 3.0 + 7.0 * (self.lost[at] / self.most) ** 0.5
                 color = NODE_IN if self.nodes[at] in self.inside else NODE_OUT
             color = self._shade(color, near is None or at in near)
@@ -597,16 +597,16 @@ class Chart:
 
         pen.text((x, y), "parcels", fill=INK, font=small, anchor="lm")
         y += 17
-        for color, text, tally in ((NODE_IN, "overlapped by the tumour", count["in"]),
+        for color, text, tally in ((NODE_IN, "overlapped by the tumor", count["in"]),
                                    (NODE_OUT, "not overlapped, linked to an overlapped parcel",
                                     count["out"]),
-                                   (NODE_TUMOUR, "the tumour mass", count["mass"])):
+                                   (NODE_TUMOR, "the tumor mass", count["mass"])):
             pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=color)
             y = line(y, text, tally)
         pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=PANEL, outline=NODE_IN)
         y = line(y, "overlapped, with nothing linking to it", count["loose"]) + 6
 
-        pen.text((x, y), "volume in the tumour", fill=INK, font=small, anchor="lm")
+        pen.text((x, y), "volume in the tumor", fill=INK, font=small, anchor="lm")
         y += 19
         step = x + 7
         for share in (0.15, 0.5, 1.0):
@@ -647,7 +647,7 @@ class Chart:
         pen.line([(20, y), (20 + bar, y)], fill=INK, width=1)
         for end in (20, 20 + bar):
             pen.line([(end, y - 3), (end, y + 3)], fill=INK)
-        pen.text((34 + bar, y), "50 mm between centres", fill=INK, font=font, anchor="lm")
+        pen.text((34 + bar, y), "50 mm between centers", fill=INK, font=font, anchor="lm")
 
     def _strands(self, pen, start, stop, ratios, color, width=2):
         # one arc per tract, bowed until its drawn length is its real length
@@ -723,7 +723,7 @@ class Slices:
         canonical = nib.as_closest_canonical(image)
         return canonical.affine, np.asarray(canonical.dataobj)
 
-    def _grey(self):
+    def _gray(self):
         return self.volumes[self.modality][1]
 
     def _slab(self, which):
@@ -731,7 +731,7 @@ class Slices:
         x, y, z = self.cursor
         blank = np.zeros_like(self.seg) if self.parcels is None else self.parcels
         planes = []
-        for volume in (self._grey(), self.seg, blank, self._margin()):
+        for volume in (self._gray(), self.seg, blank, self._margin()):
             if which == "axial":
                 planes.append(volume[::-1, ::-1, z].T)
             elif which == "coronal":
@@ -760,18 +760,18 @@ class Slices:
         if self.show_margin and self.margin is None and self.segmented:
             path = out_dir(self.subject) / ("seg_in_mni.nii.gz" if self.space == "mni"
                                             else "seg.nii.gz")
-            brain = self._grey() > 0
+            brain = self._gray() > 0
             self.margin = self._canon(nib.Nifti1Image(
                 grow(nib.load(path), np.ones_like(brain)).astype(np.uint8),
                 nib.load(path).affine))[1] & (next(iter(self.volumes.values()))[1] > 0)
         return self.margin if self.margin is not None else np.zeros_like(self.seg)
 
     def plane(self, which, size):
-        grey, lab, parcel, edge = self._slab(which)
-        top = np.percentile(grey[grey > 0], 99) if (grey > 0).any() else 1
-        rgb = np.repeat((np.clip(grey / max(top, 1) * 255, 0, 255)
+        gray, lab, parcel, edge = self._slab(which)
+        top = np.percentile(gray[gray > 0], 99) if (gray > 0).any() else 1
+        rgb = np.repeat((np.clip(gray / max(top, 1) * 255, 0, 255)
                          ).astype(np.uint8)[:, :, None], 3, axis=2)
-        # parcels first, so the tumour still wins wherever they overlap
+        # parcels first, so the tumor still wins wherever they overlap
         if self.involved:
             table = np.zeros((len(self.parcel_names) + 1, 3), dtype=np.float32)
             alpha = np.zeros(len(self.parcel_names) + 1, dtype=np.float32)
@@ -798,7 +798,7 @@ class Slices:
             if ring.any():
                 rgb[ring] = np.array(MARGIN, dtype=np.uint8)
 
-        # the whole tumour as one fill, under its three parts
+        # the whole tumor as one fill, under its three parts
         if self.whole is not None:
             every = lab > 0
             if every.any():
@@ -834,7 +834,7 @@ class Slices:
                             w, h)
         return out
 
-    def centre(self, parcel):
+    def center(self, parcel):
         if self.parcels is None or parcel not in self.parcel_names:
             return False
         found = np.nonzero(self.parcels == self.parcel_names.index(parcel) + 1)
@@ -882,7 +882,7 @@ class Slices:
         x, y, z = self.cursor
         label = int(self.seg[x, y, z])
         out = {"voxel": (int(x), int(y), int(z)), "label": LABELS.get(label, "background"),
-               "label_value": label, "intensity": int(self._grey()[x, y, z]),
+               "label_value": label, "intensity": int(self._gray()[x, y, z]),
                "space": self.space, "modality": self.modality, "stripped": self.stripped,
                "segmented": self.segmented,
                "modalities": list(self.volumes),

@@ -117,7 +117,7 @@ def main(numbers, first="fetch", timepoint=1):
     for subject in results:
         overlap = atlas.overlap(out_dir(subject) / "seg_in_mni.nii.gz", labels, names)
         results[subject]["atlas"] = overlap
-        results[subject]["function"] = function.for_tumour(overlap)
+        results[subject]["function"] = function.for_tumor(overlap)
         block = results[subject].setdefault("run", {})
         block["mapped"] = time.time()
         block.setdefault("times", {})["map"] = round(time.time() - clock, 1)

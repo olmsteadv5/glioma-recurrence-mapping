@@ -1,5 +1,5 @@
 #!/home/vilem/Projects/brats-upenn-gbm/.venv/bin/python
-# Interactive 3D view: solid tumour inside the Yale Brain Atlas.
+# Interactive 3D view: solid tumor inside the Yale Brain Atlas.
 
 import nibabel as nib
 import numpy as np
@@ -15,7 +15,7 @@ SHELL_COLOR = "#9aa3ad"
 TRACT_COLOR = "#2f6f4e"
 
 
-def _tumour_surface(data, affine, value):
+def _tumor_surface(data, affine, value):
     # Surface around one tissue class.
     binary = (data == value).astype(np.float32)
     if binary.sum() < 10:
@@ -37,11 +37,11 @@ def _mesh3d(vertices, faces, **kwargs):
 
 
 def add(subject, fig, opacity=1.0, rank=10):
-    # Add the tumour to a figure that already exists.
+    # Add the tumor to a figure that already exists.
     image = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
     data = np.asarray(image.dataobj).astype(np.int16)
     for value, name in LABELS.items():
-        surface = _tumour_surface(data, image.affine, value)
+        surface = _tumor_surface(data, image.affine, value)
         if surface is None:
             continue
         fig.add_trace(_mesh3d(*surface, color=TISSUE_COLOR[value], opacity=opacity,
@@ -51,13 +51,13 @@ def add(subject, fig, opacity=1.0, rank=10):
 
 
 def add_tracts(subject, overlap, fig, width=1.5):
-    # Tract lines through the tumour and the parcels around it.
+    # Tract lines through the tumor and the parcels around it.
     labels, names = label_volume(nib.load(MNI))
     index = {name: i + 1 for i, name in enumerate(names)}
     involved = [index[r["parcel"]] for r in overlap["parcels"] if r["parcel"] in index]
     seg = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
 
-    mass, nearby = tractography.crossing(tractography.centrelines(), seg, labels, involved)
+    mass, nearby = tractography.crossing(tractography.centerlines(), seg, labels, involved)
     lines = mass + nearby
     if not lines:
         return fig
@@ -77,7 +77,7 @@ def add_tracts(subject, overlap, fig, width=1.5):
 
 def run(subject, overlap, *, shell_opacity=0.2, top=None, show=True, show_tracts=True,
         palette="yba"):
-    # Tumour and tracts first in the legend, then the shell, then the parcels.
+    # Tumor and tracts first in the legend, then the shell, then the parcels.
     info = parcels()
     surfaces = meshes()
     index = {p["name"]: i for i, p in enumerate(info)}
@@ -114,7 +114,7 @@ def run(subject, overlap, *, shell_opacity=0.2, top=None, show=True, show_tracts
             hovertemplate=f"{row['long_name']}<extra></extra>"))
 
     fig.update_layout(
-        title=f"{subject}, {overlap['tumour_ml']} mL tumour",
+        title=f"{subject}, {overlap['tumor_ml']} mL tumor",
         template="plotly_white",
         scene=dict(xaxis_visible=False, yaxis_visible=False, zaxis_visible=False,
                    aspectmode="data", domain=dict(x=[0, 0.8], y=[0.1, 0.97])),

@@ -39,18 +39,18 @@ SHELL_OPACITY = 0.15
 
 TISSUE = {"NETC": "#f2c14e", "SNFH": "#3fa7d6", "ET": "#e4572e", "RC": "#8e7dbe",
           "WT": "#d6c8af"}
-# the whole tumour as one shape, with its three parts under it
+# the whole tumor as one shape, with its three parts under it
 PARTS = ("T:SNFH", "T:ET", "T:NETC", "T:RC")
 CROSSING = ("tracts:mass", "tracts:near")
 LAYERS = [("T:margin", "margin 2 cm", "#b16286", 0),
-          ("T:WT", "tumour", TISSUE["WT"], 0),
-          ("T:SNFH", "SNFH oedema", TISSUE["SNFH"], 1),
+          ("T:WT", "tumor", TISSUE["WT"], 0),
+          ("T:SNFH", "SNFH edema", TISSUE["SNFH"], 1),
           ("T:ET", "ET enhancing", TISSUE["ET"], 1),
           ("T:NETC", "NETC necrosis", TISSUE["NETC"], 1),
           ("T:RC", "RC cavity", TISSUE["RC"], 1),
           ("--a", "", "", 0),
           ("tracts", "tracts crossing", "#689d6a", 0),
-          ("tracts:mass", "through the tumour", "#c67c48", 1),
+          ("tracts:mass", "through the tumor", "#c67c48", 1),
           ("tracts:near", "clipping a parcel only", "#76a096", 1),
           ("shell", "brain surface", "#a89984", 0),
           ("--b", "", "", 0),
@@ -67,13 +67,13 @@ ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
 VIEWERS = ("3d", "slices", "graph")
 VIEWS = [("a", "parcels"), ("b", "functions"), ("c", "connectivity")]
 ABOUT = {
-    "parcels": "Every parcel the tumour reaches, ranked by how much of that parcel "
+    "parcels": "Every parcel the tumor reaches, ranked by how much of that parcel "
                "is inside it.",
     "functions": "Each involved parcel's Parcelsynth profile, weighted by how much of "
-                 "that parcel the tumour holds, then summed. Pooled across published "
+                 "that parcel the tumor holds, then summed. Pooled across published "
                  "studies, not this patient.",
-    "connectivity": "For each parcel the tumour missed, what it connects to that the "
-                    "tumour took, weighted by how much of each is gone. A healthy "
+    "connectivity": "For each parcel the tumor missed, what it connects to that the "
+                    "tumor took, weighted by how much of each is gone. A healthy "
                     "population mean, not this patient.",
 }
 IDLE = "esc leaves · t returns"
@@ -132,7 +132,7 @@ def distribution(overlap):
     tree = {}
     for r in overlap["parcels"]:
         side = tree.setdefault(side_of.get(r["parcel"], "?"), {})
-        side[r["lobe"]] = side.get(r["lobe"], 0) + r["in_tumour_ml"]
+        side[r["lobe"]] = side.get(r["lobe"], 0) + r["in_tumor_ml"]
     order = sorted(tree.items(), key=lambda kv: -sum(kv[1].values()))
     if not order:
         return []
@@ -469,7 +469,7 @@ class Console(App):
                                            if s[10:15] == patient][-1] else "\u2502"
             drawn.add(patient)
             left = ("\u203a " if here else "  ") + tie + " " + name[10:]
-            right = "%3dp %7.0f mL" % (len(a["parcels"]), a["tumour_ml"])
+            right = "%3dp %7.0f mL" % (len(a["parcels"]), a["tumor_ml"])
             out.append(f"[{FG if here else DIM}]{row(left, right, w)}[/]")
         def rule(title):
             return f"[{FAINT}]\u2500\u2500 [/][{FG}]{title}[/][{FAINT}] {'\u2500' * (w - 4 - len(title))}[/]"
@@ -477,7 +477,7 @@ class Console(App):
         d = self.results[self.subject]
         r = d["regions_ml"]
         out.append(rule("stats"))
-        out.append(f"[{DIM}]tumour[/]")
+        out.append(f"[{DIM}]tumor[/]")
         for name in ("WT", "TC", "ET", "RC"):
             if not r.get(name):
                 continue
@@ -677,11 +677,11 @@ class Console(App):
         key = self.layer_rows[row_index][0]
         if key.startswith("--"):
             return
-        tumour = {"T:WT", *PARTS}
+        tumor = {"T:WT", *PARTS}
         change = {k for k, *_ in LAYERS if k.startswith("C:")}
         if key in ("T:WT", "tracts"):
             # the parent carries its children with it
-            kin = tumour if key == "T:WT" else {"tracts", *CROSSING}
+            kin = tumor if key == "T:WT" else {"tracts", *CROSSING}
             self.hidden_layers = (self.hidden_layers - kin if key in self.hidden_layers
                                   else self.hidden_layers | kin)
         else:
@@ -693,10 +693,10 @@ class Console(App):
         # these two draw the same tissue, so only one of them at a time. nothing
         # else is a rival: the margin, the tracts and the shell sit over any of it
         if key not in self.hidden_layers:
-            if key in tumour:
+            if key in tumor:
                 self.hidden_layers |= change
             elif key in change:
-                self.hidden_layers |= tumour
+                self.hidden_layers |= tumor
         if key == "T:margin" and key not in self.hidden_layers:
             self.scene.ensure_margin()
         if key.startswith("C:") and key not in self.hidden_layers:
@@ -765,7 +765,7 @@ class Console(App):
     def isolate_selected(self):
         names = self.selected_parcels()
         self.scene.only(names)
-        # in the connectivity view the first one is not in the tumour, so it has
+        # in the connectivity view the first one is not in the tumor, so it has
         # no mesh in the scene until it is asked for
         self.scene.spotlight(names[0] if self.listing == "connectivity" and names else None)
 
@@ -841,10 +841,10 @@ class Console(App):
             if index >= len(rows):
                 return
             p = rows[index]
-            volume = f"{p['in_tumour_ml']:.2f} of {p['parcel_ml']:.2f} mL"
+            volume = f"{p['in_tumor_ml']:.2f} of {p['parcel_ml']:.2f} mL"
             lines = [f"[{FG}]{p['long_name'][:w]}[/]",
                      f"[{FAINT}]{p['parcel']} \u00b7 {p['lobe']} \u00b7 mostly {p['tissue']}[/]",
-                     f"[{DIM}]{row('  in tumour', volume, w)}[/]", ""]
+                     f"[{DIM}]{row('  in tumor', volume, w)}[/]", ""]
             terms = function.for_parcel(p["parcel"], None)
             peak = max((v for _, v in terms), default=1)
             lines.append(f"[{FAINT}]parcelsynth terms[/]")
@@ -858,7 +858,7 @@ class Console(App):
             rows = connect.partners(c["parcel"], d["atlas"])
             lines = [f"[{FG}]{info.get('long_name', c['parcel'])[:w]}[/]",
                      f"[{FAINT}]{c['parcel']} \u00b7 {info.get('lobe', '')} \u00b7 "
-                     f"not in the tumour[/]",
+                     f"not in the tumor[/]",
                      f"[{DIM}]{row('  at risk', f"{c['share']:.0%}", w)}[/]", "",
                      f"[{FAINT}]{row(f'{len(rows)} parcels', 'involved    of loss', w)}[/]"]
             lines += [f"[{DIM}]{row('  ' + name, f'{fraction:>8.0%}    {share:>6.1%}', w)}[/]"
@@ -924,7 +924,7 @@ class Console(App):
             self.action_space()
         order = {p["name"]: i for i, p in enumerate(atlas.parcels())}
         self.slices.lit = order.get(wanted, -1) + 1
-        if self.slices.centre(wanted):
+        if self.slices.center(wanted):
             self.draw()
 
 
@@ -1020,7 +1020,7 @@ class Console(App):
         return {p["name"]: p for p in atlas.parcels()}
 
     def strip(self, which, entries, chosen, absent=()):
-        # key bright when it is the one you are on, greyed when it is not offered
+        # key bright when it is the one you are on, grayed when it is not offered
         out, x, spans = [], Bordered.MARGIN, []
         for key, name in entries:
             if out:
@@ -1082,7 +1082,7 @@ class Console(App):
         name = self.chart.name(at)
         if name is None:
             return
-        # a parcel the tumour overlaps is a row in the parcel list, one it
+        # a parcel the tumor overlaps is a row in the parcel list, one it
         # missed is a row in connectivity, so open whichever list holds it
         overlapped = self.chart.nodes[at] in self.chart.inside
         wanted = "parcels" if overlapped else "connectivity"
@@ -1196,7 +1196,7 @@ class Console(App):
     VIEW_ACTIONS = ("view", "space", "palette", "show_list")
 
     def check_action(self, action, parameters):
-        # grey a key out rather than let it look like it did nothing
+        # gray a key out rather than let it look like it did nothing
         if action in self.VIEW_ACTIONS and not self.scene:
             return None
         if action == "palette":
@@ -1380,7 +1380,7 @@ class Console(App):
         self.proc.terminate()
         # the segmenter runs detached, so it needs stopping in its own right
         stopped = segment.stop()
-        self.log_write(f"[{WARN}]cancelled{', stopped the segmenter' if stopped else ''}[/]")
+        self.log_write(f"[{WARN}]canceled{', stopped the segmenter' if stopped else ''}[/]")
 
     def busy(self, note):
         self.query_one("#shell").border_subtitle = keyed(note)

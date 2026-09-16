@@ -66,7 +66,7 @@ def parcels():
 
 @functools.lru_cache(maxsize=4)
 def colors(palette="yba"):
-    # "yba" groups parcels by region, "contrast" makes neighbours distinguishable.
+    # "yba" groups parcels by region, "contrast" makes neighbors distinguishable.
     if palette != "contrast":
         return [p["color"] for p in parcels()]
     if not HIGH_CONTRAST.exists():
@@ -140,12 +140,12 @@ def label_volume(reference):
 
 
 def overlap(seg_mni, labels, names):
-    # How much of each parcel the tumour occupies.
+    # How much of each parcel the tumor occupies.
     meta = {p["name"]: p for p in parcels()}
     image = nib.load(seg_mni)
-    tumour = np.asarray(image.dataobj).astype(np.int16)
+    tumor = np.asarray(image.dataobj).astype(np.int16)
     voxel_ml = float(np.prod(image.header.get_zooms()[:3])) / 1000.0
-    hit = tumour > 0
+    hit = tumor > 0
 
     total = np.bincount(labels.ravel(), minlength=len(names) + 1)
     inside = np.bincount(labels[hit].ravel(), minlength=len(names) + 1)
@@ -154,7 +154,7 @@ def overlap(seg_mni, labels, names):
     for index, name in enumerate(names, start=1):
         if inside[index] == 0:
             continue
-        tissue = tumour[hit & (labels == index)]
+        tissue = tumor[hit & (labels == index)]
         counts = {LABELS.get(int(v), str(v)): int((tissue == v).sum())
                   for v in np.unique(tissue)}
         info = meta[name]
@@ -164,15 +164,15 @@ def overlap(seg_mni, labels, names):
             "lobe": info["lobe"],
             "gyrus": info["gyrus"],
             "parcel_ml": round(total[index] * voxel_ml, 3),
-            "in_tumour_ml": round(inside[index] * voxel_ml, 3),
+            "in_tumor_ml": round(inside[index] * voxel_ml, 3),
             "fraction": round(float(inside[index]) / total[index], 4),
             "tissue": max(counts, key=counts.get),
         })
 
-    rows.sort(key=lambda r: (-r["fraction"], -r["in_tumour_ml"]))
+    rows.sort(key=lambda r: (-r["fraction"], -r["in_tumor_ml"]))
     return {
-        "tumour_ml": round(float(hit.sum()) * voxel_ml, 2),
-        # grey matter only, so this is well under the tumour volume
-        "in_parcels_ml": round(sum(r["in_tumour_ml"] for r in rows), 2),
+        "tumor_ml": round(float(hit.sum()) * voxel_ml, 2),
+        # gray matter only, so this is well under the tumor volume
+        "in_parcels_ml": round(sum(r["in_tumor_ml"] for r in rows), 2),
         "parcels": rows,
     }

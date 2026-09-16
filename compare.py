@@ -47,7 +47,7 @@ def surfaces(first, second):
     parts, _, _, image = _split(first, second)
     out = {}
     for name, mask in parts.items():
-        made = view._tumour_surface(mask.astype(np.int16), image.affine, 1)
+        made = view._tumor_surface(mask.astype(np.int16), image.affine, 1)
         if made:
             out[name] = made
     return out

@@ -1,4 +1,4 @@
-# Yale structural connectivity: which intact parcels lose their input to a tumour.
+# Yale structural connectivity: which intact parcels lose their input to a tumor.
 
 import csv
 import functools
@@ -36,7 +36,7 @@ def matrix():
 
 
 def at_risk(overlap, floor=0.01):
-    # For each untouched parcel, how much of its connectivity runs into the tumour.
+    # For each untouched parcel, how much of its connectivity runs into the tumor.
     names = [p["name"] for p in parcels()]
     index = {name: i for i, name in enumerate(names)}
     weights = matrix()

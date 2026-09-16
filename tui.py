@@ -40,17 +40,19 @@ SHELL_OPACITY = 0.15
 TISSUE = {"NETC": "#f2c14e", "SNFH": "#3fa7d6", "ET": "#e4572e", "RC": "#8e7dbe",
           "WT": "#d6c8af"}
 # the whole tumour as one shape, with its three parts under it
+PARTS = ("T:SNFH", "T:ET", "T:NETC", "T:RC")
 LAYERS = [("T:margin", "margin 2 cm", "#b16286", 0),
           ("T:WT", "tumour", TISSUE["WT"], 0),
           ("T:SNFH", "SNFH oedema", TISSUE["SNFH"], 1),
           ("T:ET", "ET enhancing", TISSUE["ET"], 1),
           ("T:NETC", "NETC necrosis", TISSUE["NETC"], 1),
           ("T:RC", "RC cavity", TISSUE["RC"], 1),
+          ("tracts", "tracts crossing", "#689d6a", 0),
+          ("shell", "brain surface", "#a89984", 0),
+          ("--", "", "", 0),
           ("C:both", "both timepoints", "#a89984", 0),
           ("C:new", "new in the later", "#fb4934", 0),
-          ("C:gone", "gone since the first", "#b8bb26", 0),
-          ("tracts", "tracts crossing", "#689d6a", 0),
-          ("shell", "brain surface", "#a89984", 0)]
+          ("C:gone", "gone since the first", "#b8bb26", 0)]
 # WT, TC and ET are unions of the tissue classes, so they are deliberately left
 # uncolored: any class color on them reads as "this row is that tissue"
 ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
@@ -312,7 +314,7 @@ class Console(App):
         self.subject = self.subjects[0] if self.subjects else None
         self.mode, self.space, self.palette, self.listing = "3d", "native", "contrast", "parcels"
         self.scene = self.slices = self.proc = self._timer = self._clock = None
-        self.hidden_layers, self.subject_rows = {"T:WT", "T:margin",
+        self.hidden_layers, self.subject_rows = {"T:margin",
                                           "C:both", "C:new", "C:gone"}, {}
         self.layer_rows = list(LAYERS)
         self.history, self.hpos, self.started = [], 0, 0
@@ -390,12 +392,12 @@ class Console(App):
                            f"rerun with ./main.py {int(subject[10:15])}[/]")
             return False
         self.subject, self.watching = subject, None
-        self.hidden_layers = {"T:WT", "T:margin", "C:both", "C:new", "C:gone"}
+        self.hidden_layers = {"T:margin", "C:both", "C:new", "C:gone"}
         overlap = self.results[subject]["atlas"]
         self.scene = render.Scene(subject, overlap, palette=self.palette)
         self.scene.set_opacity("shell", SHELL_OPACITY)
         self.slices = render.Slices(subject, self.space)
-        self.sync_overlay()
+        self.apply_layers()
         self.refresh_inputs()
         self.refresh_layers()
         self.refresh_list()
@@ -571,8 +573,11 @@ class Console(App):
         self.layer_rows = [r for r in LAYERS
                            if (not r[0].startswith("T:") or r[0] in ("T:WT", "T:margin")
                                or r[0][2:] in volumes)
-                           and (not r[0].startswith("C:") or pair)]
+                           and (pair or not (r[0].startswith("C:") or r[0] == "--"))]
         for key, name, color, deep in self.layer_rows:
+            if key == "--":
+                out.append(f"[{FAINT}]{'\u2500' * (w + 4)}[/]")
+                continue
             on = key not in self.hidden_layers
             if key == "tracts":
                 value = str(self.scene.tract_count) if self.scene else ""
@@ -591,18 +596,45 @@ class Console(App):
                        f"[{DIM if on else FAINT}]{row(name, value, w - 2 * deep)}[/]")
         self.query_one("#layers", Rows).update("\n".join(out))
 
+    def apply_layers(self):
+        # the one place that turns the checkbox states into what is drawn
+        if not self.scene:
+            return
+        parts = [k for k in PARTS
+                 if k not in self.hidden_layers and k in self.scene.actors]
+        for key, *_ in LAYERS:
+            if key == "--":
+                continue
+            on = key not in self.hidden_layers
+            # the combined shape stands in for the parts when none of them is on
+            if key == "T:WT":
+                on = on and not parts
+            if key in self.scene.actors:
+                self.scene.set_visible(key, on)
+        self.sync_overlay()
+
     def click_layer(self, row_index):
         if not (0 <= row_index < len(self.layer_rows) and self.scene):
             return
         key = self.layer_rows[row_index][0]
-        self.hidden_layers ^= {key}
-        on = key not in self.hidden_layers
-        if key == "T:margin" and on:
+        if key == "--":
+            return
+        if key == "T:WT":
+            # the parent carries its parts with it
+            group = {"T:WT", *PARTS}
+            if key in self.hidden_layers:
+                self.hidden_layers -= group
+            else:
+                self.hidden_layers |= group
+        else:
+            self.hidden_layers ^= {key}
+            if key in PARTS and key not in self.hidden_layers:
+                self.hidden_layers.discard("T:WT")
+        if key == "T:margin" and key not in self.hidden_layers:
             self.scene.ensure_margin()
-        if key.startswith("C:") and on:
+        if key.startswith("C:") and key not in self.hidden_layers:
             self.scene.ensure_compare(*self.pair())
-        self.scene.set_visible(key, on)
-        self.sync_overlay()
+        self.apply_layers()
         self.refresh_layers()
         self.draw()
 
@@ -612,7 +644,10 @@ class Console(App):
             return
         self.slices.hidden = {value for value, name in LABELS.items()
                               if "T:" + name in self.hidden_layers}
-        self.slices.whole = None if "T:WT" in self.hidden_layers else render.TISSUE[0]
+        parts = [k for k in PARTS
+                 if k not in self.hidden_layers and k in self.scene.actors]
+        whole = "T:WT" not in self.hidden_layers and not parts
+        self.slices.whole = render.TISSUE[0] if whole else None
         self.slices.show_margin = "T:margin" not in self.hidden_layers
         self.slices.compare = {}
         pair = self.pair()

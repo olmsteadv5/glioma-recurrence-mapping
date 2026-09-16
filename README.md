@@ -153,13 +153,17 @@ the 3D and out of the slice overlay, so there is no separate overlay key.
 
 `tumour` above them is the three classes contoured as one closed surface rather
 than three that meet along internal faces, with its parts indented under it. It
-starts off, because its surface coincides with the outside of the three and
-turning both on washes their colors out. It is one or the other.
+is a real parent: unticking it takes the parts with it, and it draws its own
+combined shape only when none of the parts is on, so the two can never wash
+each other out.
 
-For a patient with two timepoints there are three more layers: what both scans
-have, what is new in the later one, and what has gone since the first. They are
-computed in MNI, the only frame the two share, and they are the shapes behind
-the Dice in `changes`.
+For a patient with two timepoints, a rule at the bottom of the layers divides
+off three more: what both scans have, what is new in the later one, and what
+has gone since the first. They are computed in MNI, the only frame the two
+share, and they are the shapes behind the Dice in `changes`.
+
+Every layer draws in both views. The margin is an outline on the slices and the
+rest are fills, so anything you tick shows up whichever viewer you are in.
 
 `margin 2 cm` above that is the whole tumour grown by 20 mm, the usual CTV
 expansion, **clipped to the brain**: a fifth to a quarter of a raw expansion

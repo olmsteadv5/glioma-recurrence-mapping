@@ -124,7 +124,19 @@ Every parcel the tumour reaches is a node, every white matter connection
 between them is an edge, and the tumour itself is the large node in the middle.
 Orange nodes are inside the tumour, grey ones are outside it but tied to it by
 white matter. Clicking a node selects its parcel, and selecting a parcel lights
-its node.
+its node. Drag to pan, scroll to zoom, `h` to put it back.
+
+A node's **area** is how much of that parcel the tumour took, from 0 to 2.9 mL
+on subject 36. A **ring** around an outside node is how much of its
+connectivity runs into the tumour, so the ones about to lose the most stand
+out. An edge is **brighter** when one of its tracts passes through the mass,
+which for subject 36 is 39 of the 259 edges. Picking a node dims everything
+that is not it or its neighbours.
+
+Zoom past about twice and every node is labelled; below that only the picked
+node and what it connects to. A faint hull and a word name each lobe, and the
+bar at the bottom is 50 mm, which means something because the gaps are real
+distances.
 
 The nodes are placed by stress majorisation, so **the gaps on screen are the
 real distances between the parcels**, to a median of 10%. That uses

@@ -125,7 +125,9 @@ def through(subject):
     inverse = np.linalg.inv(seg.affine)
     shape = np.array(tumour.shape)
 
-    hits = collections.defaultdict(list)
+    import itertools
+
+    hits, crossing = collections.defaultdict(list), set()
     for line in tractography.centrelines():
         ijk = np.rint(nib.affines.apply_affine(inverse, line)).astype(int)
         keep = ijk[np.all((ijk >= 0) & (ijk < shape), axis=1)]
@@ -144,7 +146,10 @@ def through(subject):
             i, j = np.unravel_index(np.argmin(gap), gap.shape)
             hits[int(value) - 1].append(
                 max(abs(float(walked[mass[i]] - walked[there[j]])), 1.0))
-    return {k: (len(v), v) for k, v in hits.items()}
+        # this tract crosses the mass, so every pair it joins is affected
+        reached = sorted(int(v) - 1 for v in np.unique(at) if v > 0)
+        crossing.update(itertools.combinations(reached, 2))
+    return {k: (len(v), v) for k, v in hits.items()}, crossing
 
 
 def build(subject, overlap, floor=FLOOR):
@@ -162,6 +167,7 @@ def build(subject, overlap, floor=FLOOR):
     nodes = sorted(near)
     place = {n: k for k, n in enumerate(nodes)}
 
+    reach, crossing = through(subject)
     runs, link = bundles(), []
     for a in range(len(nodes)):
         for b in range(a + 1, len(nodes)):
@@ -174,14 +180,14 @@ def build(subject, overlap, floor=FLOOR):
             real = runs.get((min(nodes[a], nodes[b]), max(nodes[a], nodes[b])))
             ratios = ([1.0] if real is None
                       else sorted(float(v) / straight for v in real)[:STRANDS])
-            link.append((a, b, float(weight), straight, ratios))
+            key = (min(nodes[a], nodes[b]), max(nodes[a], nodes[b]))
+            link.append((a, b, float(weight), straight, ratios, key in crossing))
 
     middle, tumour = centres(subject)
     # the tumour is the last node, its distance to each parcel being the real one
     to_tumour = [float(np.linalg.norm(middle[n] - tumour))
                  if not np.isnan(middle[n]).any() else 60.0 for n in nodes]
     # and its edges are real: centrelines that pass through the mass and the parcel
-    reach = through(subject)
     spokes = []
     for n in nodes:
         if not reach.get(n):
@@ -198,7 +204,7 @@ def layout(count_of_nodes, link, to_tumour, rounds=120):
     # Stress majorisation: put the nodes where the drawn gaps match the real ones.
     total = count_of_nodes + 1
     target = np.zeros((total, total), dtype=np.float32)
-    for a, b, _, far, _ in link:
+    for a, b, _, far, _, _ in link:
         target[a, b] = target[b, a] = far or 60.0
     target[:count_of_nodes, -1] = target[-1, :count_of_nodes] = to_tumour
 

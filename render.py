@@ -281,6 +281,18 @@ def _bows():
     return np.array(grown), heights
 
 
+@functools.lru_cache(maxsize=4)
+def _font(size):
+    from PIL import ImageFont
+    for where in ("/usr/share/fonts/TTF/DejaVuSans.ttf",
+                  "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
+        try:
+            return ImageFont.truetype(where, size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
 def bow_for(ratio):
     grown, heights = _bows()
     return float(np.interp(min(max(ratio, 1.0), grown[-1]), grown, heights))
@@ -291,6 +303,9 @@ NODE_OUT = (168, 153, 132)
 NODE_TUMOUR = (214, 200, 175)
 EDGE = (80, 73, 69)
 SPOKE = (102, 92, 84)
+THROUGH = (146, 110, 70)
+HULL = (74, 69, 66)
+RISK = (131, 165, 152)
 
 
 class Chart:
@@ -298,18 +313,43 @@ class Chart:
     # nodes are the real distances between the parcels.
 
     def __init__(self, subject, overlap):
+        import connect
         import graph
         (self.nodes, self.link, to_tumour,
          self.inside, self.spokes) = graph.build(subject, overlap)
         self.points = graph.layout(len(self.nodes), self.link, to_tumour)
-        self.names = [p["name"] for p in atlas.parcels()]
-        self.lit = None
-        self.screen = np.zeros((0, 2))
+        info = atlas.parcels()
+        self.names = [p["name"] for p in info]
+        self.lobes = [info[n]["lobe"] for n in self.nodes]
+
+        lost = {r["parcel"]: r["in_tumour_ml"] for r in overlap["parcels"]}
+        self.lost = [lost.get(self.names[n], 0.0) for n in self.nodes]
+        self.most = max(self.lost, default=1.0) or 1.0
+        risk = {c["parcel"]: c["share"] for c in connect.at_risk(overlap)}
+        self.risk = [risk.get(self.names[n], 0.0) for n in self.nodes]
+
+        self.lit, self.zoom, self.pan = None, 1.0, np.zeros(2)
+        self.screen, self.scale = np.zeros((0, 2)), 1.0
 
     def name(self, at):
         if at is None or at >= len(self.nodes):
             return None
         return self.names[self.nodes[at]]
+
+    def move(self, zoom=1.0, pan=(0.0, 0.0)):
+        self.zoom = float(np.clip(self.zoom * zoom, 0.4, 12.0))
+        self.pan = self.pan + np.array(pan, dtype=float)
+
+    def home(self):
+        self.zoom, self.pan = 1.0, np.zeros(2)
+
+    def _place(self, wide, high):
+        pad = 30
+        low, span = self.points.min(0), np.ptp(self.points, axis=0)
+        span[span == 0] = 1
+        self.scale = min((wide - 2 * pad) / span[0], (high - 2 * pad) / span[1]) * self.zoom
+        middle = np.array([wide, high]) / 2
+        self.screen = (self.points - low - span / 2) * self.scale + middle + self.pan
 
     def image(self, size):
         wide, high = max(size[0], 64), max(size[1], 64)
@@ -317,31 +357,101 @@ class Chart:
         if not len(self.points):
             return canvas
         pen = ImageDraw.Draw(canvas)
+        self._place(wide, high)
+        near = self._neighbours()
 
-        pad = 24
-        low, span = self.points.min(0), np.ptp(self.points, axis=0)
-        span[span == 0] = 1
-        scale = min((wide - 2 * pad) / span[0], (high - 2 * pad) / span[1])
-        middle = (np.array([wide, high]) - span * scale) / 2
-        self.screen = (self.points - low) * scale + middle
-
-        # the tumour's own edges first, so the parcel structure sits on top
+        self._hulls(pen)
         for at, count, ratios in self.spokes:
-            self._strands(pen, at, len(self.screen) - 1, ratios, SPOKE)
-        for a, b, weight, _, ratios in self.link:
-            shade = tuple(int(c + (170 - c) * min(weight, 1.0)) for c in EDGE)
-            self._strands(pen, a, b, ratios, shade)
+            self._strands(pen, at, len(self.screen) - 1, ratios,
+                          self._shade(SPOKE, near is None or at in near))
+        for a, b, weight, _, ratios, crosses in self.link:
+            base = THROUGH if crosses else EDGE
+            tone = tuple(int(c + (190 - c) * min(weight, 1.0)) for c in base)
+            self._strands(pen, a, b, ratios,
+                          self._shade(tone, near is None or a in near or b in near))
+        self._nodes(pen, near)
+        self._labels(pen, near)
+        self._key(pen, wide, high)
+        return canvas
 
+    def _neighbours(self):
+        # while a node is picked, its own edges stay lit and the rest fall back
+        if self.lit is None:
+            return None
+        near = {self.lit}
+        for a, b, *_ in self.link:
+            if a == self.lit:
+                near.add(b)
+            elif b == self.lit:
+                near.add(a)
+        return near
+
+    @staticmethod
+    def _shade(color, lit):
+        return color if lit else tuple(int(c * 0.35 + 40 * 0.65) for c in color)
+
+    def _hulls(self, pen):
+        from scipy.spatial import ConvexHull
+        for lobe in sorted(set(self.lobes)):
+            picked = [i for i, name in enumerate(self.lobes) if name == lobe]
+            if len(picked) < 4:
+                continue
+            points = self.screen[picked]
+            try:
+                hull = ConvexHull(points)
+            except Exception:
+                continue
+            ring = [tuple(points[i]) for i in hull.vertices]
+            pen.polygon(ring, outline=HULL)
+            pen.text(tuple(points.mean(0)), lobe.lower(), fill=HULL, font=_font(11),
+                     anchor="mm")
+
+    def _nodes(self, pen, near):
         for at, point in enumerate(self.screen):
             last = at == len(self.screen) - 1
-            wide_ = 11 if last else 5
-            color = (NODE_TUMOUR if last else
-                     NODE_IN if self.nodes[at] in self.inside else NODE_OUT)
-            box = [point[0] - wide_, point[1] - wide_, point[0] + wide_, point[1] + wide_]
-            pen.ellipse(box, fill=color,
-                        outline=LIT if at == self.lit else PANEL,
+            if last:
+                wide = 11
+                color = NODE_TUMOUR
+            else:
+                # area says how much of that parcel the tumour took
+                wide = 3.0 + 7.0 * (self.lost[at] / self.most) ** 0.5
+                color = NODE_IN if self.nodes[at] in self.inside else NODE_OUT
+            color = self._shade(color, near is None or at in near)
+            box = [point[0] - wide, point[1] - wide, point[0] + wide, point[1] + wide]
+            pen.ellipse(box, fill=color, outline=LIT if at == self.lit else PANEL,
                         width=3 if at == self.lit else 1)
-        return canvas
+            # a ring on the untouched ones says how much they stand to lose
+            if not last and self.risk[at] > 0.02:
+                grow = wide + 2 + 5 * min(self.risk[at] / 0.3, 1.0)
+                pen.ellipse([point[0] - grow, point[1] - grow,
+                             point[0] + grow, point[1] + grow], outline=RISK)
+
+    def _labels(self, pen, near):
+        if self.zoom < 1.8 and near is None:
+            return
+        font = _font(11)
+        for at, point in enumerate(self.screen[:-1]):
+            if near is not None and at not in near and self.zoom < 1.8:
+                continue
+            pen.text((point[0], point[1] - 10), self.name(at),
+                     fill=LIT if at == self.lit else NODE_OUT, font=font, anchor="ms")
+
+    def _key(self, pen, wide, high):
+        font = _font(11)
+        bar = 50.0 * self.scale
+        if 20 < bar < wide - 60:
+            y = high - 18
+            pen.line([(20, y), (20 + bar, y)], fill=NODE_OUT, width=1)
+            pen.line([(20, y - 3), (20, y + 3)], fill=NODE_OUT)
+            pen.line([(20 + bar, y - 3), (20 + bar, y + 3)], fill=NODE_OUT)
+            pen.text((24 + bar, y), "50 mm", fill=NODE_OUT, font=font, anchor="lm")
+        rows = [(NODE_IN, "in the tumour"), (NODE_OUT, "connected to it"),
+                (NODE_TUMOUR, "the tumour"), (RISK, "ring: connectivity at risk"),
+                (THROUGH, "brighter: tract crosses the tumour")]
+        for n, (color, text) in enumerate(rows):
+            y = 16 + n * 14
+            pen.ellipse([20 - 4, y - 4, 20 + 4, y + 4], fill=color)
+            pen.text((32, y), text, fill=NODE_OUT, font=font, anchor="lm")
 
     def _strands(self, pen, a, b, ratios, color):
         # one arc per tract, bowed until its drawn length is its real length

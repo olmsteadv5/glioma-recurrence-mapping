@@ -184,10 +184,30 @@ class Canvas(ImageWidget, Renderable=Renderable):
 
 
 class Board(ImageWidget, Renderable=Renderable):
-    # The node chart: click a node to select its parcel.
+    # The node chart: drag to pan, scroll to zoom, click a node to pick it.
+    dragged = False
 
-    def on_click(self, event):
-        self.app.pick_node(event.x, event.y)
+    def on_mouse_down(self, event):
+        self.capture_mouse()
+        self.dragged = False
+
+    def on_mouse_up(self, event):
+        self.release_mouse()
+        if not self.dragged:
+            self.app.pick_node(event.x, event.y)
+
+    def on_mouse_move(self, event):
+        if event.button:
+            self.dragged = True
+            cell = get_cell_size()
+            self.app.queue_chart(pan=(event.delta_x * cell.width,
+                                      event.delta_y * cell.height))
+
+    def on_mouse_scroll_down(self, event):
+        self.app.queue_chart(zoom=0.85)
+
+    def on_mouse_scroll_up(self, event):
+        self.app.queue_chart(zoom=1.18)
 
     def on_resize(self, event):
         self.app.schedule_draw()
@@ -314,7 +334,7 @@ class Console(App):
     BINDINGS = [
         ("q", "quit", "quit"), ("v", "view", "3d/slices"), ("s", "space", "native/mni"),
         ("p", "palette", "colors"), ("t", "shell", "prompt"),
-        ("x", "cancel", "cancel run"),
+        ("x", "cancel", "cancel run"), Binding("h", "home", "reset", show=False),
         Binding("a", "show_list('parcels')", "parcels", show=False),
         Binding("b", "show_list('functions')", "functions", show=False),
         Binding("c", "show_list('connectivity')", "connectivity", show=False),
@@ -337,6 +357,7 @@ class Console(App):
         self.parcel_rows = []
         self.parcels_shown = True
         self.pending, self._spin, self._settle = [0.0, 0.0, 1.0], None, None
+        self.waiting = [1.0, 0.0, 0.0]
         self.strip_spans = {}
         self.strip_spans = {}
         self._panel_width = self._list_width = self._layers_width = 0
@@ -954,7 +975,7 @@ class Console(App):
             viewer.border_title = (f"graph · {len(self.chart.inside)} in the tumour "
                                    f"· {len(self.chart.nodes) - len(self.chart.inside)} "
                                    f"connected")
-            viewer.border_subtitle = keyed("v 3d")
+            viewer.border_subtitle = keyed("v 3d \u00b7 drag pan \u00b7 scroll zoom \u00b7 h reset")
         else:
             for which in render.Slices.PLANES:
                 pane = self.query_one(f"#p-{which}", Pane)
@@ -1089,6 +1110,34 @@ class Console(App):
     def select_row(self, index):
         self.query_one("#parcels", ListView).index = index
 
+    def queue_chart(self, zoom=1.0, pan=(0.0, 0.0)):
+        # the terminal sends a move event per pixel, so collect and draw on a clock
+        if self.mode != "graph" or self.chart is None:
+            return
+        self.waiting[0] *= zoom
+        self.waiting[1] += pan[0]
+        self.waiting[2] += pan[1]
+        if self._spin is None:
+            self._spin = self.set_interval(1 / 30, self.flush_chart)
+        if self._settle is not None:
+            self._settle.stop()
+        self._settle = self.set_timer(0.3, self.settle_chart)
+
+    def flush_chart(self):
+        zoom, across, down = self.waiting
+        self.waiting = [1.0, 0.0, 0.0]
+        if zoom == 1.0 and not across and not down:
+            return
+        self.chart.move(zoom, (across, down))
+        self.draw()
+
+    def settle_chart(self):
+        if self._spin is None:
+            return
+        self._spin.stop()
+        self._spin = None
+        self.flush_chart()
+
     def queue_view(self, azimuth=0.0, elevation=0.0, zoom=1.0):
         # the terminal sends a move event per pixel; rendering one frame each
         # puts the view seconds behind the mouse, so collect and draw on a clock
@@ -1195,6 +1244,11 @@ class Console(App):
         dest = out_dir(self.subject) / f"{self.subject}_{kind}_{stamp}.png"
         image.save(dest)
         self.log_write(f"[{OK}]wrote {dest.name}[/] [{FAINT}]{image.size[0]}x{image.size[1]}[/]")
+
+    def action_home(self):
+        if self.mode == "graph" and self.chart is not None:
+            self.chart.home()
+            self.draw()
 
     def action_shell(self):
         self.set_focus(self.query_one("#cmd"))

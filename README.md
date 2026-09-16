@@ -143,7 +143,10 @@ The breakdown lists the layers with their volumes, clickable to show and hide,
 then either the involved parcels or the functions at risk. Whatever is selected
 lights up in the 3D and every other parcel drops back, so a row and a shape in
 the viewer are the same thing. The `all parcels` row at the top of the list is
-the way back: pick it and every involved parcel returns to full brightness. It works both ways: click a parcel in the 3D and
+the way back: pick it and every involved parcel returns to full brightness.
+
+In the slice view, picking a parcel puts the crosshair inside it instead. Only
+MNI knows where the parcels are, so it switches space if it has to. It works both ways: click a parcel in the 3D and
 its row is selected, drag and it rotates instead.
 
 WT, TC and ET are unions of the tissue classes, not classes themselves, which
@@ -158,8 +161,11 @@ registration had left to align on once the lesion was masked out, and how long
 ago anything last changed on disk.
 
 The panel is in two parts. `stats` holds the tumour, where it sits and how it
-was made; the hemisphere and lobe shares are indented under `in parcels`
-because that is the volume they are shares of.
+was made; the hemisphere and lobe volumes are indented under `in parcels`
+because that is the volume they add up to.
+
+Between them, `changes` appears when a patient has more than one timepoint,
+one row per consecutive pair.
 
 `checks` holds `stages` and `atlas`, a row each. A tick is quiet and carries
 how long the stage took and how long ago it ran. A cross is the only coloured

@@ -62,7 +62,7 @@ class Scene:
         for value, name in self._tumour(subject, image).items():
             self.actors["T:" + name[0]] = self._mesh(name[1], name[2], _hex(TISSUE[value]), 1.0)
 
-        lines = self._tracts(image, index, involved)
+        lines, self.tract_count = self._tracts(image, index, involved)
         if lines is not None:
             self.actors["tracts"] = self.plotter.add_mesh(
                 lines, color=_hex(TRACT), line_width=1, opacity=0.55)
@@ -117,13 +117,13 @@ class Scene:
         wanted = [index[n] + 1 for n in involved if n in index]
         hits = tractography.crossing(tractography.centrelines(), seg_image, labels, wanted)
         if not hits:
-            return None
+            return None, 0
         points, cells, offset = [], [], 0
         for line in hits:
             points.append(line)
             cells.append(np.hstack([[len(line)], np.arange(offset, offset + len(line))]))
             offset += len(line)
-        return pv.PolyData(np.vstack(points), lines=np.hstack(cells))
+        return pv.PolyData(np.vstack(points), lines=np.hstack(cells)), len(hits)
 
     def resize(self, width, height):
         size = [max(width, 64), max(height, 64)]
@@ -294,6 +294,19 @@ class Slices:
                             (w - int(im.width * scale)) // 2, (h - int(im.height * scale)) // 2,
                             w, h)
         return out
+
+    def centre(self, parcel):
+        if self.parcels is None or parcel not in self.parcel_names:
+            return False
+        found = np.nonzero(self.parcels == self.parcel_names.index(parcel) + 1)
+        if not len(found[0]):
+            return False
+        # the mean of a curved parcel can fall outside it, so snap to the
+        # voxel nearest the mean that is actually in it
+        points = np.stack(found, axis=1)
+        middle = points.mean(0)
+        self.cursor = [int(v) for v in points[np.argmin(((points - middle) ** 2).sum(1))]]
+        return True
 
     def click(self, which, fx, fy):
         # fx, fy are fractions of the whole pane, letterbox included

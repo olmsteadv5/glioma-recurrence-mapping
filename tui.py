@@ -93,7 +93,7 @@ def spell(seconds):
 
 
 def distribution(overlap):
-    # Where the tumour sits, from the parcels it already touches.
+    # Where the tumour sits, from the parcels it already touches, in mL.
     side_of = {p["name"]: p["hemisphere"] for p in atlas.parcels()}
     sides, lobes, total = {}, {}, 0.0
     for r in overlap["parcels"]:
@@ -105,7 +105,7 @@ def distribution(overlap):
         return []
     out = sorted(sides.items(), key=lambda kv: -kv[1])
     out += sorted(lobes.items(), key=lambda kv: -kv[1])[:4]
-    return [(name.lower(), value / total) for name, value in out]
+    return [(name.lower(), round(value, 2)) for name, value in out]
 
 
 def row(left, right, width=30):
@@ -394,18 +394,20 @@ class Console(App):
             out.append(f"[{FG}]  {name}[/][{FAINT}]{made}[/]"
                        f"[{DIM}]{f'{r[name]} mL':>{w - 4 - len(made)}}[/]")
         in_parcels = f"{d['atlas']['in_parcels_ml']} mL"
-        out.append(f"[{FG}]{row('  in parcels', in_parcels, w)}[/]")
-        # indented under the line they break down, so the denominator is obvious
-        out += [f"[{FAINT}]{row('    ' + name, f'{value:.0%}', w)}[/]"
+        out.append(f"[{FAINT}]{row('  in parcels', in_parcels, w)}[/]")
+        # indented under the line they break down, in the same unit as it
+        out += [f"[{FAINT}]{row('    ' + name, f'{value} mL', w)}[/]"
                 for name, value in distribution(d["atlas"])]
         out.append(f"[{FAINT}]{row('  dice WT', self.dice(d), w)}[/]")
-        other = self.sibling(self.subject)
-        if other:
-            first, then = sorted([self.subject, other])
-            change = (self.results[then]["regions_ml"]["WT"]
-                      - self.results[first]["regions_ml"]["WT"])
-            label = f"  _{first[16:]} \u2192 _{then[16:]}"
-            out.append(f"[{WARN if change > 0 else DIM}]{row(label, f'{change:+.1f} mL', w)}[/]")
+        group = [s for s in self.subjects if s[10:15] == self.subject[10:15]]
+        if len(group) > 1:
+            out.append(f"[{DIM}]changes[/]")
+            for before, after in zip(group, group[1:]):
+                change = (self.results[after]["regions_ml"]["WT"]
+                          - self.results[before]["regions_ml"]["WT"])
+                label = f"  _{before[16:]} \u2192 _{after[16:]} WT"
+                out.append(f"[{WARN if change > 0 else DIM}]"
+                           f"{row(label, f'{change:+.1f} mL', w)}[/]")
 
         run = d.get("run", {})
         out.append(f"[{DIM}]run[/]")
@@ -493,6 +495,8 @@ class Console(App):
             on = key not in self.hidden_layers
             if key == "parcels":
                 value = str(len(self.scene.parcel_actors)) if self.scene else ""
+            elif key == "tracts":
+                value = str(self.scene.tract_count) if self.scene else ""
             else:
                 value = volumes.get(key.split(":")[-1])
                 value = f"{value} mL" if value else ""
@@ -629,10 +633,23 @@ class Console(App):
         index = event.list_view.index or 0
         self.mark_row(index)
         self.refresh_detail(index)
-        if self.mode != "3d" or not self.scene:
+        if self.mode == "3d" and self.scene:
+            self.isolate_selected()
+            self.draw()
+        elif self.mode == "slices":
+            self.seek_parcel(index)
+
+    def seek_parcel(self, index):
+        # put the crosshair in the middle of it, which only mni can work out
+        if self.listing != "parcels" or index == 0:
             return
-        self.isolate_selected()
-        self.draw()
+        rows = self.results[self.subject]["atlas"]["parcels"]
+        if index - 1 >= len(rows):
+            return
+        if self.space != "mni":
+            self.action_space()
+        if self.slices.centre(rows[index - 1]["parcel"]):
+            self.draw()
 
 
 

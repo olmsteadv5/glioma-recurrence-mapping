@@ -579,27 +579,34 @@ class Console(App):
     def isolate_selected(self):
         index = (self.query_one("#parcels", ListView).index or 0) - 1
         d = self.results[self.subject]
+        shown = "parcels" not in self.hidden_layers
         # row zero is the summary, which means nothing is singled out
         if index < 0:
+            self.scene.show_parcels(shown)
             self.scene.unisolate()
             self.scene.spotlight(None)
             return
         if self.listing == "parcels":
             rows = d["atlas"]["parcels"]
             if index < len(rows):
+                self.scene.show_parcels(shown, keep=[rows[index]["parcel"]])
                 self.scene.isolate(rows[index]["parcel"])
         elif self.listing == "connectivity":
             if index < len(self.at_risk):
-                # the one losing input, lit up, and the involved parcels it loses
+                # the one losing input, lit up, and the involved parcels it loses.
+                # those are involved, so the layer being off must not hide them here
+                names = [n for n, _, _ in connect.partners(
+                    self.at_risk[index]["parcel"], d["atlas"], 12)]
                 self.scene.spotlight(self.at_risk[index]["parcel"])
-                self.scene.isolate(n for n, _, _ in
-                                   connect.partners(self.at_risk[index]["parcel"],
-                                                    d["atlas"], 12))
+                self.scene.show_parcels(shown, keep=names)
+                self.scene.isolate(names)
         else:
             top = d.get("function", [])
             if index < len(top):
-                self.scene.isolate(n for n, _, _ in
-                                   function.drivers(top[index]["term"], d["atlas"], 7))
+                names = [n for n, _, _ in function.drivers(top[index]["term"],
+                                                           d["atlas"], 7)]
+                self.scene.show_parcels(shown, keep=names)
+                self.scene.isolate(names)
 
     def refresh_list(self):
         d = self.results[self.subject]

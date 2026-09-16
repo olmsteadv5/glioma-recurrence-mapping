@@ -151,6 +151,11 @@ the whole list adds up to, and a note on how it was built. Picking it also
 means nothing is singled out, so every involved parcel goes back to full
 brightness.
 
+Hiding `involved parcels` hides them, except the ones the current selection is
+about: the parcel you picked, the parcels behind a function's score, or the
+ones a parcel is losing its connections to. Those are involved parcels too, so
+the layer would otherwise empty out the very view you are reading.
+
 In the slice view, picking a parcel puts the crosshair inside it instead. Only
 MNI knows where the parcels are, so it switches space if it has to. It works both ways: click a parcel in the 3D and
 its row is selected, drag and it rotates instead.

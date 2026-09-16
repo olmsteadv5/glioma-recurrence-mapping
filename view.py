@@ -5,10 +5,9 @@ import nibabel as nib
 import numpy as np
 import plotly.graph_objects as go
 import pyvista as pv
-import trimesh
 
 import tracts as tractography
-from atlas import colours, label_volume, meshes, parcels
+from atlas import brain, colours, label_volume, meshes, parcels
 from paths import LABELS, MNI, out_dir
 
 TISSUE_COLOR = {1: "#f2c14e", 2: "#3fa7d6", 3: "#e4572e", 4: "#8e7dbe"}
@@ -86,22 +85,18 @@ def run(subject, overlap, *, shell_opacity=0.2, top=None, show=True, show_tracts
     here, there = colours(palette), colours(other)
 
     involved = overlap["parcels"][:top] if top else overlap["parcels"]
-    involved_names = {r["parcel"] for r in involved}
 
     fig = go.Figure()
     add(subject, fig)
     if show_tracts:
         add_tracts(subject, overlap, fig)
 
-    shell_trace = []
-    rest = [surfaces[i] for name, i in index.items() if name not in involved_names]
-    if rest:
-        shell_trace = [len(fig.data)]
-        shell = trimesh.util.concatenate(rest)
-        fig.add_trace(_mesh3d(np.asarray(shell.vertices), np.asarray(shell.faces),
-                              color=SHELL_COLOR, opacity=shell_opacity,
-                              name="atlas (uninvolved)", showlegend=True,
-                              legendrank=30, hoverinfo="skip"))
+    # one closed MNI surface, not the 696 parcel meshes: stacking those piles up
+    # alpha until the involved parcels inside are darker than the shell around them
+    shell_trace = [len(fig.data)]
+    fig.add_trace(_mesh3d(*brain(), color=SHELL_COLOR, opacity=shell_opacity,
+                          name="brain surface", showlegend=True,
+                          legendrank=30, hoverinfo="skip"))
 
     # no legendgroup: traces sharing one toggle together, which would make
     # clicking a single parcel hide all of them

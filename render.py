@@ -3,7 +3,6 @@
 import nibabel as nib
 import numpy as np
 import pyvista as pv
-import trimesh
 from PIL import Image
 
 import atlas
@@ -36,10 +35,11 @@ def fit(image, size, background=PANEL):
 class Scene:
     # One plotter per subject; between frames only the camera moves.
 
-    def __init__(self, subject, overlap, palette="contrast", top=40, size=(700, 540)):
+    def __init__(self, subject, overlap, palette="contrast", size=(700, 540)):
         self.subject, self.overlap, self.palette = subject, overlap, palette
         self.plotter = pv.Plotter(off_screen=True, window_size=list(size))
         self.plotter.set_background(BG)
+        self.plotter.enable_depth_peeling(10)
         self.actors, self.parcel_actors = {}, {}
 
         info, surf = atlas.parcels(), atlas.meshes()
@@ -47,12 +47,9 @@ class Scene:
         colours = atlas.colours(palette)
         involved = [r["parcel"] for r in overlap["parcels"]]
 
-        rest = [surf[i] for n, i in index.items() if n not in set(involved)]
-        if rest:
-            shell = trimesh.util.concatenate(rest)
-            self.actors["shell"] = self._mesh(shell.vertices, shell.faces, _hex(SHELL), 0.15)
+        self.actors["shell"] = self._mesh(*atlas.brain(), _hex(SHELL), 0.15)
 
-        for name in involved[:top]:
+        for name in involved:
             i = index[name]
             actor = self._mesh(surf[i].vertices, surf[i].faces, _hex(colours[i]), 1.0)
             self.actors["P:" + name] = actor

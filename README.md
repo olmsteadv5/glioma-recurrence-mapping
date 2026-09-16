@@ -35,12 +35,12 @@ have already done, don't rerun the pipeline. Just open the view:
 ```
 
 Every parcel the tumour touches gets drawn. The legend is the main control:
-tumour tissue classes first, then the tracts, then the grey shell, then the
+tumour tissue classes first, then the tracts, then the brain surface, then the
 parcels in order of involvement, so the things you care about are not buried.
 Click any entry to toggle it.
 
-Along the bottom are the things the legend cannot do: a slider for shell
-opacity, a dropdown to show or hide all the parcels at once, and a dropdown to
+Along the bottom are the things the legend cannot do: a slider for brain
+surface opacity, a dropdown to show or hide all the parcels at once, and a dropdown to
 switch the parcel colouring.
 
 Two palettes. The atlas's own colours parcels by region, so neighbours often
@@ -49,7 +49,7 @@ YBA_696_Freeview_HighContrast.txt, where no two touching parcels share a
 colour, which is much easier to read when a tumour spans a dozen of them.
 
 From Python, `view.run` also takes `top=20` if you only want the most involved
-parcels, `shell_opacity` for the shell's starting transparency, and `palette`
+parcels, `shell_opacity` for the brain surface's transparency, and `palette`
 to pick which colouring it opens with.
 
 ## Terminal UI
@@ -154,6 +154,11 @@ paths.py       shared paths
 ```
 
 ## Worth knowing
+
+The faint grey brain is one closed surface contoured out of MNI152, not the 696
+parcel meshes. Those are 754 separate closed bodies, so stacking them as a
+translucent shell piles up alpha along every view ray until the involved
+parcels inside end up darker than the context around them.
 
 If you have an NVIDIA GPU it uses BraTS25_1, which won the 2025 challenge. On
 CPU it falls back to BraTS25_2 and says so. Nothing to configure either way.

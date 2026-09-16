@@ -7,7 +7,7 @@ import urllib.request
 import nibabel as nib
 import numpy as np
 
-from paths import ATLAS_DIR, ATLAS_INPUT, LABELS
+from paths import ATLAS_DIR, ATLAS_INPUT, LABELS, MNI
 
 BASE = "https://raw.githubusercontent.com/YaleBrainAtlas/YaleBrainAtlas/master/data"
 
@@ -86,6 +86,29 @@ def meshes():
         mesh.vertices = np.asarray(mesh.vertices) * GLB_FLIP
         out.append(mesh)
     return out
+
+
+def brain():
+    # One closed MNI surface. The 696 parcel meshes are 754 separate bodies, so
+    # stacking them as a shell piles up alpha until nothing inside shows through.
+    cache = ATLAS_DIR / "brain_surface.npz"
+    if cache.exists():
+        held = np.load(cache)
+        return held["vertices"], held["faces"]
+
+    import pyvista as pv
+    image = nib.load(MNI)
+    mask = (np.asarray(image.dataobj) > 0).astype(np.float32)
+    grid = pv.ImageData(dimensions=np.array(mask.shape) + 1)
+    grid.cell_data["v"] = mask.flatten(order="F")
+    surface = grid.cells_to_points("v").contour([0.5], scalars="v")
+    surface = surface.smooth(n_iter=40, relaxation_factor=0.2).decimate(0.8)
+
+    vertices = nib.affines.apply_affine(image.affine, surface.points)
+    faces = np.asarray(surface.faces).reshape(-1, 4)[:, 1:]
+    ATLAS_DIR.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(cache, vertices=vertices, faces=faces)
+    return vertices, faces
 
 
 def label_volume(reference):

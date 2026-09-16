@@ -23,7 +23,7 @@ TISSUE = {1: (242, 193, 78), 2: (63, 167, 214), 3: (228, 87, 46), 4: (142, 125, 
 CROSS = (250, 189, 47)
 _hex = lambda t: "#%02x%02x%02x" % tuple(t)
 PANEL = (40, 40, 40)
-DIMMED = 0.06
+DIMMED = 0.16
 
 
 def fit(image, size, background=PANEL):
@@ -314,9 +314,6 @@ class Slices:
         else:
             self.cursor[1] = max(0, min(ny - 1, ny - 1 - px))
             self.cursor[2] = max(0, min(nz - 1, nz - 1 - py))
-
-    def step(self, axis, delta):
-        self.cursor[axis] = max(0, min(self.shape[axis] - 1, self.cursor[axis] + delta))
 
     def readout(self):
         # only MNI has an anatomical origin; the SRI24 affine is a corner offset,

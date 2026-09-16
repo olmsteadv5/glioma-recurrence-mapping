@@ -49,8 +49,8 @@ It says what is missing if you start too late, rather than failing part way
 through. `--no-view` skips the browser window at the end.
 
 `--timepoint 2` fetches the follow-up scan instead of the pre-operative one.
-Not every subject has one; 36, 42 and 51 do, 2 does not. Run both and the
-inputs panel groups them under the patient and gives you the change in WT.
+Not every subject has one; 36, 42 and 51 do, 2 does not. Run both and they sit
+next to each other in the subject list, with the change in WT between them.
 
 To look at a subject you have already done, don't rerun anything, just open the
 view:
@@ -124,7 +124,7 @@ one on screen, and in MNI it names the parcel under the crosshair.
 v  3d / slices          p  parcel colouring     t  focus the prompt
 s  native / mni         f  parcels / functions  c  cancel the run
 o  segmentation overlay h  reset view           q  quit
-1-4  modality           pgup/pgdn  step slice
+1-4  modality
 ```
 
 Half of those only make sense in one of the two viewer modes. The ones that do
@@ -142,7 +142,8 @@ follow the palette toggle.
 The breakdown lists the layers with their volumes, clickable to show and hide,
 then either the involved parcels or the functions at risk. Whatever is selected
 lights up in the 3D and every other parcel drops back, so a row and a shape in
-the viewer are the same thing. It works both ways: click a parcel in the 3D and
+the viewer are the same thing. The `all parcels` row at the top of the list is
+the way back: pick it and every involved parcel returns to full brightness. It works both ways: click a parcel in the 3D and
 its row is selected, drag and it rotates instead.
 
 WT, TC and ET are unions of the tissue classes, not classes themselves, which
@@ -151,11 +152,15 @@ out what each one contains and leaves them uncoloured, since the three colours
 belong to the classes in the breakdown.
 
 Under them the panel carries `where` the tumour sits, by hemisphere and lobe,
-which is the same question the 119 parcel rows answer one at a time; `run`,
-which segmenter produced this and on what, how long it took, and how much brain
-the registration had left to align on once the lesion was masked out; and
-`stages`, how long ago each stage last wrote its output. A stage older than one
-before it is marked stale, which is what a partial rerun leaves behind.
+which is the same question the 119 parcel rows answer one at a time, and `run`,
+which segmenter produced this and on what, how long it took, how much brain the
+registration had left to align on once the lesion was masked out, and how long
+ago anything last changed on disk.
+
+Everything healthy collapses into one `all ok` line. Scans that were never
+stripped, atlas files that are missing, and stages left behind by a partial
+rerun get a row each under `needs attention`, so the only coloured rows in the
+panel are the ones worth looking at.
 
 While the pipeline runs, its panel shows which stage is going and the viewer
 switches to the subject being worked on as soon as its scans land, so you are

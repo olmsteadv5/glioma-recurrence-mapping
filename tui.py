@@ -64,7 +64,7 @@ def bar(fraction, n=10):
     return "█" * filled + "░" * (n - filled)
 
 
-NAMED = {"esc", "enter", "pgup/pgdn"}
+NAMED = {"esc", "enter"}
 
 
 def keyed(text):
@@ -357,23 +357,18 @@ class Console(App):
         w = self._panel_width = self.panel_width()
         out = [f"[{FG}]subject[/]"]
         self.subject_rows = {}
-        seen = set()
         for n, name in enumerate(self.subjects, start=1):
             a = self.results[name]["atlas"]
             here = name == self.subject
             self.subject_rows[n] = name
-            patient = name[10:15]
-            # later timepoints of the same patient hang off the first one
-            label = name[10:] if patient not in seen else f"\u21b3 _{name[16:]}"
-            seen.add(patient)
-            left = ("\u203a " if here else "  ") + label
+            left = ("\u203a " if here else "  ") + name[10:]
             right = "%3dp %7.0f mL" % (len(a["parcels"]), a["tumour_ml"])
             out.append(f"[{FG if here else DIM}]{row(left, right, w)}[/]")
         out.append(f"[{FAINT}]{'\u2500' * w}[/]")
 
         d = self.results[self.subject]
         r = d["regions_ml"]
-        out.append(f"[{DIM}]tumour regions[/]")
+        out.append(f"[{DIM}]tumour[/]")
         for name in ("WT", "TC", "ET"):
             made = ("" if len(REGIONS[name]) == 1
                     else " " + "+".join(LABELS[v] for v in REGIONS[name]))
@@ -388,7 +383,7 @@ class Console(App):
             first, then = sorted([self.subject, other])
             change = (self.results[then]["regions_ml"]["WT"]
                       - self.results[first]["regions_ml"]["WT"])
-            label = f"  _{first[16:]} → _{then[16:]}"
+            label = f"  _{first[16:]} \u2192 _{then[16:]}"
             out.append(f"[{WARN if change > 0 else DIM}]{row(label, f'{change:+.1f} mL', w)}[/]")
 
         share = distribution(d["atlas"])
@@ -396,49 +391,44 @@ class Console(App):
             out.append(f"[{DIM}]where[/]")
             out += [f"[{FAINT}]{row('  ' + name, f'{value:.0%}', w)}[/]" for name, value in share]
 
-        out.append(f"[{DIM}]scans[/]")
-        for m in MODALITIES:
-            ok = (stripped_dir(self.subject) / f"{self.subject}_{m}.nii.gz").exists()
-            state = "stripped" if ok else "not stripped"
-            out.append(f"[{FG if ok else FAINT}]  {m}[/]"
-                       f"[{FAINT if ok else BAD}]{state:>{w - len(m) - 2}}[/]")
-
-        run = d.get("run", {})
         out.append(f"[{DIM}]run[/]")
-        made = f"{run.get('algorithm', '?')} {run.get('device', '')}".strip()
-        out.append(f"[{FAINT}]{row('  segmenter', made, w)}[/]")
-        if "seconds" in run:
-            out.append(f"[{FAINT}]{row('  last run', spell(run['seconds']), w)}[/]")
+        run = d.get("run", {})
+        if "algorithm" in run:
+            made = f"  {run['algorithm']} {run.get('device', '')}".rstrip()
+            out.append(f"[{FAINT}]{row(made, spell(run['seconds']) if 'seconds' in run else '', w)}[/]")
+        else:
+            out.append(f"[{FAINT}]{row('  segmenter', 'not recorded', w)}[/]")
         if "kept" in run:
-            kept = f"{run['kept']:.0%}"
-            out.append(f"[{FAINT}]{row('  brain kept', kept, w)}[/]")
+            out.append(f"[{FAINT}]{row('  brain kept', f"{run['kept']:.0%}", w)}[/]")
 
-        out.append(f"[{DIM}]stages[/]")
-        stamps = {}
+        # everything healthy collapses to one line, only trouble gets a row
+        stamps, wrong = {}, []
         for stage in STAGES:
             path = stage_file(self.subject, stage)
-            # map writes into the shared results file, so it carries its own stamp
             stamps[stage] = (run.get("mapped") if path is None
                              else path.stat().st_mtime if path.exists() else None)
             if stamps[stage] is None:
-                # a result from before this was recorded is not the same as no result
-                missing = "unknown" if stage == "map" and "atlas" in d else "not run"
-                style = FAINT if missing == "unknown" else BAD
-                out.append(f"[{FAINT}]  {stage}[/][{style}]{missing:>{w - len(stage) - 2}}[/]")
+                if not (stage == "map" and "atlas" in d):
+                    wrong.append((stage, "not run"))
                 continue
-            # a stage older than the one before it was left behind by a rerun
-            before = [t for t in stamps.values() if t]
-            stale = len(before) > 1 and stamps[stage] < max(before[:-1])
-            out.append(f"[{FAINT}]  {stage}[/]"
-                       f"[{WARN if stale else FAINT}]"
-                       f"{(('stale, ' if stale else '') + ago(stamps[stage])):>{w - len(stage) - 2}}[/]")
+            done = [t for t in stamps.values() if t]
+            if len(done) > 1 and stamps[stage] < max(done[:-1]):
+                wrong.append((stage, "stale, " + ago(stamps[stage])))
+        newest = max([t for t in stamps.values() if t], default=None)
+        if newest:
+            out.append(f"[{FAINT}]{row('  last touched', ago(newest), w)}[/]")
 
-        out.append(f"[{DIM}]atlas[/]")
-        for name, label, note in ATLAS_FILES:
-            have = (ATLAS_INPUT / name).exists()
-            state = note if have else "missing"
-            out.append(f"[{FG if have else FAINT}]  {label}[/]"
-                       f"[{FAINT if have else BAD}]{state:>{w - len(label) - 2}}[/]")
+        wrong += [(m, "not stripped") for m in MODALITIES
+                  if not (stripped_dir(self.subject) / f"{self.subject}_{m}.nii.gz").exists()]
+        wrong += [(label, "missing") for name, label, _ in ATLAS_FILES
+                  if not (ATLAS_INPUT / name).exists()]
+        if wrong:
+            out.append(f"[{BAD}]needs attention[/]")
+            out += [f"[{FAINT}]  {what}[/][{BAD}]{note:>{w - len(what) - 2}}[/]"
+                    for what, note in wrong]
+        else:
+            out.append(f"[{FAINT}]{row('  scans, stages, atlas', 'all ok', w)}[/]")
+
         self.query_one("#stats", Rows).update("\n".join(out))
 
     def dice(self, d):
@@ -481,6 +471,8 @@ class Console(App):
         on = key not in self.hidden_layers
         if key == "parcels":
             self.scene.show_parcels(on)
+            # visibility alone left them stuck at whatever the last isolate set
+            self.isolate_selected()
         else:
             self.scene.set_visible(key, on)
         self.refresh_layers()
@@ -491,9 +483,13 @@ class Console(App):
         index = self.query_one("#parcels", ListView).index or 0
         d = self.results[self.subject]
         if self.listing == "parcels":
+            # row zero is "all parcels", which means nothing is singled out
+            if index == 0:
+                self.scene.unisolate()
+                return
             rows = d["atlas"]["parcels"]
-            if index < len(rows):
-                self.scene.isolate(rows[index]["parcel"])
+            if index - 1 < len(rows):
+                self.scene.isolate(rows[index - 1]["parcel"])
         else:
             top = d.get("function", [])
             if index < len(top):
@@ -516,9 +512,10 @@ class Console(App):
             panel.border_title = self.band(panel, title, len(title), ["f functions"])
             panel.border_subtitle = "click here or in the 3d"
             chips = self.chips()
-            self.row_text = [chips.get(p["parcel"], " ") + " " +
-                             row(p["parcel"], f"{bar(p['fraction'])} {p['fraction']:>4.0%}", w - 4)
-                             for p in rows]
+            self.row_text = [row("  all parcels", str(len(rows)), w)]
+            self.row_text += [chips.get(p["parcel"], " ") + " " +
+                              row(p["parcel"], f"{bar(p['fraction'])} {p['fraction']:>4.0%}", w - 4)
+                              for p in rows]
         else:
             top = d.get("function", [])
             self.query_one("#listhead", Static).update(f"functions at risk · {len(top)}")
@@ -553,6 +550,16 @@ class Console(App):
         w = max(self.query_one("#detail", Static).size.width, 30)
         if self.listing == "parcels":
             rows = d["atlas"]["parcels"]
+            if index == 0:
+                in_parcels = f"{d['atlas']['in_parcels_ml']} mL"
+                self.query_one("#detail", Static).update("\n".join(
+                    [f"[{FG}]all {len(rows)} involved parcels[/]",
+                     f"[{DIM}]{row('  in tumour', in_parcels, w)}[/]", "",
+                     f"[{FAINT}]every one at full brightness.[/]",
+                     f"[{FAINT}]pick a row to bring it forward[/]",
+                     f"[{FAINT}]and drop the rest back.[/]"]))
+                return
+            index -= 1
             if not rows or index >= len(rows):
                 return
             p = rows[index]
@@ -691,7 +698,7 @@ class Console(App):
         # each key names what it gives you, not what you are looking at
         core = (f"s {'native' if self.space == 'mni' else 'mni'} · "
                 f"o {'hide' if self.slices.overlay else 'show'} overlay")
-        return [f"pgup/pgdn slice · {core}", core]
+        return [core]
 
     def band(self, widget, left, taken, choices):
         # one border line, a label at each end, the line itself drawn between
@@ -724,9 +731,9 @@ class Console(App):
         if self.listing != "parcels":
             self.listing = "parcels"
             self.refresh_list()
-            self.call_after_refresh(self.select_row, names.index(name))
+            self.call_after_refresh(self.select_row, names.index(name) + 1)
         else:
-            self.select_row(names.index(name))
+            self.select_row(names.index(name) + 1)
 
     def select_row(self, index):
         self.query_one("#parcels", ListView).index = index
@@ -833,9 +840,6 @@ class Console(App):
                 if i < len(names):
                     self.slices.modality = names[i]
                     self.draw()
-            elif event.key in ("pageup", "pagedown"):
-                self.slices.step(2, 1 if event.key == "pageup" else -1)
-                self.draw()
 
     # ------------------------------------------------------------------ shell
 

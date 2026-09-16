@@ -314,7 +314,7 @@ LOBE = {"Frontal": (64, 82, 104), "Parietal": (56, 92, 82), "Temporal": (100, 72
         "Corpus callosum": (78, 78, 78)}
 
 
-def _ground(side, lobe, lift=0.62):
+def _ground(side, lobe, lift=0.55):
     base = LOBE.get(lobe, (78, 78, 78))
     dim = 0.6 if side == "Right" else 1.0
     return tuple(int(c * dim * lift) for c in base)
@@ -477,7 +477,7 @@ class Chart:
             if grid.sum() > 0:
                 ys, xs = np.nonzero(grid)
                 self.where[lobe] = (float(xs.mean()) * step, float(ys.mean()) * step)
-            mask = mask.resize((wide, high), Image.BILINEAR).point(lambda v: int(v * 0.78))
+            mask = mask.resize((wide, high), Image.BILINEAR).point(lambda v: int(v * 0.42))
             canvas.paste(Image.new("RGB", (wide, high), _ground(*lobe)), (0, 0), mask)
 
 
@@ -516,7 +516,7 @@ class Chart:
         font = _font(12)
         rows = sorted(self.where)
         tall = 266 + 14 * len(rows)
-        if wide < 470 or high < tall + 40:
+        if wide < 540 or high < tall + 40:
             self._scale_bar(pen, wide, high, font)
             return
         if self._key_was != (tuple(rows), tall):
@@ -529,9 +529,9 @@ class Chart:
         # nothing in it moves while the chart is panned, so draw it once
         font, small = _font(12), _font(11)
         # the top edge is inset so the title sitting on it is not clipped
-        tile = Image.new("RGB", (330, tall + 9), PANEL)
+        tile = Image.new("RGB", (400, tall + 9), PANEL)
         pen = ImageDraw.Draw(tile)
-        pen.rounded_rectangle((0, 8, 329, tall + 8), radius=6, fill=PANEL, outline=KEY_EDGE)
+        pen.rounded_rectangle((0, 8, 399, tall + 8), radius=6, fill=PANEL, outline=KEY_EDGE)
         pen.rectangle((10, 3, 46, 13), fill=PANEL)
         pen.text((14, 8), "key", fill=BRIGHT_INK, font=font, anchor="lm")
         x, y = 14, 34
@@ -539,7 +539,7 @@ class Chart:
         pen.text((x, y), "one dot, one parcel", fill=INK, font=small, anchor="lm")
         y += 17
         for color, text in ((NODE_IN, "the tumour overlaps it"),
-                            (NODE_OUT, "no overlap, connected to one"),
+                            (NODE_OUT, "outside it, connected to a parcel it overlaps"),
                             (NODE_TUMOUR, "the tumour mass itself")):
             pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=color)
             pen.text((x + 21, y), text, fill=FAINT_INK, font=font, anchor="lm")

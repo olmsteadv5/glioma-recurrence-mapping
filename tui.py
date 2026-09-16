@@ -332,7 +332,7 @@ class Console(App):
     BINDINGS = [
         ("q", "quit", "quit"), ("v", "view", "3d/slices"), ("s", "space", "native/mni"),
         ("p", "palette", "colors"), ("t", "shell", "prompt"),
-        ("x", "cancel", "cancel run"), Binding("h", "home", "reset", show=False),
+        ("x", "cancel", "cancel run"),
         Binding("a", "show_list('parcels')", "parcels", show=False),
         Binding("b", "show_list('functions')", "functions", show=False),
         Binding("c", "show_list('connectivity')", "connectivity", show=False),
@@ -943,7 +943,7 @@ class Console(App):
             viewer.border_title = (f"graph · {len(self.chart.inside)} in the tumour "
                                    f"· {len(self.chart.nodes) - len(self.chart.inside)} "
                                    f"connected")
-            viewer.border_subtitle = keyed("v 3d \u00b7 drag pan \u00b7 scroll zoom \u00b7 h reset")
+            viewer.border_subtitle = keyed("v 3d \u00b7 click the mass to reset")
         else:
             for which in render.Slices.PLANES:
                 pane = self.query_one(f"#p-{which}", Pane)
@@ -1046,7 +1046,15 @@ class Console(App):
         cell = get_cell_size()
         at = self.chart.pick(column * cell.width + cell.width // 2,
                              line * cell.height + cell.height // 2)
-        name = None if at is None else self.chart.name(at)
+        if at is None:
+            return
+        if at == len(self.chart.screen) - 1:
+            # the mass is the one node that is not a parcel, so it clears
+            self.chart.home()
+            self.chart.focus(None)
+            self.draw()
+            return
+        name = self.chart.name(at)
         if name is None:
             return
         names = [r["parcel"] for r in self.parcel_rows]
@@ -1213,11 +1221,6 @@ class Console(App):
         dest = out_dir(self.subject) / f"{self.subject}_{kind}_{stamp}.png"
         image.save(dest)
         self.log_write(f"[{OK}]wrote {dest.name}[/] [{FAINT}]{image.size[0]}x{image.size[1]}[/]")
-
-    def action_home(self):
-        if self.mode == "graph" and self.chart is not None:
-            self.chart.home()
-            self.draw()
 
     def action_shell(self):
         self.set_focus(self.query_one("#cmd"))

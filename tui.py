@@ -364,7 +364,7 @@ class Console(App):
             self.subject_rows[n] = name
             patient = name[10:15]
             # later timepoints of the same patient hang off the first one
-            label = name[10:] if patient not in seen else f"  \u21b3 _{name[16:]}"
+            label = name[10:] if patient not in seen else f"\u21b3 _{name[16:]}"
             seen.add(patient)
             left = ("\u203a " if here else "  ") + label
             right = "%3dp %7.0f mL" % (len(a["parcels"]), a["tumour_ml"])

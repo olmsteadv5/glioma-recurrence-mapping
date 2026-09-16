@@ -177,8 +177,10 @@ combined shape only when none of the parts is on, so the two can never wash
 each other out.
 
 For a patient with two timepoints, a rule at the bottom of the layers divides
-off three more: what both scans have, what is new in the later one, and what
-has gone since the first. They are computed in MNI, the only frame the two
+off three more: what both scans have in cream, what is new in the later one in
+red, and what has gone since the first in green. They draw the same tissue the
+tumour layers do, so the two groups are exclusive: ticking one of these unticks
+the tumour, and ticking the tumour unticks these. They are computed in MNI, the only frame the two
 share, and they are the shapes behind the Dice in `changes`.
 
 Every layer draws in both views. The margin is an outline on the slices and the

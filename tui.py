@@ -50,9 +50,9 @@ LAYERS = [("T:margin", "margin 2 cm", "#b16286", 0),
           ("tracts", "tracts crossing", "#689d6a", 0),
           ("shell", "brain surface", "#a89984", 0),
           ("--", "", "", 0),
-          ("C:both", "both timepoints", "#a89984", 0),
+          ("C:both", "both timepoints", "#ebdbb2", 0),
           ("C:new", "new in the later", "#fb4934", 0),
-          ("C:gone", "gone since the first", "#b8bb26", 0)]
+          ("C:gone", "gone since the first", "#8ec07c", 0)]
 # WT, TC and ET are unions of the tissue classes, so they are deliberately left
 # uncolored: any class color on them reads as "this row is that tissue"
 ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
@@ -634,17 +634,21 @@ class Console(App):
         key = self.layer_rows[row_index][0]
         if key == "--":
             return
+        tumour = {"T:WT", *PARTS}
+        change = {k for k, *_ in LAYERS if k.startswith("C:")}
         if key == "T:WT":
             # the parent carries its parts with it
-            group = {"T:WT", *PARTS}
             if key in self.hidden_layers:
-                self.hidden_layers -= group
+                self.hidden_layers -= tumour
             else:
-                self.hidden_layers |= group
+                self.hidden_layers |= tumour
         else:
             self.hidden_layers ^= {key}
             if key in PARTS and key not in self.hidden_layers:
                 self.hidden_layers.discard("T:WT")
+        # the two groups draw the same tissue, so only one of them at a time
+        if key not in self.hidden_layers:
+            self.hidden_layers |= change if key in tumour else tumour
         if key == "T:margin" and key not in self.hidden_layers:
             self.scene.ensure_margin()
         if key.startswith("C:") and key not in self.hidden_layers:

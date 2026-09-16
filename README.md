@@ -109,8 +109,8 @@ zooms, or an ITK-SNAP style 2x2 of axial, coronal and sagittal with a cursor
 readout. Clicking or dragging in any plane moves the crosshair in all three.
 
 The modality strip sits in the viewer's bottom border, away from the other
-controls on the right. Press `1` to `4` or click it. The one in use is bright,
-one the current space does not carry is greyed.
+controls on the right. Press `1` to `4` or click it. The number of the one in
+use is bright, and anything the current space does not carry is greyed.
 
 ```
 v  3d / slices          p  parcel colouring     t  focus the prompt

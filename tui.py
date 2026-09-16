@@ -490,7 +490,7 @@ class Console(App):
                     which, (max(size.width * cell.width, 32), max(size.height * cell.height, 32)))
             self.refresh_readout()
             r = self.slices.readout()
-            viewer.border_title = f"slices · {r['space']} · {r['modality']}"
+            viewer.border_title = f"slices · {r['space']}"
             strip, taken = self.modality_strip()
             viewer.styles.border_subtitle_align = "left"
             viewer.border_subtitle = strip + self.hint(
@@ -515,9 +515,11 @@ class Console(App):
             if out:
                 out.append(" " * Viewer.SPACING)
                 x += Viewer.SPACING
+            # only the number carries the state, the way the footer keys do
             label = f"{i} {name}"
-            style = FG if name == r["modality"] else DIM if name in r["modalities"] else GONE
-            out.append(f"[{style}]{label}[/]")
+            here = name in r["modalities"]
+            key = FG if name == r["modality"] else FAINT if here else GONE
+            out.append(f"[{key}]{i}[/] [{DIM if here else GONE}]{name}[/]")
             self.modality_spans.append((x, x + len(label)))
             x += len(label)
         return "".join(out), x - Viewer.MARGIN

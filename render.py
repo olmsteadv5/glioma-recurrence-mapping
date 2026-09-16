@@ -13,13 +13,13 @@ from paths import LABELS, MNI, MODALITIES, modality, out_dir, stripped_dir
 
 pv.OFF_SCREEN = True
 
-BG = "#141414"
-SHELL = (143, 141, 135)
+BG = "#282828"
+SHELL = (168, 153, 132)
 TRACT = (95, 155, 114)
 TISSUE = {1: (242, 193, 78), 2: (63, 167, 214), 3: (228, 87, 46), 4: (142, 125, 190)}
-CROSS = (191, 168, 127)
+CROSS = (250, 189, 47)
 _hex = lambda t: "#%02x%02x%02x" % tuple(t)
-PANEL = (20, 20, 20)
+PANEL = (40, 40, 40)
 
 
 def fit(image, size, background=PANEL):
@@ -54,7 +54,7 @@ class Scene:
 
         for name in involved[:top]:
             i = index[name]
-            actor = self._mesh(surf[i].vertices, surf[i].faces, _hex(colours[i]), 0.95)
+            actor = self._mesh(surf[i].vertices, surf[i].faces, _hex(colours[i]), 1.0)
             self.actors["P:" + name] = actor
             self.parcel_actors[name] = actor
 
@@ -120,11 +120,11 @@ class Scene:
     def isolate(self, name):
         # dim every parcel except one, for hover
         for other, actor in self.parcel_actors.items():
-            actor.prop.opacity = 0.95 if other == name else 0.08
+            actor.prop.opacity = 1.0 if other == name else 0.06
 
     def unisolate(self):
         for actor in self.parcel_actors.values():
-            actor.prop.opacity = 0.95
+            actor.prop.opacity = 1.0
 
     def recolour(self, palette):
         self.palette = palette

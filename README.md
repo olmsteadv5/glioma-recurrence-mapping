@@ -58,23 +58,35 @@ to pick which colouring it opens with.
 ./tui.py
 ```
 
-Four panels: subjects and scans, a viewer, the pipeline log, and a breakdown.
+Four panels: the inputs down the left, a viewer, a breakdown on the right, and
+the pipeline along the bottom.
+
+The pipeline panel is a real prompt. Press `t` or click it, type a command,
+press enter. Up and down walk the history, escape gives the keyboard back.
+
+```
+./main.py 36 42    segment and map those subjects
+./view.py 36       open the browser view
+cancel             stop the running job
+clear              clear the log
+help               list the commands
+```
 
 The viewer is either the 3D atlas, where dragging rotates and the scroll wheel
 zooms, or an ITK-SNAP style 2x2 of axial, coronal and sagittal with a cursor
 readout. Clicking or dragging in any plane moves the crosshair in all three.
 
 The breakdown has the layers with their volumes, clickable to show and hide,
-shell opacity, and a list of either the involved parcels or the functions at
-risk. Moving through the parcel list dims everything else in the 3D so you can
-see where that parcel is; enter hides it. The panel underneath shows the
-selected parcel's anatomy and its Parcelsynth terms.
+and a list of either the involved parcels or the functions at risk. Moving
+through the parcel list dims everything else in the 3D so you can see where
+that parcel is; enter hides it. The panel underneath shows the selected
+parcel's anatomy and its Parcelsynth terms.
 
 ```
-v  3d / slices          p  parcel colouring     r  run pipeline
-s  native / mni         f  parcels / functions  c  cancel
-o  segmentation overlay h  reset view           [ ]  shell opacity
-1-4  modality           pgup/pgdn  step slice   q  quit
+v  3d / slices          p  parcel colouring     t  focus the prompt
+s  native / mni         f  parcels / functions  c  cancel the run
+o  segmentation overlay h  reset view           q  quit
+1-4  modality           pgup/pgdn  step slice
 ```
 
 **kitty only.** It draws images with kitty's graphics protocol, which no other
@@ -126,6 +138,9 @@ register.py    SRI24 to MNI152
 atlas.py       atlas volume, meshes, parcel overlap
 tracts.py      tract centrelines
 view.py        3D view, also runnable on its own
+tui.py         terminal UI
+render.py      offscreen 3D and slice images for the TUI
+function.py    Parcelsynth terms
 paths.py       shared paths
 ```
 

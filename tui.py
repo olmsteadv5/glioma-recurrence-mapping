@@ -5,33 +5,52 @@ import asyncio
 import json
 import os
 import re
+import subprocess
 import sys
 
 from textual import events, on, work
 from textual.app import App, ComposeResult
-from textual.containers import Grid, Vertical
-from textual.widgets import Footer, Label, ListItem, ListView, RichLog, Static
+from textual.containers import Grid, Horizontal, Vertical
+from textual.widgets import Footer, Input, Label, ListItem, ListView, RichLog, Static
 from textual_image._terminal import get_cell_size
 from textual_image.renderable import Image as Renderable
 from textual_image.widget import Image as ImageWidget
 
 import function
 import render
-from paths import MODALITIES, RESULTS, ROOT, stripped_dir, subject_id
+from paths import ATLAS_INPUT, MODALITIES, RESULTS, ROOT, stripped_dir, subject_id
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\r")
 
-ACCENT, DIM, FAINT = "#bfa87f", "#8d8b85", "#5b5a56"
+# gruvbox dark, the same values btop reads out of gruvbox_dark_v2.theme
+FG, DIM, FAINT = "#ebdbb2", "#a89984", "#7c6f64"
+OK, WARN, BAD = "#b8bb26", "#fabd2f", "#fb4934"
+SHELL_OPACITY = 0.15
+
 LAYERS = [("T:NETC", "NETC necrosis", "#f2c14e"), ("T:SNFH", "SNFH oedema", "#3fa7d6"),
-          ("T:ET", "ET enhancing", "#e4572e"), ("tracts", "tracts crossing", "#5f9b72"),
-          ("shell", "atlas shell", "#8f8d87")]
-ATLAS_FILES = [("YBA_696.nii", "696"), ("parcel_dict.csv", "ok"),
-               ("parcelsynth.csv", "334"), ("top5k_tracts.obj", "3001")]
+          ("T:ET", "ET enhancing", "#e4572e"), ("tracts", "tracts crossing", "#689d6a"),
+          ("shell", "atlas shell", "#a89984")]
+ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
+               ("YBA_696.glb", "meshes", "glb"),
+               ("top5k_tracts_decimated.obj", "tracts", "3001"),
+               ("parcelsynth_activations_functionalterms.csv", "parcelsynth", "334"),
+               ("structuralconnectivity_metrics_mean.csv", "connectivity", "696²")]
+IDLE = "type a command · esc leaves · t returns"
+HELP = ["main.py <n>...   segment and map a subject",
+        "view.py <n>      open the browser view",
+        "cancel           stop the running job",
+        "clear            clear this log"]
 
 
 def bar(fraction, n=10):
     filled = round(max(0.0, min(1.0, fraction)) * n)
     return "█" * filled + "░" * (n - filled)
+
+
+def row(left, right, width=30):
+    # One list line with the right column flush to the edge.
+    room = width - len(right)
+    return f"{left[:room]:<{room}}{right}"
 
 
 class Canvas(ImageWidget, Renderable=Renderable):
@@ -88,44 +107,82 @@ class Pane(ImageWidget, Renderable=Renderable):
 class Rows(Static):
     # Click-addressable list; the app decides what a row click means.
 
-    def __init__(self, handler, **kwargs):
+    def __init__(self, handler=None, **kwargs):
         super().__init__("", **kwargs)
         self.handler = handler
 
     def on_click(self, event):
-        self.handler(event.y)
+        if self.handler:
+            self.handler(event.y)
+
+
+class Prompt(Input):
+    # Escape gives the keyboard back, up and down walk the history.
+    BINDINGS = [("escape", "leave", "leave the shell")]
+
+    def action_leave(self):
+        self.app.leave_shell()
+
+    def on_key(self, event):
+        if event.key == "escape":
+            self.app.leave_shell()
+        elif event.key == "up":
+            self.app.recall(-1)
+        elif event.key == "down":
+            self.app.recall(1)
+        else:
+            return
+        event.stop()
+        event.prevent_default()
 
 
 class Console(App):
     CSS = """
-    Screen { layout: horizontal; background: #141414; }
-    .box { border: round #31312f; border-title-color: #bfa87f;
-           border-title-style: bold; border-subtitle-color: #5b5a56; }
-    #inputs { width: 32; }
-    #mid { width: 1fr; }
+    Screen { background: #282828; }
+    #top { height: 1fr; }
+    .box { border: round #a89984; border-title-color: #ebdbb2;
+           border-title-style: bold; border-subtitle-color: #7c6f64;
+           background: #282828; padding: 0; }
+    .card { border: round #665c54; border-title-color: #a89984;
+            height: auto; padding: 0 1; background: #282828; }
+    #inputs { width: 34; padding: 0; overflow-y: auto; overflow-x: hidden;
+              scrollbar-size-vertical: 1; }
+    #viewer { width: 1fr; }
     #right { width: 46; }
-    #viewer { height: 1fr; }
-    #log { height: 10; background: #141414; }
     #grid { layout: grid; grid-size: 2 2; grid-gutter: 0; height: 1fr; }
     #canvas { height: 1fr; }
-    .pane { height: 1fr; border: round #262624; border-title-color: #8d8b85; }
-    #readout { height: 1fr; border: round #262624; border-title-color: #8d8b85; padding: 0 1; }
-    .title { color: #bfa87f; text-style: bold; }
-    .dim { color: #8d8b85; }
-    #subjects { height: auto; padding: 0 1; }
+    .pane { height: 1fr; border: round #504945; border-title-color: #a89984; }
+    #readout { height: 1fr; border: round #504945; border-title-color: #a89984;
+               padding: 0 1; }
+    #shell { height: 14; }
+    #shell:focus-within { border: round #fabd2f; }
+    #log { height: 1fr; background: #282828; scrollbar-size-vertical: 1;
+           padding: 0 1; }
+    #line { height: 1; padding: 0 1; }
+    #sigil { width: 2; color: #b8bb26; text-style: bold; }
+    #cmd { border: none; height: 1; padding: 0; background: #282828; color: #ebdbb2; }
+    #cmd:focus { border: none; background: #32302f; }
     #layers { height: auto; padding: 0 1; }
-    #parcels { height: 1fr; background: #141414; }
-    ListItem { background: #141414; padding: 0 1; }
-    ListItem.--highlight { background: #262420; }
-    #detail { height: 13; border-top: solid #31312f; padding: 0 1; }
-    #listhead { height: 1; padding: 0 1; }
+    #parcels { height: 1fr; background: #282828; scrollbar-size-vertical: 1; }
+    ListItem { background: #282828; padding: 0 1; }
+    ListItem.--highlight { background: #32302f; color: #d3869b; }
+    #detail { height: 13; border-top: solid #504945; padding: 0 1; }
+    #listhead { height: 1; padding: 0 1; color: #ebdbb2; text-style: bold;
+                border-top: solid #504945; }
+    #inputs, #log, #parcels {
+        scrollbar-background: #282828; scrollbar-color: #504945;
+        scrollbar-background-hover: #282828; scrollbar-color-hover: #7c6f64;
+        scrollbar-background-active: #282828; scrollbar-color-active: #a89984; }
+    Footer { background: #282828; }
+    FooterKey { background: #282828; }
+    FooterKey .footer-key--key { color: #cc241d; background: #282828; }
+    FooterKey .footer-key--description { color: #a89984; background: #282828; }
     """
     BINDINGS = [
         ("q", "quit", "quit"), ("v", "view", "3d/slices"), ("s", "space", "native/mni"),
         ("p", "palette", "palette"), ("f", "listing", "parcels/functions"),
         ("o", "overlay", "overlay"), ("h", "home", "reset"),
-        ("bracketleft", "dimmer", "shell -"), ("bracketright", "brighter", "shell +"),
-        ("r", "run", "run"), ("c", "cancel", "cancel"),
+        ("t", "shell", "terminal"), ("c", "cancel", "cancel"),
     ]
 
     def __init__(self):
@@ -134,16 +191,20 @@ class Console(App):
         self.subjects = sorted(self.results)
         self.subject = self.subjects[0] if self.subjects else None
         self.mode, self.space, self.palette, self.listing = "3d", "native", "contrast", "parcels"
-        self.shell_opacity = 0.15
         self.scene = self.slices = self.proc = self._timer = None
         self.hidden_layers, self.hidden_parcels, self.subject_rows = set(), set(), {}
+        self.history, self.hpos = [], 0
+        self._panel_width = self._list_width = 0
 
     # ---------------------------------------------------------------- compose
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="inputs", classes="box"):
-            yield Rows(self.click_subject, id="subjects")
-        with Vertical(id="mid"):
+        with Horizontal(id="top"):
+            with Vertical(id="inputs"):
+                yield Rows(self.click_subject, id="subjects", classes="card")
+                yield Rows(id="tumour", classes="card")
+                yield Rows(id="scans", classes="card")
+                yield Rows(id="atlasfiles", classes="card")
             with Vertical(id="viewer", classes="box"):
                 yield Canvas(id="canvas")
                 with Grid(id="grid"):
@@ -151,29 +212,36 @@ class Console(App):
                     yield Pane("coronal", id="p-coronal", classes="pane")
                     yield Pane("sagittal", id="p-sagittal", classes="pane")
                     yield Static("", id="readout")
-            yield RichLog(id="log", wrap=True, markup=True, highlight=False, classes="box")
-        with Vertical(id="right", classes="box"):
-            yield Rows(self.click_layer, id="layers")
-            yield Static("", id="listhead", classes="title")
-            yield ListView(id="parcels")
-            yield Static("", id="detail")
+            with Vertical(id="right", classes="box"):
+                yield Rows(self.click_layer, id="layers")
+                yield Static("", id="listhead")
+                yield ListView(id="parcels")
+                yield Static("", id="detail")
+        with Vertical(id="shell", classes="box"):
+            yield RichLog(id="log", wrap=True, markup=True, highlight=False)
+            with Horizontal(id="line"):
+                yield Static("$", id="sigil")
+                yield Prompt(id="cmd", placeholder="./main.py 36")
         yield Footer()
 
     def on_mount(self):
         self.query_one("#grid").display = False
-        self.query_one("#inputs").border_title = "inputs"
-        self.query_one("#inputs").border_subtitle = "click a subject"
-        self.query_one("#log").border_title = "pipeline"
-        self.query_one("#log").border_subtitle = "r run · c cancel"
+        for widget, title in [("#subjects", "subjects"), ("#tumour", "tumour"),
+                              ("#scans", "scans"), ("#atlasfiles", "atlas")]:
+            self.query_one(widget).border_title = title
+        self.query_one("#shell").border_title = "pipeline"
+        self.query_one("#shell").border_subtitle = IDLE
         self.query_one("#right").border_title = "breakdown"
         self.query_one("#right").border_subtitle = "f parcels/functions · p palette"
         self.query_one("#readout").border_title = "cursor"
-        self.log_write(f"[{ACCENT}]{len(self.results)} subjects[/] from {RESULTS}")
+        self.log_write(f"[{DIM}]{len(self.results)} subjects in {RESULTS.name}. "
+                       f"type help for commands.[/]")
         if not os.environ.get("TERM", "").startswith("xterm-kitty"):
-            self.log_write("[#f2c14e]not kitty: images will render as text blocks[/]")
+            self.log_write(f"[{WARN}]not kitty: images will render as text blocks[/]")
         if self.subject:
             self.load_subject(self.subject)
             self.call_after_refresh(self.draw)
+        self.set_focus(self.query_one("#parcels"))
 
     def log_write(self, text):
         self.query_one("#log", RichLog).write(text)
@@ -190,51 +258,59 @@ class Console(App):
         self.subject = subject
         self.hidden_layers, self.hidden_parcels = set(), set()
         overlap = self.results[subject]["atlas"]
-        self.log_write(f"loading {subject}")
         self.scene = render.Scene(subject, overlap, palette=self.palette)
-        self.scene.set_opacity("shell", self.shell_opacity)
+        self.scene.set_opacity("shell", SHELL_OPACITY)
         self.slices = render.Slices(subject, self.space)
         self.refresh_inputs()
         self.refresh_layers()
         self.refresh_list()
         self.draw()
 
+    def panel_width(self):
+        # The cards lose a column whenever the side scrollbar appears.
+        width = self.query_one("#subjects", Rows).size.width
+        return width if width > 12 else 28
+
     def refresh_inputs(self):
-        out, row = [], 0
+        w = self._panel_width = self.panel_width()
+        out = []
         self.subject_rows = {}
-        out.append(f"[{ACCENT}]subjects[/]"); row += 1
-        for s in self.subjects:
-            d = self.results[s]
-            a = d["atlas"]
+        for n, s in enumerate(self.subjects):
+            a = self.results[s]["atlas"]
             here = s == self.subject
-            mark = "›" if here else " "
-            style = ACCENT if here else DIM
-            self.subject_rows[row] = s
-            out.append(f"[{style}]{mark} {s.replace('UPENN-GBM-', ''):<11}{a['tumour_ml']:>7.0f} mL[/]")
-            row += 1
-            note = (f"dice {d['dice']['WT']}" if d.get("dice") else "no reference")
-            self.subject_rows[row] = s
-            out.append(f"[{FAINT}]    {len(a['parcels'])} parcels · {note}[/]")
-            row += 1
+            self.subject_rows[n] = s
+            left = ("› " if here else "  ") + s[10:]
+            right = "%3dp %7.0f mL" % (len(a["parcels"]), a["tumour_ml"])
+            out.append(f"[{FG if here else DIM}]{row(left, right, w)}[/]")
+        self.query_one("#subjects", Rows).update("\n".join(out))
 
         d = self.results[self.subject]
         r = d["regions_ml"]
-        out += ["", f"[{ACCENT}]tumour[/]",
-                f"[{DIM}] WT {r['WT']:>8} mL[/]", f"[{DIM}] TC {r['TC']:>8} mL[/]",
-                f"[{DIM}] ET {r['ET']:>8} mL[/]",
-                f"[{FAINT}] {d['atlas']['in_parcels_ml']} mL in parcels[/]"]
-        out += ["", f"[{ACCENT}]scans[/]"]
+        lines = [f"[{DIM}]{row(name, f'{r[name]} mL', w)}[/]" for name in ("WT", "TC", "ET")]
+        in_parcels = f"{d['atlas']['in_parcels_ml']} mL"
+        lines.append(f"[{FAINT}]{row('in parcels', in_parcels, w)}[/]")
+        dice = f"{d['dice']['WT']:.2f}" if d.get("dice") else "no reference"
+        lines.append(f"[{FAINT}]{row('dice WT', dice, w)}[/]")
+        self.query_one("#tumour", Rows).update("\n".join(lines))
+
+        lines = []
         for m in MODALITIES:
             ok = (stripped_dir(self.subject) / f"{self.subject}_{m}.nii.gz").exists()
-            out.append(f"[{DIM}] {m:<7}[/][{ACCENT if ok else FAINT}]"
-                       f"{'stripped' if ok else 'missing':>12}[/]")
-        out += ["", f"[{ACCENT}]atlas[/]"]
-        for name, note in ATLAS_FILES:
-            out.append(f"[{DIM}] {name:<18}[/][{FAINT}]{note:>6}[/]")
-        self.query_one("#subjects", Rows).update("\n".join(out))
+            state = "stripped" if ok else "missing"
+            lines.append(f"[{DIM}]{m}[/][{OK if ok else BAD}]"
+                         f"{state:>{w - len(m)}}[/]")
+        self.query_one("#scans", Rows).update("\n".join(lines))
 
-    def click_subject(self, row):
-        chosen = self.subject_rows.get(row)
+        lines = []
+        for name, label, note in ATLAS_FILES:
+            have = (ATLAS_INPUT / name).exists()
+            state = note if have else "missing"
+            lines.append(f"[{DIM if have else FAINT}]{label}[/]"
+                         f"[{FAINT if have else BAD}]{state:>{w - len(label)}}[/]")
+        self.query_one("#atlasfiles", Rows).update("\n".join(lines))
+
+    def click_subject(self, row_index):
+        chosen = self.subject_rows.get(row_index)
         if chosen and chosen != self.subject:
             self.load_subject(chosen)
 
@@ -242,21 +318,19 @@ class Console(App):
 
     def refresh_layers(self):
         out = []
+        w = max(self.query_one("#layers", Rows).size.width, 30)
         volumes = self.results[self.subject]["labels_ml"]
         for key, name, colour in LAYERS:
             on = key not in self.hidden_layers
             value = volumes.get(key.split(":")[-1])
             value = f"{value} mL" if value else ""
-            style = colour if on else FAINT
-            out.append(f"[{style}]{'[×]' if on else '[ ]'}[/] "
-                       f"[{DIM if on else FAINT}]{name:<17}{value:>9}[/]")
-        pct = int(self.shell_opacity * 100)
-        out.append(f"[{FAINT}]shell[/] [{DIM}]{bar(self.shell_opacity)}[/] [{FAINT}]{pct:>3}%[/]")
+            out.append(f"[{colour if on else FAINT}]{'[×]' if on else '[ ]'}[/] "
+                       f"[{DIM if on else FAINT}]{row(name, value, w - 4)}[/]")
         self.query_one("#layers", Rows).update("\n".join(out))
 
-    def click_layer(self, row):
-        if 0 <= row < len(LAYERS):
-            key = LAYERS[row][0]
+    def click_layer(self, row_index):
+        if 0 <= row_index < len(LAYERS):
+            key = LAYERS[row_index][0]
             self.hidden_layers ^= {key}
             self.scene.set_visible(key, key not in self.hidden_layers)
             self.refresh_layers()
@@ -269,22 +343,23 @@ class Console(App):
         d = self.results[self.subject]
         listing = self.query_one("#parcels", ListView)
         listing.clear()
+        w = max(listing.size.width - 3, 34)
         if self.listing == "parcels":
             rows = d["atlas"]["parcels"]
             self.query_one("#listhead", Static).update(f"parcels involved · {len(rows)}")
             for p in rows:
                 on = p["parcel"] not in self.hidden_parcels
                 style = "" if on else f"[{FAINT}]"
-                listing.append(ListItem(Label(
-                    f"{style}{'[×]' if on else '[ ]'} {p['parcel']:<11}"
-                    f"{bar(p['fraction'])} {p['fraction']:>4.0%}")))
+                left = f"{'[×]' if on else '[ ]'} {p['parcel']}"
+                right = f"{bar(p['fraction'])} {p['fraction']:>4.0%}"
+                listing.append(ListItem(Label(style + row(left, right, w))))
         else:
             top = d.get("function", [])
             self.query_one("#listhead", Static).update(f"functions at risk · {len(top)}")
             peak = max((f["score"] for f in top), default=1)
             for f in top:
-                listing.append(ListItem(Label(
-                    f" {f['term']:<16}{bar(f['score'] / peak)} {f['score']:>5.2f}")))
+                right = f"{bar(f['score'] / peak)} {f['score']:>5.2f}"
+                listing.append(ListItem(Label(row(" " + f["term"], right, w))))
         self.refresh_detail(0)
 
     def refresh_detail(self, index):
@@ -294,7 +369,7 @@ class Console(App):
             if not rows or index >= len(rows):
                 return
             p = rows[index]
-            lines = [f"[{ACCENT}]{p['long_name'][:42]}[/]",
+            lines = [f"[{FG}]{p['long_name'][:42]}[/]",
                      f"[{FAINT}]{p['lobe']} · {p['gyrus'][:26]}[/]",
                      f"[{DIM}]{p['in_tumour_ml']} of {p['parcel_ml']} mL · {p['tissue']}[/]", ""]
             terms = function.for_parcel(p["parcel"], 6)
@@ -306,7 +381,7 @@ class Console(App):
             if not top or index >= len(top):
                 return
             f = top[index]
-            lines = [f"[{ACCENT}]{f['term']}[/]",
+            lines = [f"[{FG}]{f['term']}[/]",
                      f"[{DIM}]weighted score {f['score']}[/]", "",
                      f"[{FAINT}]summed over the involved parcels,[/]",
                      f"[{FAINT}]each weighted by how much of it[/]",
@@ -346,6 +421,15 @@ class Console(App):
     def draw(self):
         if not self.scene:
             return
+        if self.panel_width() != self._panel_width:
+            self.refresh_inputs()
+            self.refresh_layers()
+        listing = self.query_one("#parcels", ListView)
+        if listing.size.width != self._list_width:
+            self._list_width = listing.size.width
+            index = listing.index
+            self.refresh_list()
+            listing.index = index
         cell = get_cell_size()
         viewer = self.query_one("#viewer")
         if self.mode == "3d":
@@ -372,7 +456,7 @@ class Console(App):
         lines = [f"[{FAINT}]{r['coord_space']}[/]",
                  f"[{DIM}]{r['coords'] if r['coords'] else '—'}[/]", "",
                  f"[{FAINT}]voxel[/]", f"[{DIM}]{r['voxel']}[/]", "",
-                 f"[{FAINT}]label[/]", f"[{ACCENT}]{r['label']}[/]", "",
+                 f"[{FAINT}]label[/]", f"[{FG}]{r['label']}[/]", "",
                  f"[{FAINT}]intensity[/]", f"[{DIM}]{r['intensity']}[/]", "",
                  f"[{FAINT}]{'  '.join(f'{i+1} {m}' for i, m in enumerate(r['modalities']))}[/]"]
         self.query_one("#readout", Static).update("\n".join(lines))
@@ -403,7 +487,6 @@ class Console(App):
     def action_space(self):
         self.space = "mni" if self.space == "native" else "native"
         self.slices.load(self.space)
-        self.log_write(f"slices now {self.space}")
         if self.mode == "slices":
             self.draw()
 
@@ -430,17 +513,8 @@ class Console(App):
             self.scene.unisolate()
             self.draw()
 
-    def _shell(self, delta):
-        self.shell_opacity = max(0.0, min(1.0, self.shell_opacity + delta))
-        self.scene.set_opacity("shell", self.shell_opacity)
-        self.refresh_layers()
-        self.draw()
-
-    def action_dimmer(self):
-        self._shell(-0.05)
-
-    def action_brighter(self):
-        self._shell(0.05)
+    def action_shell(self):
+        self.set_focus(self.query_one("#cmd"))
 
     def on_key(self, event: events.Key):
         if self.mode == "slices" and self.slices:
@@ -454,37 +528,107 @@ class Console(App):
                 self.slices.step(2, 1 if event.key == "pageup" else -1)
                 self.draw()
 
-    # --------------------------------------------------------------- pipeline
+    # ------------------------------------------------------------------ shell
 
-    def action_run(self):
-        if self.proc:
-            self.log_write("[#f2c14e]already running[/]")
+    def leave_shell(self):
+        self.set_focus(self.query_one("#parcels"))
+
+    def recall(self, delta):
+        if not self.history:
             return
-        self.run_pipeline(int(self.subject.split("-")[2].split("_")[0]))
+        self.hpos = max(0, min(len(self.history), self.hpos + delta))
+        field = self.query_one("#cmd", Prompt)
+        field.value = self.history[self.hpos] if self.hpos < len(self.history) else ""
+        field.cursor_position = len(field.value)
+
+    @on(Input.Submitted, "#cmd")
+    def submit(self, event):
+        line = event.value.strip()
+        field = self.query_one("#cmd", Prompt)
+        field.value = ""
+        self.log_write(f"[{OK}]$[/] [{FG}]{line}[/]")
+        if not line:
+            return
+        self.history.append(line)
+        self.hpos = len(self.history)
+        self.execute(line)
+
+    def execute(self, line):
+        parts = line.split()
+        name = parts[0].lstrip("./")
+        numbers = []
+        for arg in parts[1:]:
+            if not arg.isdigit():
+                self.log_write(f"[{BAD}]{arg}: expected a subject number[/]")
+                return
+            numbers.append(int(arg))
+
+        if name in ("main.py", "main"):
+            if not numbers:
+                self.log_write(f"[{BAD}]usage: ./main.py <subject numbers>[/]")
+            elif self.proc:
+                self.log_write(f"[{WARN}]a job is already running, cancel it first[/]")
+            else:
+                self.run_pipeline(numbers)
+        elif name in ("view.py", "view"):
+            self.open_view(numbers)
+        elif name in ("cancel", "stop"):
+            self.action_cancel()
+        elif name == "clear":
+            self.query_one("#log", RichLog).clear()
+        elif name in ("quit", "exit"):
+            self.exit()
+        elif name == "help":
+            for text in HELP:
+                self.log_write(f"[{DIM}]{text}[/]")
+        else:
+            self.log_write(f"[{BAD}]{name}: not a command. try help.[/]")
+
+    def open_view(self, numbers):
+        wanted = subject_id(numbers[0]) if numbers else self.subject
+        if wanted not in self.results:
+            self.log_write(f"[{BAD}]{wanted} has no results yet[/]")
+            return
+        self.log_write(f"[{DIM}]opening {wanted} in the browser[/]")
+        subprocess.Popen([sys.executable, "view.py", wanted.split("-")[2].split("_")[0]],
+                         cwd=str(ROOT), stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
 
     def action_cancel(self):
         if self.proc:
             self.proc.terminate()
-            self.log_write("[#f2c14e]cancelled[/]")
+            self.log_write(f"[{WARN}]cancelled[/]")
+        else:
+            self.log_write(f"[{FAINT}]nothing running[/]")
+
+    def busy(self, note):
+        self.query_one("#shell").border_subtitle = note
 
     @work(exclusive=True)
-    async def run_pipeline(self, number):
-        self.log_write(f"[{ACCENT}]./main.py {number}[/]")
+    async def run_pipeline(self, numbers):
+        self.busy("running · c cancels")
         # rich draws a live spinner that becomes escape-code debris in a log widget
         env = {**os.environ, "TERM": "dumb", "NO_COLOR": "1", "PYTHONUNBUFFERED": "1"}
         self.proc = await asyncio.create_subprocess_exec(
-            sys.executable, "main.py", str(number), cwd=str(ROOT), env=env,
+            sys.executable, "main.py", *[str(n) for n in numbers], cwd=str(ROOT), env=env,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
-        async for line in self.proc.stdout:
-            text = ANSI.sub("", line.decode(errors="replace")).rstrip()
+        async for raw in self.proc.stdout:
+            text = ANSI.sub("", raw.decode(errors="replace")).rstrip()
             if text:
-                self.log_write(text)
-        await self.proc.wait()
+                self.log_write(f"[{DIM}]{text}[/]")
+        code = await self.proc.wait()
         self.proc = None
+        self.busy(IDLE)
+        if code < 0:
+            self.log_write(f"[{WARN}]stopped[/]")
+            return
+        if code != 0:
+            self.log_write(f"[{BAD}]exited {code}[/]")
+            return
         self.results = json.loads(RESULTS.read_text())
         self.subjects = sorted(self.results)
-        self.log_write("[#86a186]done[/]")
-        self.load_subject(subject_id(number))
+        self.log_write(f"[{OK}]done[/]")
+        self.load_subject(subject_id(numbers[-1]))
 
 
 if __name__ == "__main__":

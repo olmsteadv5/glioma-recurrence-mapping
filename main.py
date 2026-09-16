@@ -29,28 +29,42 @@ def process(number, first="fetch", timepoint=1, was=None):
     started = time.time()
     at = STAGES.index(first)
     subject = subject_id(number, timepoint)
+    run = dict(was or {})
+    times = dict(run.get("times", {}))
+
+    def took(stage, since):
+        times[stage] = round(time.time() - since, 1)
+
     if at == 0:
         mark("fetch")
+        clock = time.time()
         subject = fetch.get(number, timepoint)
+        took("fetch", clock)
     print(subject)
     out_dir(subject).mkdir(parents=True, exist_ok=True)
-    run = dict(was or {})
 
     stripped = stripped_dir(subject)
     if at <= 1:
         mark("strip")
+        clock = time.time()
         stripped = skullstrip.run(subject)
         verify.run(subject, stripped)
+        took("strip", clock)
 
     seg = out_dir(subject) / "seg.nii.gz"
     if at <= 2:
         mark("segment")
+        clock = time.time()
         seg, run["algorithm"], run["device"] = segment.run(subject, stripped)
+        took("segment", clock)
     scores = evaluate.run(subject, seg)
 
     if at <= 3:
         mark("register")
+        clock = time.time()
         _, run["kept"] = register.run(subject, stripped, seg)
+        took("register", clock)
+    run["times"] = times
     run["finished"], run["seconds"] = time.time(), round(time.time() - started)
     scores["run"] = run
 
@@ -97,13 +111,16 @@ def main(numbers, first="fetch", timepoint=1):
             results[subject] = scores
 
     mark("map")
+    clock = time.time()
     labels, names = atlas.label_volume(nib.load(MNI))
 
     for subject in results:
         overlap = atlas.overlap(out_dir(subject) / "seg_in_mni.nii.gz", labels, names)
         results[subject]["atlas"] = overlap
         results[subject]["function"] = function.for_tumour(overlap)
-        results[subject].setdefault("run", {})["mapped"] = time.time()
+        block = results[subject].setdefault("run", {})
+        block["mapped"] = time.time()
+        block.setdefault("times", {})["map"] = round(time.time() - clock, 1)
         top = ", ".join(f["term"] for f in results[subject]["function"][:4])
         print(f"{subject}: {overlap['in_parcels_ml']} mL in "
               f"{len(overlap['parcels'])} parcels; {top}")

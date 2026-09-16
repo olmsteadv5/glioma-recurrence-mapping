@@ -24,11 +24,11 @@ def terms(kind="functional"):
 
 
 def for_parcel(parcel, n=8, kind="functional"):
-    # A single parcel's strongest terms.
+    # A single parcel's strongest terms, all of them when n is None.
     words, scores, names = terms(kind)
     row = scores[names.index(parcel)]
-    order = np.argsort(-row)[:n]
-    return [(words[i], round(float(row[i]), 2)) for i in order if row[i] > 0]
+    order = np.argsort(-row)[:n] if n else np.argsort(-row)
+    return [(words[i], round(float(row[i]), 2)) for i in order if round(float(row[i]), 2) >= 0.01]
 
 
 def for_tumour(overlap, kind="functional"):

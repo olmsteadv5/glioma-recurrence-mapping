@@ -21,7 +21,7 @@ import atlas
 import function
 import render
 from paths import (ATLAS_INPUT, LABELS, MODALITIES, REGIONS, RESULTS, ROOT,
-                   STAGES, stage_file, stripped_dir, subject_id)
+                   STAGES, raw_dir, stage_file, stripped_dir, subject_id)
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\r")
 MARKER = re.compile(r"^\* (\w+)$")
@@ -244,7 +244,7 @@ class Console(App):
     ListItem { background: #282828; color: #a89984; padding: 0 1; }
     ListItem.--highlight { background: #32302f; color: #ebdbb2; text-style: bold; }
     #detail { height: 13; border-top: solid #504945; padding: 0 1;
-              scrollbar-size-vertical: 1; scrollbar-background: #282828;
+              scrollbar-gutter: stable; scrollbar-size-vertical: 1; scrollbar-background: #282828;
               scrollbar-color: #504945; scrollbar-color-hover: #7c6f64;
               scrollbar-color-active: #a89984; }
     #detailtext { height: auto; }
@@ -381,10 +381,12 @@ class Console(App):
             left = ("\u203a " if here else "  ") + tie + " " + name[10:]
             right = "%3dp %7.0f mL" % (len(a["parcels"]), a["tumour_ml"])
             out.append(f"[{FG if here else DIM}]{row(left, right, w)}[/]")
-        out.append(f"[{FAINT}]{'\u2500' * w}[/]")
+        def rule(title):
+            return f"[{FAINT}]\u2500\u2500 [/][{FG}]{title}[/][{FAINT}] {'\u2500' * (w - 4 - len(title))}[/]"
 
         d = self.results[self.subject]
         r = d["regions_ml"]
+        out.append(rule("stats"))
         out.append(f"[{DIM}]tumour[/]")
         for name in ("WT", "TC", "ET"):
             made = ("" if len(REGIONS[name]) == 1
@@ -392,24 +394,21 @@ class Console(App):
             out.append(f"[{FG}]  {name}[/][{FAINT}]{made}[/]"
                        f"[{DIM}]{f'{r[name]} mL':>{w - 4 - len(made)}}[/]")
         in_parcels = f"{d['atlas']['in_parcels_ml']} mL"
-        out.append(f"[{FAINT}]{row('  in parcels', in_parcels, w)}[/]")
+        out.append(f"[{FG}]{row('  in parcels', in_parcels, w)}[/]")
+        # indented under the line they break down, so the denominator is obvious
+        out += [f"[{FAINT}]{row('    ' + name, f'{value:.0%}', w)}[/]"
+                for name, value in distribution(d["atlas"])]
         out.append(f"[{FAINT}]{row('  dice WT', self.dice(d), w)}[/]")
         other = self.sibling(self.subject)
         if other:
-            # always earlier to later, so the sign means growth either way round
             first, then = sorted([self.subject, other])
             change = (self.results[then]["regions_ml"]["WT"]
                       - self.results[first]["regions_ml"]["WT"])
             label = f"  _{first[16:]} \u2192 _{then[16:]}"
             out.append(f"[{WARN if change > 0 else DIM}]{row(label, f'{change:+.1f} mL', w)}[/]")
 
-        share = distribution(d["atlas"])
-        if share:
-            out.append(f"[{DIM}]{row('where', 'of the ' + in_parcels, w)}[/]")
-            out += [f"[{FAINT}]{row('  ' + name, f'{value:.0%}', w)}[/]" for name, value in share]
-
-        out.append(f"[{DIM}]run[/]")
         run = d.get("run", {})
+        out.append(f"[{DIM}]run[/]")
         if "algorithm" in run:
             made = f"  {run['algorithm']} {run.get('device', '')}".rstrip()
             out.append(f"[{FAINT}]{row(made, spell(run['seconds']) if 'seconds' in run else '', w)}[/]")
@@ -418,34 +417,56 @@ class Console(App):
         if "kept" in run:
             out.append(f"[{FAINT}]{row('  brain kept', f"{run['kept']:.0%}", w)}[/]")
 
-        stamps, notes = {}, []
+        out.append(rule("checks"))
+        out.append(f"[{DIM}]stages[/]")
+        for name, note, gap, trouble in self.stage_checks(d, run):
+            mark, tone = ("\u2713", FAINT) if trouble is None else ("\u2717", BAD)
+            out.append(f"[{tone}]  {mark}[/] [{FAINT}]{name}[/]"
+                       f"[{tone if trouble else FAINT}]{note:>{w - len(name) - 4}}[/]")
+            if trouble:
+                out.append(f"[{BAD}]{row('    \u2514 ' + trouble, '', w)}[/]")
+
+        out.append(f"[{DIM}]atlas[/]")
+        for name, label, note in ATLAS_FILES:
+            have = (ATLAS_INPUT / name).exists()
+            mark, tone = ("\u2713", FAINT) if have else ("\u2717", BAD)
+            out.append(f"[{tone}]  {mark}[/] [{FAINT}]{label}[/]"
+                       f"[{FAINT if have else BAD}]{(note if have else "missing"):>{w - len(label) - 4}}[/]")
+
+        self.query_one("#stats", Rows).update("\n".join(out))
+
+    def stage_checks(self, d, run):
+        # name, what it says, and what is wrong if anything
+        times, stamps, out = run.get("times", {}), {}, []
         for stage in STAGES:
             path = stage_file(self.subject, stage)
             stamps[stage] = (run.get("mapped") if path is None
                              else path.stat().st_mtime if path.exists() else None)
-            if stamps[stage] is None:
-                unknown = stage == "map" and "atlas" in d
-                notes.append((stage, "unknown" if unknown else "never run", unknown))
+            trouble = self.gap(stage, d)
+            if stamps[stage] is None and stage != "map":
+                out.append((stage, "never run", None, trouble or "no output"))
                 continue
             done = [t for t in stamps.values() if t]
-            stale = len(done) > 1 and stamps[stage] < max(done[:-1])
-            notes.append((stage, ("stale, " if stale else "") + ago(stamps[stage]), not stale))
+            stale = len(done) > 1 and stamps[stage] and stamps[stage] < max(done[:-1])
+            when = ago(stamps[stage]) if stamps[stage] else "unknown"
+            note = f"{spell(round(times[stage]))} \u00b7 {when}" if stage in times else when
+            out.append((stage, "stale, " + when if stale else note, stamps[stage],
+                        trouble or ("left behind by a rerun" if stale else None)))
+        return out
 
-        bare = [m for m in MODALITIES
-                if not (stripped_dir(self.subject) / f"{self.subject}_{m}.nii.gz").exists()]
-        notes.append(("scans", ", ".join(bare) + " raw" if bare
-                      else f"{len(MODALITIES)} stripped", not bare))
-        gone = [label for name, label, _ in ATLAS_FILES if not (ATLAS_INPUT / name).exists()]
-        notes.append(("atlas", ", ".join(gone) + " missing" if gone
-                      else f"{len(ATLAS_FILES)} files", not gone))
-
-        out.append(f"[{DIM}]checks[/]")
-        for what, note, fine in notes:
-            mark = "\u2713" if fine else "\u2717"
-            out.append(f"[{FAINT if fine else BAD}]{mark}[/] [{FAINT}]{what}[/]"
-                       f"[{FAINT if fine else BAD}]{note:>{w - len(what) - 2}}[/]")
-
-        self.query_one("#stats", Rows).update("\n".join(out))
+    def gap(self, stage, d):
+        # the specific thing missing, which is what the red sub row says
+        if stage == "fetch":
+            short = [m for m in MODALITIES
+                     if not (raw_dir(self.subject) / f"{self.subject}_{m}.nii.gz").exists()]
+            return ", ".join(short) + " not downloaded" if short else None
+        if stage == "strip":
+            short = [m for m in MODALITIES
+                     if not (stripped_dir(self.subject) / f"{self.subject}_{m}.nii.gz").exists()]
+            return ", ".join(short) + " not stripped" if short else None
+        if stage == "map" and "atlas" not in d:
+            return "no parcel overlap"
+        return None
 
     def dice(self, d):
         return f"{d['dice']['WT']:.2f}" if d.get("dice") else "no reference"
@@ -585,7 +606,7 @@ class Console(App):
             lines = [f"[{FG}]{p['long_name'][:w]}[/]",
                      f"[{FAINT}]{p['parcel']} · {p['lobe']} · mostly {p['tissue']}[/]",
                      f"[{DIM}]{row('  in tumour', volume, w)}[/]", ""]
-            terms = function.for_parcel(p["parcel"], 6)
+            terms = function.for_parcel(p["parcel"], None)
             peak = max((v for _, v in terms), default=1)
             lines.append(f"[{FAINT}]parcelsynth terms[/]")
             lines += [f"[{DIM}]{row('  ' + t, f'{bar(v / peak, 8)} {v:>5.2f}', w)}[/]"

@@ -157,23 +157,24 @@ which segmenter produced this and on what, how long it took, how much brain the
 registration had left to align on once the lesion was masked out, and how long
 ago anything last changed on disk.
 
-Below those is `checks`: a row per stage with how long ago it wrote its output,
-plus the scans and the atlas files. A tick means fine and is quiet; a cross is
-the only thing in the panel that is coloured, so a stage that never ran, a scan
-that was never stripped, or a stage a partial rerun left behind the one before
-it is the only thing that catches your eye.
+The panel is in two parts. `stats` holds the tumour, where it sits and how it
+was made; the hemisphere and lobe shares are indented under `in parcels`
+because that is the volume they are shares of.
 
-The percentages under `where` are shares of the tumour volume that lands in
-parcels, which is the figure the header names, not of the whole tumour.
+`checks` holds `stages` and `atlas`, a row each. A tick is quiet and carries
+how long the stage took and how long ago it ran. A cross is the only coloured
+thing in the panel, and it opens a red line saying what is actually wrong:
+which modality never downloaded or never stripped, or that a partial rerun left
+this stage behind the one before it.
 
 While the pipeline runs, its panel shows which stage is going and the viewer
 switches to the subject being worked on as soon as its scans land, so you are
 looking at the case you are waiting for rather than the last one.
 
 For a parcel the panel underneath gives its anatomy and its own Parcelsynth
-terms. For a function it gives every parcel that produced the score, each with
-how much of it the tumour occupies and what that contributed; those shares add
-up to the score, and the panel scrolls if there are more than it can show.
+terms, and for a function every parcel that produced the score, with how much
+of it the tumour occupies and what that contributed; those shares add up to the
+score. Both lists are complete and the panel scrolls.
 
 **kitty only.** It draws images with kitty's graphics protocol, which no other
 terminal here supports. Elsewhere it still runs but says the images will look

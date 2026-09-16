@@ -897,8 +897,10 @@ class Console(App):
             self.light_node()
 
     def light_node(self):
-        # whichever list is up, its row is about one parcel first
-        names = self.selected_parcels()
+        # a parcel row and a connectivity row are each about one parcel. a
+        # function is a weighted sum over many, so lighting its strongest
+        # driver would read as the function living in that one parcel
+        names = [] if self.listing == "functions" else self.selected_parcels()
         self.chart.focus(names[0] if names else None)
 
     def seek_parcel(self, index):

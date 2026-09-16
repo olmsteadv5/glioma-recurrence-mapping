@@ -159,11 +159,9 @@ class Scene:
         for actor in self.parcel_actors.values():
             actor.prop.opacity = 1.0
 
-    def show_parcels(self, on, keep=()):
-        # keep wins, for parcels the current selection is specifically about
-        keep = set(keep)
-        for name, actor in self.parcel_actors.items():
-            actor.visibility = bool(on) or name in keep
+    def show_parcels(self, on):
+        for actor in self.parcel_actors.values():
+            actor.visibility = bool(on)
 
     def spotlight(self, name):
         # an untouched parcel is not in the scene, so add it only when asked for

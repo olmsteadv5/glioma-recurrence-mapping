@@ -151,15 +151,20 @@ The breakdown lists the layers with their volumes, clickable to show and hide,
 then one of three views: the involved parcels, the functions at risk, or the
 connectivity at risk. Whatever is selected
 lights up in the 3D and every other parcel drops back, so a row and a shape in
-the viewer are the same thing. The first row of every list is a summary: what
-the whole list adds up to, and a note on how it was built. Picking it also
-means nothing is singled out, so every involved parcel goes back to full
-brightness.
+the viewer are the same thing. Every list opens with the same two rows, which
+are the only control over how much of the atlas is drawn:
 
-Hiding `involved parcels` hides them, except the ones the current selection is
-about: the parcel you picked, the parcels behind a function's score, or the
-ones a parcel is losing its connections to. Those are involved parcels too, so
-the layer would otherwise empty out the very view you are reading.
+```
+  no parcels            nothing, so the tumour is clear
+  all parcels       99  everything, nothing singled out
+  L_S_F            94%  that one bright, the rest faint
+```
+
+The second one also carries a note on what the list is and how it was built.
+The parcels are not a layer checkbox, because unlike the tumour classes or the
+brain surface they are a collection with a list attached, and two controls over
+the same thing disagree at the ends: `all parcels` and an unticked box cannot
+both win.
 
 In the slice view, picking a parcel puts the crosshair inside it instead. Only
 MNI knows where the parcels are, so it switches space if it has to. It works both ways: click a parcel in the 3D and

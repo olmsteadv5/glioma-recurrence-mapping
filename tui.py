@@ -40,8 +40,7 @@ TISSUE = {"NETC": "#f2c14e", "SNFH": "#3fa7d6", "ET": "#e4572e", "RC": "#8e7dbe"
 LAYERS = [("T:NETC", "NETC necrosis", TISSUE["NETC"]), ("T:SNFH", "SNFH oedema", TISSUE["SNFH"]),
           ("T:ET", "ET enhancing", TISSUE["ET"]), ("T:RC", "RC cavity", TISSUE["RC"]),
           ("tracts", "tracts crossing", "#689d6a"),
-          ("shell", "brain surface", "#a89984"),
-          ("parcels", "involved parcels", "#d3869b")]
+          ("shell", "brain surface", "#a89984")]
 # WT, TC and ET are unions of the tissue classes, so they are deliberately left
 # uncolored: any class color on them reads as "this row is that tissue"
 ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
@@ -51,6 +50,7 @@ ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
                ("structuralconnectivity_metrics_mean.csv", "connectivity", "696²")]
 VIEWS = [("a", "parcels"), ("b", "functions"), ("c", "connectivity")]
 SUMMARY = {"parcels": "all parcels", "functions": "all terms", "connectivity": "all at risk"}
+NONE = "no parcels"
 ABOUT = {
     "parcels": "Every parcel the tumour reaches, ranked by how much of that parcel "
                "is inside it.",
@@ -306,6 +306,7 @@ class Console(App):
         self.history, self.hpos, self.started = [], 0, 0
         self.stage, self.watching = None, None
         self.row_text, self.marked, self.at_risk = [], None, []
+        self.parcels_shown = True
         self.pending, self._spin, self._settle = [0.0, 0.0, 1.0], None, None
         self.strip_spans = {}
         self.strip_spans = {}
@@ -543,9 +544,7 @@ class Console(App):
                            if not row_[0].startswith("T:") or row_[0][2:] in volumes]
         for key, name, color in self.layer_rows:
             on = key not in self.hidden_layers
-            if key == "parcels":
-                value = str(len(self.scene.parcel_actors)) if self.scene else ""
-            elif key == "tracts":
+            if key == "tracts":
                 value = str(self.scene.tract_count) if self.scene else ""
             else:
                 value = volumes.get(key.split(":")[-1])
@@ -560,12 +559,7 @@ class Console(App):
         key = self.layer_rows[row_index][0]
         self.hidden_layers ^= {key}
         on = key not in self.hidden_layers
-        if key == "parcels":
-            self.scene.show_parcels(on)
-            # visibility alone left them stuck at whatever the last isolate set
-            self.isolate_selected()
-        else:
-            self.scene.set_visible(key, on)
+        self.scene.set_visible(key, on)
         self.sync_overlay()
         self.refresh_layers()
         self.draw()
@@ -577,7 +571,7 @@ class Console(App):
         self.slices.hidden = {value for value, name in LABELS.items()
                               if "T:" + name in self.hidden_layers}
         self.slices.involved = {}
-        if "parcels" in self.hidden_layers or self.slices.parcels is None:
+        if not self.parcels_shown or self.slices.parcels is None:
             return
         # the same parcels the 3d draws, in the same colors
         order = {p["name"]: i for i, p in enumerate(atlas.parcels())}
@@ -587,43 +581,36 @@ class Console(App):
                 self.slices.involved[order[r["parcel"]] + 1] = palette[order[r["parcel"]]]
 
     def isolate_selected(self):
-        index = (self.query_one("#parcels", ListView).index or 0) - 1
+        # two leading rows: nothing drawn, then everything drawn and nothing singled out
+        index = (self.query_one("#parcels", ListView).index or 0) - 2
         d = self.results[self.subject]
-        shown = "parcels" not in self.hidden_layers
-        # row zero is the summary, which means nothing is singled out
+        self.scene.spotlight(None)
+        self.scene.show_parcels(self.parcels_shown)
         if index < 0:
-            self.scene.show_parcels(shown)
             self.scene.unisolate()
-            self.scene.spotlight(None)
             return
         if self.listing == "parcels":
             rows = d["atlas"]["parcels"]
             if index < len(rows):
-                self.scene.show_parcels(shown, keep=[rows[index]["parcel"]])
                 self.scene.isolate(rows[index]["parcel"])
         elif self.listing == "connectivity":
             if index < len(self.at_risk):
-                # the one losing input, lit up, and the involved parcels it loses.
-                # those are involved, so the layer being off must not hide them here
-                names = [n for n, _, _ in connect.partners(
-                    self.at_risk[index]["parcel"], d["atlas"], 12)]
+                # the one losing input, lit up, and the involved parcels it loses
                 self.scene.spotlight(self.at_risk[index]["parcel"])
-                self.scene.show_parcels(shown, keep=names)
-                self.scene.isolate(names)
+                self.scene.isolate(n for n, _, _ in connect.partners(
+                    self.at_risk[index]["parcel"], d["atlas"], 12))
         else:
             top = d.get("function", [])
             if index < len(top):
-                names = [n for n, _, _ in function.drivers(top[index]["term"],
-                                                           d["atlas"], 7)]
-                self.scene.show_parcels(shown, keep=names)
-                self.scene.isolate(names)
+                self.scene.isolate(n for n, _, _ in
+                                   function.drivers(top[index]["term"], d["atlas"], 7))
 
     def refresh_list(self):
         d = self.results[self.subject]
         listing = self.query_one("#parcels", ListView)
         listing.clear()
         self._list_width = listing.size.width
-        w = max(listing.size.width - 3, 34)
+        w = max(listing.size.width - 5, 32)
         panel = self.query_one("#right")
         chips = self.chips()
         head = self.query_one("#listhead", Static)
@@ -632,24 +619,25 @@ class Console(App):
             rows = d["atlas"]["parcels"]
             head.update(f"parcels involved \u00b7 {len(rows)}")
             body = [chips.get(p["parcel"], " ") + " " +
-                    row(p["parcel"], f"{bar(p['fraction'])} {p['fraction']:>4.0%}", w - 4)
+                    row(p["parcel"], f"{bar(p['fraction'])} {p['fraction']:>4.0%}", w - 2)
                     for p in rows]
         elif self.listing == "functions":
             rows = d.get("function", [])
             head.update(f"functions at risk \u00b7 {len(rows)}")
             peak = max((f["score"] for f in rows), default=1)
-            body = [row(f["term"], f"{bar(f['score'] / peak)} {f['score']:>5.2f}", w - 2)
+            body = [row("  " + f["term"], f"{bar(f['score'] / peak)} {f['score']:>5.2f}", w)
                     for f in rows]
         else:
             rows = self.at_risk = connect.at_risk(d["atlas"])
             head.update(f"connectivity at risk \u00b7 {len(rows)}")
             peak = max((c["share"] for c in rows), default=1)
             body = [chips.get(c["parcel"], " ") + " " +
-                    row(c["parcel"], f"{bar(c['share'] / peak)} {c['share']:>5.0%}", w - 4)
+                    row(c["parcel"], f"{bar(c['share'] / peak)} {c['share']:>5.0%}", w - 2)
                     for c in rows]
 
-        # row zero explains the list and means nothing is singled out
-        self.row_text = [row("  " + SUMMARY[self.listing], str(len(rows)), w)] + body
+        # the two leading rows are the parcels off and on states of the 3d
+        self.row_text = [row("  " + NONE, "", w),
+                         row("  " + SUMMARY[self.listing], str(len(rows)), w)] + body
         panel.border_title = f"breakdown \u00b7 {self.listing}"
         panel.border_subtitle = self.strip("right", VIEWS, self.listing)[0]
         panel.styles.border_subtitle_align = "left"
@@ -681,9 +669,15 @@ class Console(App):
                         for line in textwrap.wrap(ABOUT[self.listing], w)]
 
         if index == 0:
+            text.update("\n".join([f"[{FG}]no parcels[/]", ""] +
+                                   [f"[{FAINT}]{line}[/]" for line in textwrap.wrap(
+                                       "Nothing from the atlas drawn, in the 3D or on the "
+                                       "slices, so the tumour has nothing over it.", w)]))
+            return
+        if index == 1:
             text.update("\n".join(self.summary(d, w) + about))
             return
-        index -= 1
+        index -= 2
 
         if self.listing == "parcels":
             rows = d["atlas"]["parcels"]
@@ -749,15 +743,19 @@ class Console(App):
         index = event.list_view.index or 0
         self.mark_row(index)
         self.refresh_detail(index)
+        # row zero is the off state for both views, not only the 3d
+        self.parcels_shown = index >= 1
+        self.sync_overlay()
         if self.mode == "3d" and self.scene:
             self.isolate_selected()
-            self.draw()
         elif self.mode == "slices":
             self.seek_parcel(index)
+        self.draw()
 
     def seek_parcel(self, index):
         # put the crosshair in the middle of it, which only mni can work out
-        index -= 1
+        index -= 2
+        self.slices.lit = None
         if index < 0:
             return
         if self.listing == "parcels":
@@ -917,9 +915,9 @@ class Console(App):
         if self.listing != "parcels":
             self.listing = "parcels"
             self.refresh_list()
-            self.call_after_refresh(self.select_row, names.index(name) + 1)
+            self.call_after_refresh(self.select_row, names.index(name) + 2)
         else:
-            self.select_row(names.index(name) + 1)
+            self.select_row(names.index(name) + 2)
 
     def select_row(self, index):
         self.query_one("#parcels", ListView).index = index

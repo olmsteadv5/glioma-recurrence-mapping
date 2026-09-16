@@ -134,9 +134,15 @@ which for subject 36 is 39 of the 259 edges. Picking a node dims everything
 that is not it or its neighbours.
 
 Zoom past about twice and every node is labelled; below that only the picked
-node and what it connects to. A faint hull and a word name each lobe, and the
-bar at the bottom is 50 mm, which means something because the gaps are real
-distances.
+node and what it connects to. The bar at the bottom is 50 mm, which means
+something because the gaps are real distances.
+
+Each lobe gets a soft ground under its parcels, drawn small, blurred, and
+scaled back up so it hugs them rather than boxing them in, with its name placed
+on the middle of the ground rather than on the middle of its nodes, which for a
+scattered lobe is somewhere else entirely. They overlap, because the layout is
+connectivity and not anatomy, and parcels from different lobes genuinely
+interleave in it.
 
 The nodes are placed by stress majorisation, so **the gaps on screen are the
 real distances between the parcels**, to a median of 10%. That uses

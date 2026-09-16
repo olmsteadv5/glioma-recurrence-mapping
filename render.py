@@ -9,7 +9,7 @@ import pyvista as pv
 from scipy import ndimage
 from vtkmodules.util.numpy_support import vtk_to_numpy
 from vtkmodules.vtkRenderingCore import vtkCellPicker, vtkWindowToImageFilter
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 import atlas
 import tracts as tractography
@@ -305,6 +305,11 @@ EDGE = (80, 73, 69)
 SPOKE = (102, 92, 84)
 THROUGH = (146, 110, 70)
 HULL = (74, 69, 66)
+LOBE_NAME = (152, 138, 124)
+# one soft ground per lobe, dark enough to sit under the chart
+LOBE = {"Frontal": (46, 56, 68), "Parietal": (42, 62, 56), "Temporal": (66, 50, 42),
+        "Occipital": (56, 45, 64), "Insula": (68, 57, 40),
+        "Corpus callosum": (54, 54, 54)}
 RISK = (131, 165, 152)
 
 
@@ -329,6 +334,7 @@ class Chart:
         self.risk = [risk.get(self.names[n], 0.0) for n in self.nodes]
 
         self.lit, self.zoom, self.pan = None, 1.0, np.zeros(2)
+        self.where = {}
         self.screen, self.scale = np.zeros((0, 2)), 1.0
 
     def name(self, at):
@@ -347,7 +353,7 @@ class Chart:
         pad = 30
         low, span = self.points.min(0), np.ptp(self.points, axis=0)
         span[span == 0] = 1
-        self.scale = min((wide - 2 * pad) / span[0], (high - 2 * pad) / span[1]) * self.zoom
+        self.scale = float(min((wide - 2 * pad) / span[0], (high - 2 * pad) / span[1]) * self.zoom)
         middle = np.array([wide, high]) / 2
         self.screen = (self.points - low - span / 2) * self.scale + middle + self.pan
 
@@ -360,7 +366,8 @@ class Chart:
         self._place(wide, high)
         near = self._neighbours()
 
-        self._hulls(pen)
+        self._blobs(canvas, wide, high)
+        self._lobe_names(pen)
         for at, count, ratios in self.spokes:
             self._strands(pen, at, len(self.screen) - 1, ratios,
                           self._shade(SPOKE, near is None or at in near))
@@ -390,21 +397,36 @@ class Chart:
     def _shade(color, lit):
         return color if lit else tuple(int(c * 0.35 + 40 * 0.65) for c in color)
 
-    def _hulls(self, pen):
-        from scipy.spatial import ConvexHull
+    def _blobs(self, canvas, wide, high):
+        # a soft ground under each lobe's parcels, built small and blurred up
+        step = 4
+        small = (max(wide // step, 8), max(high // step, 8))
+        reach = float(max(self.scale * 7.5 / step, 2.5))
+        self.where = {}
         for lobe in sorted(set(self.lobes)):
             picked = [i for i, name in enumerate(self.lobes) if name == lobe]
-            if len(picked) < 4:
+            if len(picked) < 3 or lobe not in LOBE:
                 continue
-            points = self.screen[picked]
-            try:
-                hull = ConvexHull(points)
-            except Exception:
-                continue
-            ring = [tuple(points[i]) for i in hull.vertices]
-            pen.polygon(ring, outline=HULL)
-            pen.text(tuple(points.mean(0)), lobe.lower(), fill=HULL, font=_font(11),
-                     anchor="mm")
+            mask = Image.new("L", small, 0)
+            brush = ImageDraw.Draw(mask)
+            for i in picked:
+                x, y = self.screen[i] / step
+                brush.ellipse([x - reach, y - reach, x + reach, y + reach], fill=255)
+            mask = mask.filter(ImageFilter.GaussianBlur(reach * 0.55))
+            mask = mask.point(lambda v: 255 if v > 110 else 0)
+            mask = mask.filter(ImageFilter.GaussianBlur(reach * 0.3))
+            # the word belongs on the blob, not at the middle of scattered nodes
+            grid = np.asarray(mask, dtype=np.float32)
+            if grid.sum() > 0:
+                ys, xs = np.nonzero(grid)
+                self.where[lobe] = (float(xs.mean()) * step, float(ys.mean()) * step)
+            mask = mask.resize((wide, high), Image.BILINEAR).point(lambda v: int(v * 0.6))
+            canvas.paste(Image.new("RGB", (wide, high), LOBE[lobe]), (0, 0), mask)
+
+    def _lobe_names(self, pen):
+        font = _font(12)
+        for lobe, middle in self.where.items():
+            pen.text(middle, lobe.lower(), fill=LOBE_NAME, font=font, anchor="mm")
 
     def _nodes(self, pen, near):
         for at, point in enumerate(self.screen):

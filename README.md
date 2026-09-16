@@ -142,9 +142,14 @@ mass, on a square root scale with the rings labeled in millimeters. Every spoke
 is then radial, so none of them can cross, which is 57% of the lines on a
 subject like 36. Both arrangements draw all 1036 arcs. Radial fans a parcel's
 tracts into a sheaf that gathers at the mass, and nests a pair's tracts into a
-ribbon of chords, rather than bowing each one on its own. The bow means nothing
-there and is not drawn, and nor is the scale bar, because the radius is not a
-straight gap.
+ribbon of chords, rather than bowing each one on its own. A thread's distance
+from the straight line is its own length, so a wide sheaf is a wide spread of
+lengths; within a spoke bundle the longest tract is 1.7 times the shortest at
+the median and 4.5 times at the 90th percentile. That can only carry the order
+and not the amount, because neither axis there is a straight distance, and it
+is clamped at both ends: one pair in 283 measures at nothing and would sit on
+the line, and the longest runs nine times its gap and would fold back through
+the middle. The scale bar is not drawn there either, for the same reason.
 
 Only spread carries both distances. Measured on subject 36, its drawn gaps match
 the real parcel to parcel distances to a median of 11%, and its distance from the

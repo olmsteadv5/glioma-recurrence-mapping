@@ -140,10 +140,17 @@ the one above. **Radial** puts the mass in the middle, the angle around the ring
 is the region going clockwise, and the radius is how far the parcel is from the
 mass, on a square root scale with the rings labeled in millimeters. Every spoke
 is then radial, so none of them can cross, which is 57% of the lines on a
-subject like 36. Links become one bundled chord per pair rather than one arc per
-tract, so the counts in the key follow the arrangement: 259 chords in radial
-against 1036 arcs in spread. The bow means nothing there and is not drawn, and
-nor is the scale bar, because the radius is not a straight gap.
+subject like 36. Both arrangements draw all 1036 arcs. Radial fans a parcel's
+tracts into a sheaf that gathers at the mass, and nests a pair's tracts into a
+ribbon of chords, rather than bowing each one on its own. The bow means nothing
+there and is not drawn, and nor is the scale bar, because the radius is not a
+straight gap.
+
+Only spread carries both distances. Measured on subject 36, its drawn gaps match
+the real parcel to parcel distances to a median of 11%, and its distance from the
+mass ranks at r = 0.95. Radial gets the radius exactly right, r = 1.00, because
+that is what the radius is; but its angle is region order, so parcel to parcel
+gaps there are off by 79% and mean nothing.
 
 Zoom past about twice and every node is labeled; below that only the picked
 node and what it connects to. The bar at the bottom is 50 mm, which means

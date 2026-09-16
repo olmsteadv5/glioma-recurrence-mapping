@@ -509,8 +509,8 @@ class Chart:
             own = at == self.lit
             tone = self._shade(SPOKE, free or own)
             if radial:
-                pen.line([tuple(self.screen[at]), tuple(self.screen[-1])],
-                         fill=tone, width=3 if own else 1 + int(min(count / 40, 2)))
+                self._sheaf(pen, self.screen[at], self.screen[-1], len(ratios),
+                            tone, 3 if own else 1)
             else:
                 self._strands(pen, self.screen[at], self.screen[-1], ratios,
                               tone, 3 if own else 2)
@@ -518,7 +518,8 @@ class Chart:
             own = self.lit in (a, b)
             tone = self._shade(self._tone(weight, crosses), free or own)
             if radial:
-                self._chord(pen, self.screen[a], self.screen[b], tone, 3 if own else 2)
+                self._chords(pen, self.screen[a], self.screen[b], len(ratios),
+                             tone, 3 if own else 1)
             else:
                 self._strands(pen, self.screen[a], self.screen[b], ratios, tone,
                               3 if own else 2)
@@ -526,7 +527,8 @@ class Chart:
             for k, weight, _, ratios, crosses in self.guest["link"]:
                 tone = self._tone(weight, crosses)
                 if radial:
-                    self._chord(pen, self.screen[k], self.guest["screen"], tone, 3)
+                    self._chords(pen, self.screen[k], self.guest["screen"],
+                                 len(ratios), tone, 3)
                 else:
                     self._strands(pen, self.screen[k], self.guest["screen"], ratios, tone, 3)
         self._nodes(pen, near)
@@ -580,14 +582,32 @@ class Chart:
             pen.text((self.middle[0] + 5, self.middle[1] - reach), f"{mm} mm",
                      fill=FAINT_INK, font=font, anchor="lm")
 
-    def _chord(self, pen, start, stop, color, width=2):
-        # pulled in toward the middle, so a link reads as an arc between two
-        # points on the ring rather than a line cutting across everything
-        pull = self.middle + (start + stop - 2 * self.middle) * 0.12
-        steps = np.linspace(0, 1, 24)[:, None]
-        curve = ((1 - steps) ** 2 * start + 2 * (1 - steps) * steps * pull
-                 + steps ** 2 * stop)
-        pen.line([tuple(point) for point in curve], fill=color, width=width)
+    STEPS = np.linspace(0, 1, 24)[:, None]
+
+    def _chords(self, pen, start, stop, many, color, width=1):
+        # one thread per tract, each pulled a little further in than the last,
+        # so a bundle nests into a ribbon instead of stacking on one line
+        for n in range(many):
+            lean = 0.12 + 0.05 * (n - (many - 1) / 2) / max(many - 1, 1)
+            pull = self.middle + (start + stop - 2 * self.middle) * lean
+            curve = ((1 - self.STEPS) ** 2 * start
+                     + 2 * (1 - self.STEPS) * self.STEPS * pull + self.STEPS ** 2 * stop)
+            pen.line([tuple(point) for point in curve], fill=color, width=width)
+
+    def _sheaf(self, pen, start, stop, many, color, width=1):
+        # every tract as its own thread, fanned at the parcel and gathered at
+        # the mass, which is the shape they make in the brain
+        along = stop - start
+        span = float(np.linalg.norm(along))
+        if span < 1:
+            return
+        side = np.array([-along[1], along[0]]) / span
+        for n in range(many):
+            off = (n - (many - 1) / 2) * min(span * 0.012, 3.0)
+            pull = start + along * 0.45 + side * off * 2
+            curve = ((1 - self.STEPS) ** 2 * start
+                     + 2 * (1 - self.STEPS) * self.STEPS * pull + self.STEPS ** 2 * stop)
+            pen.line([tuple(point) for point in curve], fill=color, width=width)
 
     def _neighbors(self):
         # while a node is picked, its own edges stay lit and the rest fall back
@@ -729,15 +749,14 @@ class Chart:
         # radial draws one line per pair, spread one per tract, so the column
         # counts what is actually on screen rather than a number from elsewhere
         radial = self.plan == "radial"
-        pen.text((x, y), "links" if radial else "links, one per tract",
-                 fill=INK, font=small, anchor="lm")
+        pen.text((x, y), "links, one per tract", fill=INK, font=small, anchor="lm")
         y += 17
         for color, text, key in ((self._tone(0.5, False), "parcel to parcel", "plain"),
                                  (self._tone(0.5, True),
                                   "parcel to parcel, through the mass", "via"),
                                  (SPOKE, "parcel to the mass", "spoke")):
             pen.line([(x, y), (x + 14, y)], fill=color, width=2)
-            y = line(y, text, count[key + "_n" if radial else key])
+            y = line(y, text, count[key])
         y += 9
 
         pen.text((x, y), "regions, clockwise from the top" if radial else "regions",

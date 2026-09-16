@@ -63,8 +63,6 @@ ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
                ("structuralconnectivity_metrics_mean.csv", "connectivity", "696²")]
 VIEWERS = ("3d", "slices", "graph")
 VIEWS = [("a", "parcels"), ("b", "functions"), ("c", "connectivity")]
-SUMMARY = {"parcels": "all parcels", "functions": "all terms", "connectivity": "all at risk"}
-NONE = "no parcels"
 ABOUT = {
     "parcels": "Every parcel the tumour reaches, ranked by how much of that parcel "
                "is inside it.",
@@ -355,7 +353,6 @@ class Console(App):
         self.stage, self.watching = None, None
         self.row_text, self.marked, self.at_risk = [], None, []
         self.parcel_rows = []
-        self.parcels_shown = True
         self.pending, self._spin, self._settle = [0.0, 0.0, 1.0], None, None
         self.waiting = [1.0, 0.0, 0.0]
         self.strip_spans = {}
@@ -721,39 +718,38 @@ class Console(App):
                 if name in source:
                     self.slices.compare[name] = self.slices.canon_mask(source[name])
         self.slices.involved = {}
-        if not self.parcels_shown or self.slices.parcels is None:
+        if self.slices.parcels is None:
             return
         # the same parcels the 3d draws, in the same colors
         order = {p["name"]: i for i, p in enumerate(atlas.parcels())}
         palette = atlas.colors(self.palette)
-        for r in self.results[self.subject]["atlas"]["parcels"]:
-            if r["parcel"] in order:
-                self.slices.involved[order[r["parcel"]] + 1] = palette[order[r["parcel"]]]
+        for name in self.selected_parcels():
+            if name in order:
+                self.slices.involved[order[name] + 1] = palette[order[name]]
 
-    def isolate_selected(self):
-        # two leading rows: nothing drawn, then everything drawn and nothing singled out
-        index = (self.query_one("#parcels", ListView).index or 0) - 2
+    def selected_parcels(self):
+        # the parcels the current row is about: one, or the few that define it
+        index = self.query_one("#parcels", ListView).index or 0
         d = self.results[self.subject]
-        self.scene.spotlight(None)
-        self.scene.show_parcels(self.parcels_shown)
-        if index < 0:
-            self.scene.unisolate()
-            return
         if self.listing == "parcels":
             rows = self.parcel_rows
-            if index < len(rows):
-                self.scene.isolate(rows[index]["parcel"])
-        elif self.listing == "connectivity":
-            if index < len(self.at_risk):
-                # the one losing input, lit up, and the involved parcels it loses
-                self.scene.spotlight(self.at_risk[index]["parcel"])
-                self.scene.isolate(n for n, _, _ in connect.partners(
-                    self.at_risk[index]["parcel"], d["atlas"], 12))
-        else:
-            top = d.get("function", [])
-            if index < len(top):
-                self.scene.isolate(n for n, _, _ in
-                                   function.drivers(top[index]["term"], d["atlas"], 7))
+            return [rows[index]["parcel"]] if index < len(rows) else []
+        if self.listing == "connectivity":
+            if index >= len(self.at_risk):
+                return []
+            name = self.at_risk[index]["parcel"]
+            return [name] + [n for n, _, _ in connect.partners(name, d["atlas"], 12)]
+        top = d.get("function", [])
+        if index >= len(top):
+            return []
+        return [n for n, _, _ in function.drivers(top[index]["term"], d["atlas"], 7)]
+
+    def isolate_selected(self):
+        names = self.selected_parcels()
+        self.scene.only(names)
+        # in the connectivity view the first one is not in the tumour, so it has
+        # no mesh in the scene until it is asked for
+        self.scene.spotlight(names[0] if self.listing == "connectivity" and names else None)
 
     def refresh_list(self):
         d = self.results[self.subject]
@@ -785,9 +781,7 @@ class Console(App):
                     row(c["parcel"], f"{bar(c['share'] / peak)} {c['share']:>5.0%}", w - 2)
                     for c in rows]
 
-        # the two leading rows are the parcels off and on states of the 3d
-        self.row_text = [row("  " + NONE, "", w),
-                         row("  " + SUMMARY[self.listing], str(len(rows)), w)] + body
+        self.row_text = body
         panel.border_title = f"breakdown \u00b7 {self.listing}"
         panel.border_subtitle = self.strip("right", VIEWS, self.listing)[0]
         panel.styles.border_subtitle_align = "left"
@@ -818,16 +812,7 @@ class Console(App):
         about = [""] + [f"[{FAINT}]{line}[/]"
                         for line in textwrap.wrap(ABOUT[self.listing], w)]
 
-        if index == 0:
-            text.update("\n".join([f"[{FG}]no parcels[/]", ""] +
-                                   [f"[{FAINT}]{line}[/]" for line in textwrap.wrap(
-                                       "Nothing from the atlas drawn, in the 3D or on the "
-                                       "slices, so the tumour has nothing over it.", w)]))
-            return
-        if index == 1:
-            text.update("\n".join(self.summary(d, w) + about))
-            return
-        index -= 2
+
 
         if self.listing == "parcels":
             rows = self.parcel_rows
@@ -867,34 +852,13 @@ class Console(App):
                      f"[{FAINT}]{row(f'{len(rows)} parcels', 'involved     share', w)}[/]"]
             lines += [f"[{DIM}]{row('  ' + name, f'{fraction:>8.0%}     {share:.3f}', w)}[/]"
                       for name, fraction, share in rows]
-        text.update("\n".join(lines))
-
-    def summary(self, d, w):
-        # what the whole list adds up to, above the note on how it was built
-        if self.listing == "parcels":
-            rows = self.parcel_rows
-            tally = {}
-            for p in rows:
-                tally[p["tissue"]] = tally.get(p["tissue"], 0) + 1
-            out = [f"[{FG}]{len(rows)} parcels[/]",
-                   f"[{DIM}]{row('  in tumour', f"{d['atlas']['in_parcels_ml']} mL", w)}[/]"]
-            return out + [f"[{FAINT}]{row('  mostly ' + t, str(n), w)}[/]"
-                          for t, n in sorted(tally.items(), key=lambda kv: -kv[1])]
-        if self.listing == "functions":
-            top = d.get("function", [])
-            return [f"[{FG}]{len(top)} terms[/]"] + [
-                f"[{DIM}]{row('  ' + f['term'], str(f['score']), w)}[/]" for f in top[:4]]
-        return [f"[{FG}]{len(self.at_risk)} parcels[/]"] + [
-            f"[{DIM}]{row('  ' + c['parcel'], f"{c['share']:.0%}", w)}[/]"
-            for c in self.at_risk[:4]]
+        text.update("\n".join(lines + about))
 
     @on(ListView.Highlighted, "#parcels")
     def highlight(self, event):
         index = event.list_view.index or 0
         self.mark_row(index)
         self.refresh_detail(index)
-        # row zero is the off state for both views, not only the 3d
-        self.parcels_shown = index >= 1
         self.sync_overlay()
         if self.mode == "3d" and self.scene:
             self.isolate_selected()
@@ -905,9 +869,8 @@ class Console(App):
         self.draw()
 
     def light_node(self, index):
-        index -= 2
         self.chart.lit = None
-        if index < 0 or self.listing != "parcels":
+        if self.listing != "parcels":
             return
         rows = self.parcel_rows
         if index < len(rows):
@@ -917,10 +880,7 @@ class Console(App):
 
     def seek_parcel(self, index):
         # put the crosshair in the middle of it, which only mni can work out
-        index -= 2
         self.slices.lit = None
-        if index < 0:
-            return
         if self.listing == "parcels":
             rows = self.parcel_rows
             if index >= len(rows):
@@ -1089,7 +1049,7 @@ class Console(App):
             return
         names = [r["parcel"] for r in self.parcel_rows]
         if name in names and self.listing == "parcels":
-            self.select_row(names.index(name) + 2)
+            self.select_row(names.index(name))
         else:
             self.chart.lit = at
             self.draw()
@@ -1109,9 +1069,9 @@ class Console(App):
         if self.listing != "parcels":
             self.listing = "parcels"
             self.refresh_list()
-            self.call_after_refresh(self.select_row, names.index(name) + 2)
+            self.call_after_refresh(self.select_row, names.index(name))
         else:
-            self.select_row(names.index(name) + 2)
+            self.select_row(names.index(name))
 
     def select_row(self, index):
         self.query_one("#parcels", ListView).index = index
@@ -1229,7 +1189,6 @@ class Console(App):
             return
         self.listing = which
         if self.scene:
-            self.scene.unisolate()
             self.scene.spotlight(None)
         self.refresh_list()
         self.draw()

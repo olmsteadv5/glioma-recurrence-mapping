@@ -246,28 +246,19 @@ The breakdown lists the layers with their volumes, clickable to show and hide,
 then one of three views: the involved parcels, the functions at risk, or the
 connectivity at risk. Whatever is selected
 lights up in the 3D and every other parcel drops back, so a row and a shape in
-the viewer are the same thing. Selecting one hides the rest outright rather
-than fading them.
+the viewer are the same thing. One row means one parcel: picking it draws that
+parcel and nothing else, in the 3D and on the slices both. There is no way to
+show them all at once, because a hundred overlapping ribbons is not a picture
+of anything.
+
+The other two views select more than one, because their rows are about more
+than one: a function row draws the parcels behind its score, and a connectivity
+row draws the untouched parcel together with the involved ones it is losing.
 
 The parcel list follows the layers: it shows the parcels the visible layers are
 actually drawing. Untick `ET enhancing` and the parcels that are mostly
 enhancing leave the list; tick `new in the later` and it becomes the parcels
 that piece of the recurrence touches.
-
-Every list opens with the same two rows, which are the only control over how
-much of the atlas is drawn:
-
-```
-  no parcels            nothing, so the tumour is clear
-  all parcels       99  everything, nothing singled out
-  L_S_F            94%  that one bright, the rest faint
-```
-
-The second one also carries a note on what the list is and how it was built.
-The parcels are not a layer checkbox, because unlike the tumour classes or the
-brain surface they are a collection with a list attached, and two controls over
-the same thing disagree at the ends: `all parcels` and an unticked box cannot
-both win.
 
 In the slice view, picking a parcel puts the crosshair inside it instead. Only
 MNI knows where the parcels are, so it switches space if it has to. It works both ways: click a parcel in the 3D and

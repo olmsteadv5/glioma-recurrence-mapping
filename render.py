@@ -31,7 +31,6 @@ COMPARE = {"both": (235, 219, 178), "new": (251, 73, 52), "gone": (142, 192, 124
 MARGIN_MM = 20
 _hex = lambda t: "#%02x%02x%02x" % tuple(t)
 PANEL = (40, 40, 40)
-DIMMED = 0.0
 
 
 def fit(image, size, background=PANEL):
@@ -177,19 +176,12 @@ class Scene:
         if actor is not None:
             actor.prop.opacity = float(value)
 
-    def isolate(self, names):
-        # everything else drops back so the chosen ones read on their own
+    def only(self, names):
+        # one parcel at a time, or the handful a row is actually about
         keep = {names} if isinstance(names, str) else set(names)
         for other, actor in self.parcel_actors.items():
-            actor.prop.opacity = 1.0 if other in keep else DIMMED
-
-    def unisolate(self):
-        for actor in self.parcel_actors.values():
+            actor.visibility = other in keep
             actor.prop.opacity = 1.0
-
-    def show_parcels(self, on):
-        for actor in self.parcel_actors.values():
-            actor.visibility = bool(on)
 
     def ensure_margin(self):
         # only built when it is asked for: the distance transform is not free

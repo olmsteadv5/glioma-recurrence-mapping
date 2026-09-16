@@ -37,8 +37,6 @@ ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
                ("parcelsynth_activations_functionalterms.csv", "parcelsynth", "334"),
                ("structuralconnectivity_metrics_mean.csv", "connectivity", "696²")]
 IDLE = "esc leaves · t returns"
-HINTS = ["click or pgup/pgdn · s space · o overlay · v 3d",
-         "s space · o overlay · v 3d", "v 3d"]
 STAGES = ("fetch", "strip", "segment", "register", "map")
 HELP = [("./main.py <n>...", "the whole pipeline, about 3 min a subject"),
         ("fetch <n>...", "download the scans, then everything after"),
@@ -481,7 +479,9 @@ class Console(App):
             widget.image = self.scene.image()
             viewer.border_title = f"3d · {self.palette} colours"
             viewer.styles.border_subtitle_align = "right"
-            viewer.border_subtitle = "drag rotate · scroll zoom · p colours · h reset · v slices"
+            other = "yba" if self.palette == "contrast" else "contrast"
+            viewer.border_subtitle = (f"drag rotate · scroll zoom · p {other} colours · "
+                                      f"h reset · v slices")
         else:
             for which in render.Slices.PLANES:
                 pane = self.query_one(f"#p-{which}", Pane)
@@ -494,7 +494,7 @@ class Console(App):
             strip, taken = self.modality_strip()
             viewer.styles.border_subtitle_align = "left"
             viewer.border_subtitle = strip + self.hint(
-                viewer.outer_size.width - 6 - taken, HINTS)
+                viewer.outer_size.width - 6 - taken, self.slice_hints())
 
     def refresh_readout(self):
         r = self.slices.readout()
@@ -523,6 +523,12 @@ class Console(App):
             self.modality_spans.append((x, x + len(label)))
             x += len(label)
         return "".join(out), x - Viewer.MARGIN
+
+    def slice_hints(self):
+        # each key names what it gives you, not what you are looking at
+        core = (f"s {'native' if self.space == 'mni' else 'mni'} · "
+                f"o {'hide' if self.slices.overlay else 'show'} overlay · v 3d")
+        return [f"click or pgup/pgdn · {core}", core, "v 3d"]
 
     def hint(self, room, choices):
         # carry the border line across the gap, so the two groups stay separate

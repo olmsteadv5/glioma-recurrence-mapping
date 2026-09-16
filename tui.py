@@ -859,6 +859,13 @@ class Console(App):
         index = event.list_view.index or 0
         self.mark_row(index)
         self.refresh_detail(index)
+        self.focus_row(index)
+        self.draw()
+
+    def focus_row(self, index=None):
+        # the picked row stays picked when the viewer changes under it
+        if index is None:
+            index = self.query_one("#parcels", ListView).index or 0
         self.sync_overlay()
         if self.mode == "3d" and self.scene:
             self.isolate_selected()
@@ -866,7 +873,6 @@ class Console(App):
             self.seek_parcel(index)
         elif self.mode == "graph" and self.chart is not None:
             self.light_node(index)
-        self.draw()
 
     def light_node(self, index):
         self.chart.lit = None
@@ -933,6 +939,7 @@ class Console(App):
             if self.chart is None:
                 self.chart = render.Chart(self.subject,
                                           self.results[self.subject]["atlas"])
+                self.light_node(self.query_one("#parcels", ListView).index or 0)
             widget = self.query_one("#board", Board)
             size = widget.content_size
             widget.image = self.chart.image(
@@ -1166,6 +1173,8 @@ class Console(App):
         self.query_one("#canvas").display = self.mode == "3d"
         self.query_one("#grid").display = self.mode == "slices"
         self.query_one("#board").display = self.mode == "graph"
+        if self.scene:
+            self.focus_row()
         self.refresh_bindings()
         self.call_after_refresh(self.draw)
 

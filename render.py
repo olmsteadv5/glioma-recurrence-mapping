@@ -275,9 +275,12 @@ def _bows():
 
 @functools.lru_cache(maxsize=4)
 def _font(size):
+    # the terminal's own face, so drawn text reads as part of the interface
     from PIL import ImageFont
-    for where in ("/usr/share/fonts/TTF/DejaVuSans.ttf",
-                  "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
+    for where in ("/usr/share/fonts/noto/NotoSansMono-Regular.ttf",
+                  "/usr/share/fonts/TTF/NotoSansMono-Regular.ttf",
+                  "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
+                  "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"):
         try:
             return ImageFont.truetype(where, size)
         except OSError:
@@ -296,10 +299,11 @@ NODE_TUMOUR = (214, 200, 175)
 EDGE = (80, 73, 69)
 SPOKE = (102, 92, 84)
 THROUGH = (146, 110, 70)
+# the interface palette, so the key is the same greys as every other panel
 INK = (168, 153, 132)
 FAINT_INK = (124, 111, 100)
-KEY_BACK = (32, 32, 32)
-KEY_EDGE = (68, 64, 62)
+BRIGHT_INK = (235, 219, 178)
+KEY_EDGE = (80, 73, 69)
 EDGE_LIT = (120, 110, 100)
 # one soft ground per hemisphere and lobe, dark enough to sit under the chart.
 # the two sides of a lobe land far apart, so one ground for both would stretch
@@ -336,7 +340,14 @@ class Chart:
         risk = {c["parcel"]: c["share"] for c in connect.at_risk(overlap)}
         self.risk = [risk.get(self.names[n], 0.0) for n in self.nodes]
 
+        # no edge and no spoke reaches these, so they are drawn hollow rather
+        # than left looking like the layout dropped them
+        self.loose = (set(range(len(self.nodes)))
+                      - {e[0] for e in self.link} - {e[1] for e in self.link}
+                      - {s[0] for s in self.spokes})
+
         self.lit, self.zoom, self.pan = None, 1.0, np.zeros(2)
+        self._key_was, self._key_art = None, None
         self.where = {}
         self.screen, self.scale = np.zeros((0, 2)), 1.0
 
@@ -380,7 +391,7 @@ class Chart:
                           self._shade(tone, near is None or a in near or b in near))
         self._nodes(pen, near)
         self._labels(pen, near)
-        self._key(pen, wide, high)
+        self._key(canvas, pen, wide, high)
         return canvas
 
     def _neighbours(self):
@@ -439,7 +450,10 @@ class Chart:
                 color = NODE_IN if self.nodes[at] in self.inside else NODE_OUT
             color = self._shade(color, near is None or at in near)
             box = [point[0] - wide, point[1] - wide, point[0] + wide, point[1] + wide]
-            pen.ellipse(box, fill=color, outline=LIT if at == self.lit else PANEL,
+            hollow = at in self.loose
+            pen.ellipse(box, fill=PANEL if hollow else color,
+                        outline=(LIT if at == self.lit
+                                 else color if hollow else PANEL),
                         width=3 if at == self.lit else 1)
             # a ring on the untouched ones says how much they stand to lose
             if not last and self.risk[at] > 0.02:
@@ -457,64 +471,81 @@ class Chart:
             pen.text((point[0], point[1] - 10), self.name(at),
                      fill=LIT if at == self.lit else NODE_OUT, font=font, anchor="ms")
 
-    def _key(self, pen, wide, high):
-        # a clinician should not have to guess what a bigger dot means
-        font, small = _font(12), _font(11)
+    def _key(self, canvas, pen, wide, high):
+        # the same box as every other panel: panel ground, dim round border,
+        # a title cut into the top edge, headings over quieter rows
+        font = _font(12)
         rows = sorted(self.where)
-        tall = 246 + 14 * len(rows)
-        if wide < 420 or high < tall + 40:
+        tall = 278 + 14 * len(rows)
+        if wide < 430 or high < tall + 40:
             self._scale_bar(pen, wide, high, font)
             return
-        box = (14, 14, 268, 14 + tall)
-        pen.rectangle(box, fill=KEY_BACK, outline=KEY_EDGE)
-        x, y = 26, 32
+        if self._key_was != (tuple(rows), tall):
+            self._key_was = (tuple(rows), tall)
+            self._key_art = self._key_tile(tuple(rows), tall)
+        canvas.paste(self._key_art, (14, 6))
+        self._scale_bar(pen, wide, high, font)
 
-        pen.text((x, y), "parcels", fill=FAINT_INK, font=small, anchor="lm")
-        y += 16
+    def _key_tile(self, rows, tall):
+        # nothing in it moves while the chart is panned, so draw it once
+        font, small = _font(12), _font(11)
+        # the top edge is inset so the title sitting on it is not clipped
+        tile = Image.new("RGB", (266, tall + 9), PANEL)
+        pen = ImageDraw.Draw(tile)
+        pen.rounded_rectangle((0, 8, 265, tall + 8), radius=6, fill=PANEL, outline=KEY_EDGE)
+        pen.rectangle((10, 3, 46, 13), fill=PANEL)
+        pen.text((14, 8), "key", fill=BRIGHT_INK, font=font, anchor="lm")
+        x, y = 14, 34
+
+        pen.text((x, y), "parcels", fill=INK, font=small, anchor="lm")
+        y += 17
         for color, text in ((NODE_IN, "in the tumour"), (NODE_OUT, "still intact"),
                             (NODE_TUMOUR, "the tumour itself")):
-            pen.ellipse([x, y - 5, x + 10, y + 5], fill=color)
-            pen.text((x + 18, y), text, fill=INK, font=font, anchor="lm")
+            pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=color)
+            pen.text((x + 21, y), text, fill=FAINT_INK, font=font, anchor="lm")
             y += 15
+        pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=PANEL, outline=NODE_IN)
+        pen.text((x + 21, y), "nothing reaches it", fill=FAINT_INK, font=font, anchor="lm")
+        y += 21
 
-        y += 6
-        pen.text((x, y), "how much of it is gone", fill=FAINT_INK, font=small, anchor="lm")
-        y += 18
-        step = x + 6
+        pen.text((x, y), "how much of it is gone", fill=INK, font=small, anchor="lm")
+        y += 19
+        step = x + 7
         for share in (0.15, 0.5, 1.0):
-            wide_ = 3.0 + 7.0 * share ** 0.5
-            pen.ellipse([step - wide_, y - wide_, step + wide_, y + wide_], fill=NODE_IN)
+            size = 3.0 + 7.0 * share ** 0.5
+            pen.ellipse([step - size, y - size, step + size, y + size], fill=NODE_IN)
             pen.text((step, y + 16), f"{self.most * share:.1f}", fill=FAINT_INK,
                      font=small, anchor="mm")
-            step += 42
-        pen.text((step + 4, y + 16), "mL", fill=FAINT_INK, font=small, anchor="lm")
-        y += 32
+            step += 44
+        pen.text((step - 8, y + 16), "mL", fill=FAINT_INK, font=small, anchor="lm")
+        y += 33
 
-        pen.ellipse([x, y - 5, x + 10, y + 5], fill=NODE_OUT)
-        pen.ellipse([x - 4, y - 9, x + 14, y + 9], outline=RISK)
-        pen.text((x + 24, y), "losing its connections", fill=INK, font=font, anchor="lm")
-        y += 22
+        pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=NODE_OUT)
+        pen.ellipse([x - 3, y - 9, x + 15, y + 9], outline=RISK)
+        pen.text((x + 25, y), "losing its connections", fill=FAINT_INK, font=font, anchor="lm")
+        y += 24
 
-        pen.text((x, y), "tracts", fill=FAINT_INK, font=small, anchor="lm")
-        y += 16
+        pen.text((x, y), "tracts", fill=INK, font=small, anchor="lm")
+        y += 17
         for color, text in ((THROUGH, "runs through the tumour"),
                             (EDGE_LIT, "connects two parcels")):
             pen.line([(x, y), (x + 14, y)], fill=color, width=1)
-            pen.text((x + 24, y), text, fill=INK, font=font, anchor="lm")
+            pen.text((x + 25, y), text, fill=FAINT_INK, font=font, anchor="lm")
             y += 15
         pen.arc([x, y - 6, x + 14, y + 8], 180, 360, fill=EDGE_LIT)
-        pen.text((x + 24, y), "bowed: longer than the gap", fill=INK, font=font, anchor="lm")
+        pen.text((x + 25, y), "bowed: longer than the gap", fill=FAINT_INK,
+                 font=font, anchor="lm")
         y += 24
 
-        pen.text((x, y), "regions", fill=FAINT_INK, font=small, anchor="lm")
-        y += 16
+        pen.text((x, y), "regions", fill=INK, font=small, anchor="lm")
+        y += 17
         for lobe in rows:
-            pen.rectangle([x, y - 5, x + 12, y + 5],
+            pen.rectangle([x + 1, y - 5, x + 11, y + 5],
                           fill=_ground(*lobe, lift=1.6), outline=KEY_EDGE)
-            pen.text((x + 20, y), f"{lobe[0].lower()} {lobe[1].lower()}",
-                     fill=INK, font=font, anchor="lm")
+            pen.text((x + 21, y), f"{lobe[0].lower()} {lobe[1].lower()}",
+                     fill=FAINT_INK, font=font, anchor="lm")
             y += 14
-        self._scale_bar(pen, wide, high, font)
+        return tile
 
     def _scale_bar(self, pen, wide, high, font):
         bar = 50.0 * self.scale
@@ -524,7 +555,7 @@ class Chart:
         pen.line([(20, y), (20 + bar, y)], fill=INK, width=1)
         for end in (20, 20 + bar):
             pen.line([(end, y - 3), (end, y + 3)], fill=INK)
-        pen.text((24 + bar, y), "50 mm apart", fill=INK, font=font, anchor="lm")
+        pen.text((34 + bar, y), "50 mm apart", fill=INK, font=font, anchor="lm")
 
     def _strands(self, pen, a, b, ratios, color):
         # one arc per tract, bowed until its drawn length is its real length
@@ -655,7 +686,7 @@ class Slices:
             alpha = np.zeros(len(self.parcel_names) + 1, dtype=np.float32)
             for value, color in self.involved.items():
                 table[value] = color
-                alpha[value] = 0.5 if value == self.lit else 0.22
+                alpha[value] = 0.0 if value == self.lit else 0.22
             weight = alpha[parcel][:, :, None]
             rgb = (rgb * (1 - weight) + table[parcel] * weight).astype(np.uint8)
 
@@ -689,6 +720,12 @@ class Slices:
             m = lab == value
             if m.any():
                 rgb[m] = (rgb[m] * 0.55 + np.array(color) * 0.45).astype(np.uint8)
+
+        # the picked parcel last and solid, so nothing under it tints its color
+        if self.lit and self.lit in self.involved:
+            on = parcel == self.lit
+            if on.any():
+                rgb[on] = np.array(self.involved[self.lit], dtype=np.uint8)
 
         mx, my = self._marker(which)
         if 0 <= my < rgb.shape[0]:

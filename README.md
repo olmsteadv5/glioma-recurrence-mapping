@@ -133,9 +133,9 @@ lights up in the 3D and every other parcel drops back, so a row and a shape in
 the viewer are the same thing. It works both ways: click a parcel in the 3D and
 its row is selected, drag and it rotates instead.
 
-The last two layers are the parcels themselves: `involved parcels` hides them
-all, and `dim the others` is what makes the selected one stand out. Uncheck it
-to hold every involved parcel at full brightness while you move down the list.
+The tumour volumes in the inputs panel are coloured by the tissue each region
+adds to the next smaller one, so they match the layer list: WT is the oedema
+blue, TC the necrosis yellow, ET the enhancement orange.
 
 For a parcel the panel underneath gives its anatomy and its own Parcelsynth
 terms. For a function it gives the parcels that produced the score, each with

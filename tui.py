@@ -31,8 +31,10 @@ SHELL_OPACITY = 0.15
 LAYERS = [("T:NETC", "NETC necrosis", "#f2c14e"), ("T:SNFH", "SNFH oedema", "#3fa7d6"),
           ("T:ET", "ET enhancing", "#e4572e"), ("tracts", "tracts crossing", "#689d6a"),
           ("shell", "brain surface", "#a89984"),
-          ("parcels", "involved parcels", "#d3869b"),
-          ("focus", "dim the others", "#d3869b")]
+          ("parcels", "involved parcels", "#d3869b")]
+# each region takes the colour of the tissue it adds to the next smaller one:
+# WT adds the oedema, TC adds the necrosis, ET is the enhancement itself
+REGIONS = [("WT", "#3fa7d6"), ("TC", "#f2c14e"), ("ET", "#e4572e")]
 ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
                ("YBA_696.glb", "meshes", "glb"),
                ("top5k_tracts_decimated.obj", "tracts", "3001"),
@@ -332,7 +334,9 @@ class Console(App):
         d = self.results[self.subject]
         r = d["regions_ml"]
         out.append(f"[{DIM}]tumour[/]")
-        out += [f"[{FG}]{row('  ' + name, f'{r[name]} mL', w)}[/]" for name in ("WT", "TC", "ET")]
+        for name, colour in REGIONS:
+            out.append(f"[{colour}]  {name}[/]"
+                       f"[{DIM}]{f'{r[name]} mL':>{w - len(name) - 2}}[/]")
         in_parcels = f"{d['atlas']['in_parcels_ml']} mL"
         out.append(f"[{FAINT}]{row('  in parcels', in_parcels, w)}[/]")
         dice = f"{d['dice']['WT']:.2f}" if d.get("dice") else "no reference"
@@ -368,8 +372,6 @@ class Console(App):
             on = key not in self.hidden_layers
             if key == "parcels":
                 value = str(len(self.scene.parcel_actors)) if self.scene else ""
-            elif key == "focus":
-                value = ""
             else:
                 value = volumes.get(key.split(":")[-1])
                 value = f"{value} mL" if value else ""
@@ -385,9 +387,6 @@ class Console(App):
         on = key not in self.hidden_layers
         if key == "parcels":
             self.scene.show_parcels(on)
-        elif key == "focus":
-            # off means every involved parcel stays at full brightness
-            self.isolate_selected() if on else self.scene.unisolate()
         else:
             self.scene.set_visible(key, on)
         self.refresh_layers()
@@ -481,7 +480,7 @@ class Console(App):
         index = event.list_view.index or 0
         self.mark_row(index)
         self.refresh_detail(index)
-        if self.mode != "3d" or not self.scene or "focus" in self.hidden_layers:
+        if self.mode != "3d" or not self.scene:
             return
         self.isolate_selected()
         self.draw()

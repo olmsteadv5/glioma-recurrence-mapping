@@ -57,7 +57,8 @@ def add_tracts(subject, overlap, fig, width=1.5):
     involved = [index[r["parcel"]] for r in overlap["parcels"] if r["parcel"] in index]
     seg = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
 
-    lines = tractography.crossing(tractography.centrelines(), seg, labels, involved)
+    mass, nearby = tractography.crossing(tractography.centrelines(), seg, labels, involved)
+    lines = mass + nearby
     if not lines:
         return fig
 

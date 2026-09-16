@@ -67,15 +67,15 @@ def centrelines():
 
 
 def crossing(lines, seg_img, labels, involved):
-    # Which lines pass through the tumour or an involved parcel.
+    # Lines through the mass, and lines that miss it but clip an involved parcel.
     import nibabel as nib
 
     tumour = np.asarray(seg_img.dataobj) > 0
     shape = np.array(tumour.shape)
     inverse = np.linalg.inv(seg_img.affine)
-    wanted = set(involved)
+    wanted = list(set(involved))
 
-    hits = []
+    mass, nearby = [], []
     for line in lines:
         ijk = np.rint(nib.affines.apply_affine(inverse, line)).astype(int)
         inside = np.all((ijk >= 0) & (ijk < shape), axis=1)
@@ -83,8 +83,7 @@ def crossing(lines, seg_img, labels, involved):
             continue
         sel = ijk[inside]
         if tumour[sel[:, 0], sel[:, 1], sel[:, 2]].any():
-            hits.append(line)
-            continue
-        if wanted and np.isin(labels[sel[:, 0], sel[:, 1], sel[:, 2]], list(wanted)).any():
-            hits.append(line)
-    return hits
+            mass.append(line)
+        elif wanted and np.isin(labels[sel[:, 0], sel[:, 1], sel[:, 2]], wanted).any():
+            nearby.append(line)
+    return mass, nearby

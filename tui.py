@@ -41,6 +41,7 @@ TISSUE = {"NETC": "#f2c14e", "SNFH": "#3fa7d6", "ET": "#e4572e", "RC": "#8e7dbe"
           "WT": "#d6c8af"}
 # the whole tumour as one shape, with its three parts under it
 PARTS = ("T:SNFH", "T:ET", "T:NETC", "T:RC")
+CROSSING = ("tracts:mass", "tracts:near")
 LAYERS = [("T:margin", "margin 2 cm", "#b16286", 0),
           ("T:WT", "tumour", TISSUE["WT"], 0),
           ("T:SNFH", "SNFH oedema", TISSUE["SNFH"], 1),
@@ -49,6 +50,8 @@ LAYERS = [("T:margin", "margin 2 cm", "#b16286", 0),
           ("T:RC", "RC cavity", TISSUE["RC"], 1),
           ("--a", "", "", 0),
           ("tracts", "tracts crossing", "#689d6a", 0),
+          ("tracts:mass", "through the tumour", "#c67c48", 1),
+          ("tracts:near", "clipping a parcel only", "#76a096", 1),
           ("shell", "brain surface", "#a89984", 0),
           ("--b", "", "", 0),
           ("C:both", "both timepoints", "#ebdbb2", 0),
@@ -614,8 +617,8 @@ class Console(App):
                 out.append(f"[{FAINT}]{'\u2500' * (w + 4)}[/]")
                 continue
             on = key not in self.hidden_layers
-            if key == "tracts":
-                value = str(self.scene.tract_count) if self.scene else ""
+            if key.startswith("tracts"):
+                value = str(self.scene.tract_counts.get(key, "")) if self.scene else ""
             elif key.startswith("C:"):
                 value = f"{compare.against(*pair)[key[2:]]} mL"
             elif key == "T:margin":
@@ -651,18 +654,22 @@ class Console(App):
         # the one place that turns the checkbox states into what is drawn
         if not self.scene:
             return
-        parts = [k for k in PARTS
-                 if k not in self.hidden_layers and k in self.scene.actors]
         for key, *_ in LAYERS:
             if key.startswith("--"):
                 continue
             on = key not in self.hidden_layers
             # the combined shape stands in for the parts when none of them is on
-            if key == "T:WT":
-                on = on and not parts
+            if key in ("T:WT", "tracts"):
+                on = on and not self.split(key)
             if key in self.scene.actors:
                 self.scene.set_visible(key, on)
         self.sync_overlay()
+
+    def split(self, parent):
+        # the children of a parent row that are on and have something to draw
+        kin = PARTS if parent == "T:WT" else CROSSING
+        return [k for k in kin
+                if k not in self.hidden_layers and k in self.scene.actors]
 
     def click_layer(self, row_index):
         if not (0 <= row_index < len(self.layer_rows) and self.scene):
@@ -672,19 +679,24 @@ class Console(App):
             return
         tumour = {"T:WT", *PARTS}
         change = {k for k, *_ in LAYERS if k.startswith("C:")}
-        if key == "T:WT":
-            # the parent carries its parts with it
-            if key in self.hidden_layers:
-                self.hidden_layers -= tumour
-            else:
-                self.hidden_layers |= tumour
+        if key in ("T:WT", "tracts"):
+            # the parent carries its children with it
+            kin = tumour if key == "T:WT" else {"tracts", *CROSSING}
+            self.hidden_layers = (self.hidden_layers - kin if key in self.hidden_layers
+                                  else self.hidden_layers | kin)
         else:
             self.hidden_layers ^= {key}
             if key in PARTS and key not in self.hidden_layers:
                 self.hidden_layers.discard("T:WT")
-        # the two groups draw the same tissue, so only one of them at a time
+            if key in CROSSING and key not in self.hidden_layers:
+                self.hidden_layers.discard("tracts")
+        # these two draw the same tissue, so only one of them at a time. nothing
+        # else is a rival: the margin, the tracts and the shell sit over any of it
         if key not in self.hidden_layers:
-            self.hidden_layers |= change if key in tumour else tumour
+            if key in tumour:
+                self.hidden_layers |= change
+            elif key in change:
+                self.hidden_layers |= tumour
         if key == "T:margin" and key not in self.hidden_layers:
             self.scene.ensure_margin()
         if key.startswith("C:") and key not in self.hidden_layers:
@@ -700,9 +712,7 @@ class Console(App):
             return
         self.slices.hidden = {value for value, name in LABELS.items()
                               if "T:" + name in self.hidden_layers}
-        parts = [k for k in PARTS
-                 if k not in self.hidden_layers and k in self.scene.actors]
-        whole = "T:WT" not in self.hidden_layers and not parts
+        whole = "T:WT" not in self.hidden_layers and not self.split("T:WT")
         self.slices.whole = render.TISSUE[0] if whole else None
         self.slices.show_margin = "T:margin" not in self.hidden_layers
         self.slices.compare = {}
@@ -940,9 +950,7 @@ class Console(App):
             widget.image = self.chart.image(
                 (max(size.width * cell.width, 64), max(size.height * cell.height, 64)))
             viewer.styles.border_subtitle_align = "right"
-            viewer.border_title = (f"graph · {len(self.chart.inside)} in the tumour "
-                                   f"· {len(self.chart.nodes) - len(self.chart.inside)} "
-                                   f"connected · {self.chart.strands} lines")
+            viewer.border_title = "graph"
             viewer.border_subtitle = keyed("v 3d \u00b7 click the mass to reset")
         else:
             for which in render.Slices.PLANES:

@@ -21,6 +21,8 @@ pv.OFF_SCREEN = True
 BG = "#282828"
 SHELL = (168, 153, 132)
 TRACT = (95, 155, 114)
+TRACT_MASS = (198, 124, 72)
+TRACT_NEAR = (118, 160, 150)
 TISSUE = {1: (242, 193, 78), 2: (63, 167, 214), 3: (228, 87, 46), 4: (142, 125, 190),
           0: (214, 200, 175)}  # 0 is the three of them as one shape
 CROSS = (250, 189, 47)
@@ -88,10 +90,13 @@ class Scene:
             self.actors["T:" + name] = self._mesh(points, faces, _hex(TISSUE[value]),
                                                   0.5 if value == 0 else 1.0)
 
-        lines, self.tract_count = self._tracts(image, index, involved)
-        if lines is not None:
-            self.actors["tracts"] = self.plotter.add_mesh(
-                lines, color=_hex(TRACT), line_width=1, opacity=0.55)
+        self.tract_counts = {}
+        for key, color, lines in self._tracts(image, index, involved):
+            self.tract_counts[key] = len(lines)
+            mesh = self._lines(lines)
+            if mesh is not None:
+                self.actors[key] = self.plotter.add_mesh(
+                    mesh, color=_hex(color), line_width=1, opacity=0.55)
 
         self._picker, self.lit = None, None
         self.plotter.show(auto_close=False)
@@ -140,17 +145,24 @@ class Scene:
         return self.plotter.add_mesh(poly, color=color, opacity=opacity, smooth_shading=True)
 
     def _tracts(self, seg_image, index, involved):
+        # the whole set, then the two ways a line earns its place in it
         labels, names = atlas.label_volume(nib.load(MNI))
         wanted = [index[n] + 1 for n in involved if n in index]
-        hits = tractography.crossing(tractography.centrelines(), seg_image, labels, wanted)
-        if not hits:
-            return None, 0
+        mass, nearby = tractography.crossing(tractography.centrelines(),
+                                             seg_image, labels, wanted)
+        return [("tracts", TRACT, mass + nearby), ("tracts:mass", TRACT_MASS, mass),
+                ("tracts:near", TRACT_NEAR, nearby)]
+
+    @staticmethod
+    def _lines(lines):
+        if not lines:
+            return None
         points, cells, offset = [], [], 0
-        for line in hits:
+        for line in lines:
             points.append(line)
             cells.append(np.hstack([[len(line)], np.arange(offset, offset + len(line))]))
             offset += len(line)
-        return pv.PolyData(np.vstack(points), lines=np.hstack(cells)), len(hits)
+        return pv.PolyData(np.vstack(points), lines=np.hstack(cells))
 
     def resize(self, width, height):
         size = [max(width, 64), max(height, 64)]
@@ -294,13 +306,13 @@ def bow_for(ratio):
 
 
 NODE_IN = (228, 87, 46)
-NODE_OUT = (168, 153, 132)
-NODE_TUMOUR = (214, 200, 175)
+NODE_OUT = (131, 165, 152)
+NODE_TUMOUR = (250, 189, 47)
 # one hue per kind of link: cool where the mass is not in the path, warm where
 # it is. strength brightens a line without draining its hue
-EDGE = (66, 80, 88)
-SPOKE = (116, 78, 84)
-THROUGH = (120, 88, 56)
+EDGE = (84, 102, 112)
+SPOKE = (152, 100, 108)
+THROUGH = (154, 112, 72)
 # the interface palette, so the key is the same greys as every other panel
 INK = (168, 153, 132)
 FAINT_INK = (124, 111, 100)
@@ -347,6 +359,14 @@ class Chart:
         # tract behind it, so the count is of lines drawn, not tracts measured
         self.strands = (sum(len(r) for _, _, r in self.spokes)
                         + sum(len(e[4]) for e in self.link))
+        bare = sum(len(e[4]) for e in self.link if e[4] == [1.0])
+        self.tally = {
+            "in": len(self.inside), "out": len(self.nodes) - len(self.inside),
+            "mass": 1, "loose": len(self.loose),
+            "plain": sum(len(e[4]) for e in self.link if not e[5]),
+            "via": sum(len(e[4]) for e in self.link if e[5]),
+            "spoke": sum(len(r) for _, _, r in self.spokes),
+            "bow": self.strands - bare, "bare": bare}
 
         self.lit, self.guest, self.zoom, self.pan = None, None, 1.0, np.zeros(2)
         self._key_was, self._key_art = None, None
@@ -430,8 +450,8 @@ class Chart:
     @staticmethod
     def _tone(weight, crosses):
         base = THROUGH if crosses else EDGE
-        gain = 1.0 + 1.1 * min(weight, 1.0)
-        return tuple(min(int(c * gain), 235) for c in base)
+        gain = 1.0 + 0.9 * min(weight, 1.0)
+        return tuple(min(int(c * gain), 240) for c in base)
 
     def _guest(self, pen):
         # nothing of it is gone, so it draws at the smallest size the key shows
@@ -520,8 +540,8 @@ class Chart:
         # a title cut into the top edge, headings over quieter rows
         font = _font(12)
         rows = sorted(self.where)
-        tall = 281 + 14 * len(rows)
-        if wide < 540 or high < tall + 40:
+        tall = 292 + 14 * len(rows)
+        if wide < 580 or high < tall + 40:
             self._scale_bar(pen, wide, high, font)
             return
         if self._key_was != (tuple(rows), tall):
@@ -534,25 +554,32 @@ class Chart:
         # nothing in it moves while the chart is panned, so draw it once
         font, small = _font(12), _font(11)
         # the top edge is inset so the title sitting on it is not clipped
-        tile = Image.new("RGB", (400, tall + 9), PANEL)
+        tile = Image.new("RGB", (440, tall + 9), PANEL)
         pen = ImageDraw.Draw(tile)
-        pen.rounded_rectangle((0, 8, 399, tall + 8), radius=6, fill=PANEL, outline=KEY_EDGE)
+        pen.rounded_rectangle((0, 8, 439, tall + 8), radius=6, fill=PANEL, outline=KEY_EDGE)
         pen.rectangle((10, 3, 46, 13), fill=PANEL)
         pen.text((14, 8), "key", fill=BRIGHT_INK, font=font, anchor="lm")
-        x, y = 14, 34
+        x, y, edge = 14, 34, 426
+        count = self.tally
+        side = {name: sum(1 for lobe in self.lobes if lobe == name) for name in rows}
+
+        def line(y, text, tally=None):
+            # the count sits in its own column, the way the left panel sets them
+            pen.text((x + 21, y), text, fill=FAINT_INK, font=font, anchor="lm")
+            if tally is not None:
+                pen.text((edge, y), str(tally), fill=INK, font=font, anchor="rm")
+            return y + 15
 
         pen.text((x, y), "one dot, one parcel", fill=INK, font=small, anchor="lm")
         y += 17
-        for color, text in ((NODE_IN, "the tumour overlaps it"),
-                            (NODE_OUT, "outside it, connected to a parcel it overlaps"),
-                            (NODE_TUMOUR, "the tumour mass itself")):
+        for color, text, tally in ((NODE_IN, "the tumour overlaps it", count["in"]),
+                                   (NODE_OUT, "outside it, connected to a parcel it overlaps",
+                                    count["out"]),
+                                   (NODE_TUMOUR, "the tumour mass itself", count["mass"])):
             pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=color)
-            pen.text((x + 21, y), text, fill=FAINT_INK, font=font, anchor="lm")
-            y += 15
+            y = line(y, text, tally)
         pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=PANEL, outline=NODE_IN)
-        pen.text((x + 21, y), "no white matter link drawn", fill=FAINT_INK,
-                 font=font, anchor="lm")
-        y += 21
+        y = line(y, "overlapped too, but no link to draw", count["loose"]) + 6
 
         pen.text((x, y), "dot area: parcel volume inside the tumour",
                  fill=INK, font=small, anchor="lm")
@@ -569,20 +596,16 @@ class Chart:
 
         pen.text((x, y), "one line, one link", fill=INK, font=small, anchor="lm")
         y += 17
-        for color, text in ((self._tone(0.5, False), "parcel to parcel"),
-                            (self._tone(0.5, True), "parcel to parcel, via the mass"),
-                            (SPOKE, "parcel into the mass")):
-            pen.line([(x, y), (x + 14, y)], fill=color, width=1)
-            pen.text((x + 25, y), text, fill=FAINT_INK, font=font, anchor="lm")
-            y += 15
-        pen.arc([x, y - 6, x + 14, y + 8], 180, 360, fill=self._tone(0.5, False))
-        pen.text((x + 25, y), "bow: one tract, longer than the gap",
-                 fill=FAINT_INK, font=font, anchor="lm")
-        y += 15
-        pen.line([(x, y), (x + 14, y)], fill=self._tone(0.5, False), width=1)
-        pen.text((x + 25, y), "straight: connected, no tract to draw",
-                 fill=FAINT_INK, font=font, anchor="lm")
-        y += 24
+        for color, text, tally in (
+                (self._tone(0.5, False), "parcel to parcel", count["plain"]),
+                (self._tone(0.5, True), "parcel to parcel, via the mass", count["via"]),
+                (SPOKE, "parcel into the mass", count["spoke"])):
+            pen.line([(x, y), (x + 14, y)], fill=color, width=2)
+            y = line(y, text, tally)
+        pen.arc([x, y - 6, x + 14, y + 8], 180, 360, fill=self._tone(0.5, False), width=2)
+        y = line(y, "bow: one tract, longer than the gap", count["bow"])
+        pen.line([(x, y), (x + 14, y)], fill=self._tone(0.5, False), width=2)
+        y = line(y, "straight: connected, no tract to draw", count["bare"]) + 9
 
         pen.text((x, y), "ground colour: where the parcel sits",
                  fill=INK, font=small, anchor="lm")
@@ -592,6 +615,7 @@ class Chart:
                           fill=_ground(*lobe, lift=1.6), outline=KEY_EDGE)
             pen.text((x + 21, y), f"{lobe[0].lower()} {lobe[1].lower()}",
                      fill=FAINT_INK, font=font, anchor="lm")
+            pen.text((edge, y), str(side[lobe]), fill=INK, font=font, anchor="rm")
             y += 14
         return tile
 
@@ -618,7 +642,7 @@ class Chart:
             middle = (start + stop) / 2 + side * bow
             curve = ((1 - steps) ** 2 * start + 2 * (1 - steps) * steps * middle
                      + steps ** 2 * stop)
-            pen.line([tuple(point) for point in curve], fill=color, width=1)
+            pen.line([tuple(point) for point in curve], fill=color, width=2)
 
     def pick(self, x, y, reach=14):
         if not len(self.screen):

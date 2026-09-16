@@ -169,8 +169,8 @@ class Console(App):
     #cmd:focus { border: none; background: #32302f; }
     #layers { height: auto; padding: 0 1; }
     #parcels { height: 1fr; background: #282828; }
-    ListItem { background: #282828; padding: 0 1; }
-    ListItem.--highlight { background: #32302f; color: #d3869b; }
+    ListItem { background: #282828; color: #a89984; padding: 0 1; }
+    ListItem.--highlight { background: #32302f; color: #ebdbb2; text-style: bold; }
     #detail { height: 13; border-top: solid #504945; padding: 0 1; }
     #listhead { height: 1; padding: 0 1; color: #ebdbb2; text-style: bold;
                 border-top: solid #504945; }
@@ -202,6 +202,7 @@ class Console(App):
         self.scene = self.slices = self.proc = self._timer = self._clock = None
         self.hidden_layers, self.subject_rows = set(), {}
         self.history, self.hpos, self.started = [], 0, 0
+        self.row_text, self.marked = [], None
         self._panel_width = self._list_width = 0
 
     # ---------------------------------------------------------------- compose
@@ -355,18 +356,28 @@ class Console(App):
             rows = d["atlas"]["parcels"]
             self.query_one("#listhead", Static).update(f"parcels involved · {len(rows)}")
             panel.border_subtitle = "click here or in the 3d · f functions"
-            for p in rows:
-                right = f"{bar(p['fraction'])} {p['fraction']:>4.0%}"
-                listing.append(ListItem(Label(row(" " + p["parcel"], right, w))))
+            self.row_text = [row(p["parcel"], f"{bar(p['fraction'])} {p['fraction']:>4.0%}", w - 2)
+                             for p in rows]
         else:
             top = d.get("function", [])
             self.query_one("#listhead", Static).update(f"functions at risk · {len(top)}")
             panel.border_subtitle = "meta-analytic · f parcels"
             peak = max((f["score"] for f in top), default=1)
-            for f in top:
-                right = f"{bar(f['score'] / peak)} {f['score']:>5.2f}"
-                listing.append(ListItem(Label(row(" " + f["term"], right, w))))
+            self.row_text = [row(f["term"], f"{bar(f['score'] / peak)} {f['score']:>5.2f}", w - 2)
+                             for f in top]
+        for text in self.row_text:
+            listing.append(ListItem(Label("  " + text)))
+        self.marked = None
         self.refresh_detail(0)
+
+    def mark_row(self, index):
+        # only the caret moves, redrawing all 99 rows on every arrow key would crawl
+        listing = self.query_one("#parcels", ListView)
+        for i in (self.marked, index):
+            if i is not None and 0 <= i < min(len(listing.children), len(self.row_text)):
+                listing.children[i].children[0].update(
+                    ("› " if i == index else "  ") + self.row_text[i])
+        self.marked = index
 
     def refresh_detail(self, index):
         d = self.results[self.subject]
@@ -402,6 +413,7 @@ class Console(App):
     @on(ListView.Highlighted, "#parcels")
     def highlight(self, event):
         index = event.list_view.index or 0
+        self.mark_row(index)
         self.refresh_detail(index)
         if self.mode != "3d" or not self.scene:
             return

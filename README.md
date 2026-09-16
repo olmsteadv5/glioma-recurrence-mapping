@@ -158,14 +158,16 @@ picture. The spokes are worse, 71% of them shorter than their gap, because the
 gap is measured to the middle of the mass and the tract only has to reach its
 edge.
 
-Top right is an inventory of the same things, laid out rather than arranged.
+Top right is an inventory of whatever is picked, laid out rather than arranged.
 **tracts** is one row per tract, longest first, at its real length in
-millimeters and in the color it has on the chart; the chart cannot show a
+millimeters and in the color it has on the chart. The chart cannot show a
 tract's length, because a line between two dots is as long as the gap between
-them, and this can. Subject 36 runs from 144 mm down, and the long end is
-almost all amber and rose, which is to say the long tracts are the ones the
-mass is on. **parcels** is every parcel at the size and color it has on the
-chart, biggest first. Click either name to swap.
+them; this can. Pick a parcel and it lists that parcel's tracts, which is
+usually a few dozen, so each row gets real height. With nothing picked it
+lists them all, and the long end is almost entirely amber and rose, which is
+to say the long tracts are the ones the mass is sitting on. **parcels** is the
+picked parcel and whatever it links to, each at the size and color it has on
+the chart. Click either name to swap.
 
 Zoom past about twice and every node is labeled; below that only the picked
 node and what it connects to. The bar at the bottom is 50 mm, which means

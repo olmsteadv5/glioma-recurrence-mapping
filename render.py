@@ -393,16 +393,8 @@ class Chart:
         self.slot = {n: k for k, n in enumerate(self.around)}
         self.plan = "spread"
 
-        # every tract's real length with the color it is drawn in, longest
-        # first: on the chart a line's length is its position, not its length
-        runs = []
-        for a, b, w, straight, ratios, crosses in self.link:
-            tone = self._tone(min(w, 1.0), crosses)
-            runs += [(r * straight, tone) for r in ratios]
-        for at, count, ratios in self.spokes:
-            runs += [(r * float(self.far[at]), SPOKE) for r in ratios]
-        self.runs = sorted(runs, key=lambda t: -t[0])
-        self.shelf, self._tabs, self._shelf_box = "tracts", [], None
+        self.shelf, self._tabs = "tracts", []
+        self._runs_was, self._runs = object(), []
 
         self.lit, self.guest, self.zoom, self.pan = None, None, 1.0, np.zeros(2)
         self._key_was, self._key_art = None, None
@@ -597,6 +589,37 @@ class Chart:
 
     SHELF = 300
 
+    def runs(self):
+        # every tract of whatever is picked, longest first, with the color it
+        # has on the chart. on the chart a line's length is the gap between two
+        # dots; here it is the tract, which is the one thing the chart cannot say
+        key = (self.lit, self.guest["name"] if self.guest else None)
+        if key == self._runs_was:
+            return self._runs
+        out = []
+        if self.guest is not None:
+            for k, weight, straight, ratios, crosses in self.guest["link"]:
+                tone = self._tone(min(weight, 1.0), crosses)
+                out += [(r * straight, tone) for r in ratios]
+        else:
+            for a, b, weight, straight, ratios, crosses in self.link:
+                if self.lit is not None and self.lit not in (a, b):
+                    continue
+                tone = self._tone(min(weight, 1.0), crosses)
+                out += [(r * straight, tone) for r in ratios]
+            for at, count, ratios in self.spokes:
+                if self.lit is not None and at != self.lit:
+                    continue
+                out += [(r * float(self.far[at]), SPOKE) for r in ratios]
+        self._runs_was, self._runs = key, sorted(out, key=lambda t: -t[0])
+        return self._runs
+
+    def shelved(self):
+        # the parcels the inventory lists: the picked one and what it links to
+        near = self._neighbors()
+        order = [n for n in range(len(self.nodes)) if near is None or n in near]
+        return sorted(order, key=lambda n: -self.lost[n])
+
     def tabbed(self, x, y):
         # the inventory's own tabs, so a click there is not a click on a node
         for x0, x1, name in self._tabs:
@@ -608,12 +631,13 @@ class Chart:
     def _shelf(self, pen, wide, high):
         # the same lines and dots as the chart, laid out so that the one thing
         # the chart cannot show, how long a tract is, is simply a row length
-        pitch = 25.0
+        pitch, runs = 25.0, self.runs()
         across = max(int((self.SHELF - 36) / pitch), 1)
-        want = (24 + max(len(self.runs), 160) if self.shelf == "tracts"
-                else 64 + int(np.ceil(len(self.nodes) / across)) * pitch)
-        tall = int(min(high - 28, want))
-        if wide < self.SHELF + 620 or tall < 180:
+        shown = self.shelved()
+        want = (70 + min(len(runs) * 6, max(len(runs), 40)) if self.shelf == "tracts"
+                else 78 + int(np.ceil(max(len(shown), 1) / across)) * pitch)
+        tall = int(min(high - 28, max(want, 104)))
+        if wide < self.SHELF + 620:
             self._tabs = []
             return
         left, top = wide - 14 - self.SHELF, 14
@@ -629,30 +653,36 @@ class Chart:
                      fill=BRIGHT_INK if name == self.shelf else FAINT_INK)
             self._tabs.append((at - 4, at + room + 4, name))
             at += room + 16
+        name = (self.guest["name"] if self.guest else
+                self.name(self.lit) if self.lit is not None else None)
+        pen.text((left + 16, top + 28), name or "every parcel",
+                 fill=INK if name else FAINT_INK, font=small, anchor="lm")
         if self.shelf == "tracts":
-            self._rows(pen, left, top, tall, small)
+            self._rows(pen, left, top, tall, small, runs)
         else:
-            self._dots(pen, left, top, tall, small)
+            self._dots(pen, left, top, tall, small, shown)
 
-    def _rows(self, pen, left, top, tall, font):
+    def _rows(self, pen, left, top, tall, font, runs):
         # one row per tract, longest first, in the color it has on the chart
-        if not self.runs:
+        if not runs:
+            pen.text((left + 16, top + 60), "no tract runs to it",
+                     fill=FAINT_INK, font=font, anchor="lm")
             return
-        x, y0 = left + 16, top + 32
-        room, high = self.SHELF - 46, tall - 54
-        longest = self.runs[0][0] or 1.0
-        step = high / len(self.runs)
-        for n, (mm, tone) in enumerate(self.runs):
+        x, y0 = left + 16, top + 52
+        room, high = self.SHELF - 46, tall - 76
+        longest = runs[0][0] or 1.0
+        step = high / len(runs)
+        for n, (mm, tone) in enumerate(runs):
             y = int(y0 + n * step)
-            pen.line([(x, y), (x + max(mm / longest * room, 1), y)], fill=tone)
+            pen.line([(x, y), (x + max(mm / longest * room, 1), y)],
+                     fill=tone, width=2 if step >= 4 else 1)
         pen.text((x, y0 - 12), f"{longest:.0f} mm", fill=FAINT_INK, font=font, anchor="lm")
-        pen.text((x, y0 + high + 12), f"{self.runs[-1][0]:.0f} mm · "
-                 f"{len(self.runs)} tracts", fill=FAINT_INK, font=font, anchor="lm")
+        pen.text((x, y0 + high + 14), f"{runs[-1][0]:.0f} mm · {len(runs)} tracts",
+                 fill=FAINT_INK, font=font, anchor="lm")
 
-    def _dots(self, pen, left, top, tall, font):
-        # every parcel at the size and color it has on the chart, biggest first
-        order = sorted(range(len(self.nodes)), key=lambda n: -self.lost[n])
-        x0, y = left + 20, top + 40
+    def _dots(self, pen, left, top, tall, font, order):
+        # each parcel at the size and color it has on the chart, biggest first
+        x0, y = left + 20, top + 58
         pitch = 25.0
         at = x0
         for n in order:
@@ -667,8 +697,9 @@ class Chart:
                         fill=PANEL if hollow else fill,
                         outline=fill if hollow else PANEL)
             at += pitch
-        pen.text((x0 - 4, top + 24), f"{self.most:.1f} mL largest · "
-                 f"{len(self.nodes)} parcels", fill=FAINT_INK, font=font, anchor="lm")
+        biggest = max((self.lost[n] for n in order), default=0.0)
+        pen.text((x0 - 4, top + 42), f"{biggest:.1f} mL largest · "
+                 f"{len(order)} parcels", fill=FAINT_INK, font=font, anchor="lm")
 
     def _neighbors(self):
         # while a node is picked, its own edges stay lit and the rest fall back

@@ -72,6 +72,7 @@ HELP = [("./main.py <n>...", "the whole pipeline, about 3 min a subject"),
         ("map <n>...", "parcel overlap and function terms only, seconds"),
         ("show <n>", "load a subject into the viewer"),
         ("browser <n>", "that subject in a separate browser window"),
+        ("save", "the viewer as a png, next to the outputs"),
         ("cancel", "stop the running job"),
         ("clear", "clear this log"),
         ("help", "this")]
@@ -288,7 +289,7 @@ class Console(App):
     BINDINGS = [
         ("q", "quit", "quit"), ("v", "view", "3d/slices"), ("s", "space", "native/mni"),
         ("p", "palette", "colors"), ("t", "shell", "prompt"),
-        ("x", "cancel", "cancel run"),
+        ("x", "cancel", "cancel run"), ("e", "export", "save a png"),
         Binding("a", "show_list('parcels')", "parcels", show=False),
         Binding("b", "show_list('functions')", "functions", show=False),
         Binding("c", "show_list('connectivity')", "connectivity", show=False),
@@ -451,6 +452,11 @@ class Console(App):
                 label = f"  _{before[16:]} \u2192 _{after[16:]} WT"
                 out.append(f"[{WARN if change > 0 else FAINT}]"
                            f"{row(label, f'{change:+.1f} mL', w)}[/]")
+                was = {r["parcel"] for r in self.results[before]["atlas"]["parcels"]}
+                now = {r["parcel"] for r in self.results[after]["atlas"]["parcels"]}
+                out.append(f"[{WARN if now - was else FAINT}]"
+                           f"{row('  newly involved', str(len(now - was)), w)}[/]")
+                out.append(f"[{FAINT}]{row('  no longer', str(len(was - now)), w)}[/]")
 
         run = d.get("run", {})
         out.append(f"[{DIM}]run[/]")
@@ -806,7 +812,7 @@ class Console(App):
             viewer.styles.border_subtitle_align = "right"
             other = "yba" if self.palette == "contrast" else "contrast"
             viewer.border_subtitle = keyed(
-                f"v slices · p {other} colors")
+                f"v slices · p {other} colors · e save")
         else:
             for which in render.Slices.PLANES:
                 pane = self.query_one(f"#p-{which}", Pane)
@@ -886,8 +892,8 @@ class Console(App):
         core = f"v 3d · s {'native' if self.space == 'mni' else 'mni'}"
         if self.slices.involved:
             other = "yba" if self.palette == "contrast" else "contrast"
-            return [f"{core} · p {other} colors", core]
-        return [core]
+            return [f"{core} · p {other} colors · e save", f"{core} · e save", core]
+        return [f"{core} · e save", core]
 
     def band(self, widget, left, taken, choices):
         # one border line, a label at each end, the line itself drawn between
@@ -975,7 +981,7 @@ class Console(App):
             return self.mode == "slices" or None
         if action == "cancel":
             return self.proc is not None or None
-        if action == "show_list":
+        if action in ("show_list", "export"):
             return bool(self.scene)
         return True
 
@@ -1013,6 +1019,19 @@ class Console(App):
 
     def show_list(self, which):
         self.action_show_list(which)
+
+    def action_export(self):
+        # whatever the viewer is showing, at a size worth sending to someone
+        if not self.scene:
+            return
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        if self.mode == "3d":
+            image, kind = self.scene.snapshot(), "3d"
+        else:
+            image, kind = self.slices.montage(), f"slices-{self.space}"
+        dest = out_dir(self.subject) / f"{self.subject}_{kind}_{stamp}.png"
+        image.save(dest)
+        self.log_write(f"[{OK}]wrote {dest.name}[/] [{FAINT}]{image.size[0]}x{image.size[1]}[/]")
 
     def action_shell(self):
         self.set_focus(self.query_one("#cmd"))
@@ -1089,6 +1108,8 @@ class Console(App):
                 self.run_pipeline(numbers, stage, timepoint)
         elif name in ("show", "load"):
             self.show_subject(numbers, timepoint)
+        elif name in ("save", "export"):
+            self.action_export()
         elif name in ("browser", "view.py", "view"):
             self.open_browser(numbers)
         elif name in ("cancel", "stop"):

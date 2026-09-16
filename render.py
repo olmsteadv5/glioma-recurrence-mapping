@@ -198,6 +198,14 @@ class Scene:
         for name, actor in self.parcel_actors.items():
             actor.prop.color = _hex(colors[index[name]])
 
+    def snapshot(self, width=1600, height=1200):
+        # bigger than the pane, for something you are going to send to someone
+        was = list(self.plotter.window_size)
+        self.resize(width, height)
+        out = self.image()
+        self.resize(*was)
+        return out
+
     def image(self):
         self.plotter.render()
         self.grab.Modified()
@@ -333,6 +341,15 @@ class Slices:
         middle = points.mean(0)
         self.cursor = [int(v) for v in points[np.argmin(((points - middle) ** 2).sum(1))]]
         return True
+
+    def montage(self, cell=700):
+        # the three planes side by side, without disturbing the click mapping
+        held = dict(self.geom)
+        canvas = Image.new("RGB", (cell * len(self.PLANES), cell), PANEL)
+        for n, which in enumerate(self.PLANES):
+            canvas.paste(self.plane(which, (cell, cell)), (n * cell, 0))
+        self.geom = held
+        return canvas
 
     def click(self, which, fx, fy):
         # fx, fy are fractions of the whole pane, letterbox included

@@ -546,7 +546,7 @@ class Chart:
         # a title cut into the top edge, headings over quieter rows
         font = _font(12)
         rows = sorted(self.where)
-        tall = 292 + 14 * len(rows)
+        tall = 262 + 14 * len(rows)
         if wide < 580 or high < tall + 40:
             self._scale_bar(pen, wide, high, font)
             return
@@ -576,19 +576,18 @@ class Chart:
                 pen.text((edge, y), str(tally), fill=INK, font=font, anchor="rm")
             return y + 15
 
-        pen.text((x, y), "one dot, one parcel", fill=INK, font=small, anchor="lm")
+        pen.text((x, y), "parcels", fill=INK, font=small, anchor="lm")
         y += 17
-        for color, text, tally in ((NODE_IN, "the tumour overlaps it", count["in"]),
-                                   (NODE_OUT, "outside it, connected to a parcel it overlaps",
+        for color, text, tally in ((NODE_IN, "overlapped by the tumour", count["in"]),
+                                   (NODE_OUT, "not overlapped, linked to an overlapped parcel",
                                     count["out"]),
-                                   (NODE_TUMOUR, "the tumour mass itself", count["mass"])):
+                                   (NODE_TUMOUR, "the tumour mass", count["mass"])):
             pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=color)
             y = line(y, text, tally)
         pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=PANEL, outline=NODE_IN)
-        y = line(y, "overlapped too, but no link to draw", count["loose"]) + 6
+        y = line(y, "overlapped, with nothing linking to it", count["loose"]) + 6
 
-        pen.text((x, y), "dot area: parcel volume inside the tumour",
-                 fill=INK, font=small, anchor="lm")
+        pen.text((x, y), "volume in the tumour", fill=INK, font=small, anchor="lm")
         y += 19
         step = x + 7
         for share in (0.15, 0.5, 1.0):
@@ -600,21 +599,17 @@ class Chart:
         pen.text((step - 8, y + 16), "mL", fill=FAINT_INK, font=small, anchor="lm")
         y += 33
 
-        pen.text((x, y), "one line, one link", fill=INK, font=small, anchor="lm")
+        pen.text((x, y), "links", fill=INK, font=small, anchor="lm")
         y += 17
         for color, text, tally in (
                 (self._tone(0.5, False), "parcel to parcel", count["plain"]),
-                (self._tone(0.5, True), "parcel to parcel, via the mass", count["via"]),
-                (SPOKE, "parcel into the mass", count["spoke"])):
+                (self._tone(0.5, True), "parcel to parcel, through the mass", count["via"]),
+                (SPOKE, "parcel to the mass", count["spoke"])):
             pen.line([(x, y), (x + 14, y)], fill=color, width=2)
             y = line(y, text, tally)
-        pen.arc([x, y - 6, x + 14, y + 8], 180, 360, fill=self._tone(0.5, False), width=2)
-        y = line(y, "bow: one tract, longer than the gap", count["bow"])
-        pen.line([(x, y), (x + 14, y)], fill=self._tone(0.5, False), width=2)
-        y = line(y, "straight: connected, no tract to draw", count["bare"]) + 9
+        y += 9
 
-        pen.text((x, y), "ground colour: where the parcel sits",
-                 fill=INK, font=small, anchor="lm")
+        pen.text((x, y), "regions", fill=INK, font=small, anchor="lm")
         y += 17
         for lobe in rows:
             pen.rectangle([x + 1, y - 5, x + 11, y + 5],
@@ -633,7 +628,7 @@ class Chart:
         pen.line([(20, y), (20 + bar, y)], fill=INK, width=1)
         for end in (20, 20 + bar):
             pen.line([(end, y - 3), (end, y + 3)], fill=INK)
-        pen.text((34 + bar, y), "50 mm between parcel centres", fill=INK, font=font, anchor="lm")
+        pen.text((34 + bar, y), "50 mm between centres", fill=INK, font=font, anchor="lm")
 
     def _strands(self, pen, start, stop, ratios, color, width=2):
         # one arc per tract, bowed until its drawn length is its real length

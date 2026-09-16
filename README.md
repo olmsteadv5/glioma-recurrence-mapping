@@ -132,9 +132,21 @@ real distances between the parcels**, to a median of 10%. That uses
 streamline length but it is clamped, with over half the edges sitting at
 exactly its maximum of 168.8 mm, so it cannot carry lengths.
 
+The tumour's own edges are real geometry: a spoke is drawn to every parcel that
+a tract centreline passes through **after passing through the tumour**. For
+subject 36 that is 715 centrelines through the mass, 480 of which go on to
+reach one of 76 involved parcels, 58 of them into `L_CC_B` alone.
+
+Edges are drawn as several bowed strands rather than one line, because several
+tracts run between two places. For the tumour's spokes the strand count is the
+real centreline count on a log scale, one strand per doubling. For parcel to
+parcel it is the connection strength: `SC_Count` is normalised, so the table
+cannot give a literal number of streamlines and the strands say how strong, not
+how many.
+
 For subject 36 that is 99 parcels in the tumour and 46 tied to them, over 259
-connections, laid out in a fifth of a second. Only connections at or above 15%
-of the strongest are drawn, or the chart is a solid mat.
+connections and 101 spokes, laid out in a fifth of a second. Only connections
+at or above 15% of the strongest are drawn, or the chart is a solid mat.
 
 The modality strip sits in the viewer's bottom border, away from the other
 controls on the right. Press `1` to `4` or click it. The number of the one in

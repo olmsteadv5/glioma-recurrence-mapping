@@ -65,6 +65,30 @@ def centres(subject):
     return middle, tumour
 
 
+@functools.lru_cache(maxsize=4)
+def through(subject):
+    # How many tract centrelines run through both the tumour and each parcel.
+    import collections
+    import tracts as tractography
+
+    labels, names = label_volume(nib.load(MNI))
+    seg = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
+    tumour = np.asarray(seg.dataobj) > 0
+    inverse = np.linalg.inv(seg.affine)
+    shape = np.array(tumour.shape)
+
+    hits = collections.Counter()
+    for line in tractography.centrelines():
+        ijk = np.rint(nib.affines.apply_affine(inverse, line)).astype(int)
+        keep = ijk[np.all((ijk >= 0) & (ijk < shape), axis=1)]
+        if not len(keep) or not tumour[keep[:, 0], keep[:, 1], keep[:, 2]].any():
+            continue
+        for value in np.unique(labels[keep[:, 0], keep[:, 1], keep[:, 2]]):
+            if value > 0:
+                hits[int(value) - 1] += 1
+    return dict(hits)
+
+
 def build(subject, overlap, floor=FLOOR):
     # Involved parcels, plus whatever the white matter ties them to.
     count, distance = edges()
@@ -91,7 +115,10 @@ def build(subject, overlap, floor=FLOOR):
     # the tumour is the last node, its distance to each parcel being the real one
     to_tumour = [float(np.linalg.norm(middle[n] - tumour))
                  if not np.isnan(middle[n]).any() else 60.0 for n in nodes]
-    return nodes, link, np.array(to_tumour), set(inside)
+    # and its edges are real: centrelines that pass through the mass and the parcel
+    runs = through(subject)
+    spokes = [(place[n], runs[n]) for n in nodes if runs.get(n)]
+    return nodes, link, np.array(to_tumour), set(inside), spokes
 
 
 def layout(count_of_nodes, link, to_tumour, rounds=120):

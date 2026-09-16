@@ -270,6 +270,7 @@ NODE_IN = (228, 87, 46)
 NODE_OUT = (168, 153, 132)
 NODE_TUMOUR = (214, 200, 175)
 EDGE = (80, 73, 69)
+SPOKE = (102, 92, 84)
 
 
 class Chart:
@@ -278,7 +279,8 @@ class Chart:
 
     def __init__(self, subject, overlap):
         import graph
-        self.nodes, self.link, to_tumour, self.inside = graph.build(subject, overlap)
+        (self.nodes, self.link, to_tumour,
+         self.inside, self.spokes) = graph.build(subject, overlap)
         self.points = graph.layout(len(self.nodes), self.link, to_tumour)
         self.names = [p["name"] for p in atlas.parcels()]
         self.lit = None
@@ -303,9 +305,13 @@ class Chart:
         middle = (np.array([wide, high]) - span * scale) / 2
         self.screen = (self.points - low) * scale + middle
 
+        # the tumour's own edges first, so the parcel structure sits on top
+        for at, count in self.spokes:
+            self._strands(pen, at, len(self.screen) - 1,
+                          min(1 + int(np.log2(count)), 6), SPOKE, gap=3.2)
         for a, b, weight, _ in self.link:
-            shade = tuple(int(c + (150 - c) * min(weight, 1.0)) for c in EDGE)
-            pen.line([tuple(self.screen[a]), tuple(self.screen[b])], fill=shade, width=1)
+            shade = tuple(int(c + (170 - c) * min(weight, 1.0)) for c in EDGE)
+            self._strands(pen, a, b, 1 + int(min(weight, 1.0) * 4), shade, gap=4.0)
 
         for at, point in enumerate(self.screen):
             last = at == len(self.screen) - 1
@@ -317,6 +323,22 @@ class Chart:
                         outline=LIT if at == self.lit else PANEL,
                         width=3 if at == self.lit else 1)
         return canvas
+
+    def _strands(self, pen, a, b, many, color, gap=4.0):
+        # several tracts run between two places, so draw several, bowed apart
+        start, stop = self.screen[a], self.screen[b]
+        along = stop - start
+        span = float(np.linalg.norm(along))
+        if span < 1:
+            return
+        side = np.array([-along[1], along[0]]) / span
+        for n in range(many):
+            bow = (n - (many - 1) / 2) * gap
+            middle = (start + stop) / 2 + side * bow * 2
+            steps = np.linspace(0, 1, 12)[:, None]
+            curve = ((1 - steps) ** 2 * start + 2 * (1 - steps) * steps * middle
+                     + steps ** 2 * stop)
+            pen.line([tuple(point) for point in curve], fill=color, width=1)
 
     def pick(self, x, y, reach=14):
         if not len(self.screen):

@@ -737,9 +737,17 @@ class Console(App):
             if name in order:
                 self.slices.involved[order[name] + 1] = palette[order[name]]
 
+    def picked(self, index=None):
+        # the first row is the empty pick, so the data starts one below the list
+        if index is None:
+            index = self.query_one("#parcels", ListView).index or 0
+        return index - 1
+
     def selected_parcels(self):
         # the parcels the current row is about: one, or the few that define it
-        index = self.query_one("#parcels", ListView).index or 0
+        index = self.picked()
+        if index < 0:
+            return []
         d = self.results[self.subject]
         if self.listing == "parcels":
             rows = self.parcel_rows
@@ -791,13 +799,15 @@ class Console(App):
                     row(c["parcel"], f"{bar(c['share'] / peak)} {c['share']:>5.0%}", w - 2)
                     for c in rows]
 
-        self.row_text = body
+        self.row_text = [f"[{FAINT}]nothing selected[/]"] + body
         panel.border_title = f"breakdown \u00b7 {self.listing}"
         panel.border_subtitle = self.strip("right", VIEWS, self.listing)[0]
         panel.styles.border_subtitle_align = "left"
         for text in self.row_text:
             listing.append(ListItem(Label("  " + text)))
         self.marked = None
+        # park the caret on the empty pick, so the list agrees with the viewers
+        listing.index = 0
         self.refresh_detail(0)
 
     def mark_row(self, index):
@@ -821,8 +831,10 @@ class Console(App):
         text = self.query_one("#detailtext", Static)
         about = [""] + [f"[{FAINT}]{line}[/]"
                         for line in textwrap.wrap(ABOUT[self.listing], w)]
-
-
+        index = self.picked(index)
+        if index < 0:
+            text.update("\n".join(about[1:]))
+            return
 
         if self.listing == "parcels":
             rows = self.parcel_rows
@@ -892,6 +904,9 @@ class Console(App):
     def seek_parcel(self, index):
         # put the crosshair in the middle of it, which only mni can work out
         self.slices.lit = None
+        index = self.picked(index)
+        if index < 0:
+            return
         if self.listing == "parcels":
             rows = self.parcel_rows
             if index >= len(rows):
@@ -927,7 +942,7 @@ class Console(App):
             self._list_width = listing.size.width
             index = listing.index
             self.refresh_list()
-            listing.index = index
+            listing.index = 0 if index is None else index
         cell = get_cell_size()
         viewer = self.query_one("#viewer")
         if self.mode == "3d":
@@ -1067,7 +1082,7 @@ class Console(App):
             return
         names = [r["parcel"] for r in self.parcel_rows]
         if name in names and self.listing == "parcels":
-            self.select_row(names.index(name))
+            self.select_row(names.index(name) + 1)
         else:
             self.chart.focus(name)
             self.draw()
@@ -1087,9 +1102,9 @@ class Console(App):
         if self.listing != "parcels":
             self.listing = "parcels"
             self.refresh_list()
-            self.call_after_refresh(self.select_row, names.index(name))
+            self.call_after_refresh(self.select_row, names.index(name) + 1)
         else:
-            self.select_row(names.index(name))
+            self.select_row(names.index(name) + 1)
 
     def select_row(self, index):
         self.query_one("#parcels", ListView).index = index

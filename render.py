@@ -19,6 +19,18 @@ TRACT = (95, 155, 114)
 TISSUE = {1: (242, 193, 78), 2: (63, 167, 214), 3: (228, 87, 46), 4: (142, 125, 190)}
 CROSS = (191, 168, 127)
 _hex = lambda t: "#%02x%02x%02x" % tuple(t)
+PANEL = (20, 20, 20)
+
+
+def fit(image, size, background=PANEL):
+    # Always hand back exactly the requested box, so the widget never shows dead space.
+    w, h = max(size[0], 8), max(size[1], 8)
+    scale = min(w / image.width, h / image.height)
+    scaled = image.resize((max(int(image.width * scale), 1), max(int(image.height * scale), 1)),
+                          Image.NEAREST)
+    canvas = Image.new("RGB", (w, h), background)
+    canvas.paste(scaled, ((w - scaled.width) // 2, (h - scaled.height) // 2))
+    return canvas
 
 
 class Scene:
@@ -208,15 +220,22 @@ class Slices:
         im = Image.fromarray(rgb)
         w, h = max(size[0], 8), max(size[1], 8)
         scale = min(w / im.width, h / im.height)
-        out = im.resize((max(int(im.width * scale), 1), max(int(im.height * scale), 1)),
-                        Image.NEAREST)
-        self.geom[which] = (scale, im.width, im.height)
+        out = fit(im, (w, h))
+        # the click mapping has to know about the letterbox offsets
+        self.geom[which] = (scale, im.width, im.height,
+                            (w - int(im.width * scale)) // 2, (h - int(im.height * scale)) // 2,
+                            w, h)
         return out
 
     def click(self, which, fx, fy):
-        # fx, fy are fractions of the rendered image, 0..1
-        scale, w, h = self.geom.get(which, (1, self.shape[0], self.shape[1]))
-        px, py = int(fx * w), int(fy * h)
+        # fx, fy are fractions of the whole pane, letterbox included
+        if which not in self.geom:
+            return
+        scale, iw, ih, ox, oy, bw, bh = self.geom[which]
+        px = int((fx * bw - ox) / max(scale, 1e-6))
+        py = int((fy * bh - oy) / max(scale, 1e-6))
+        if not (0 <= px < iw and 0 <= py < ih):
+            return
         nx, ny, nz = self.shape
         if which == "axial":
             self.cursor[0] = max(0, min(nx - 1, nx - 1 - px))

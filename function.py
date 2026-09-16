@@ -31,8 +31,8 @@ def for_parcel(parcel, n=8, kind="functional"):
     return [(words[i], round(float(row[i]), 2)) for i in order if row[i] > 0]
 
 
-def for_tumour(overlap, n=15, kind="functional", floor=0.15):
-    # Terms over-represented in the damaged tissue, not just terms that score high everywhere.
+def for_tumour(overlap, n=20, kind="functional"):
+    # Each involved parcel's profile, weighted by how much of that parcel is destroyed.
     words, scores, names = terms(kind)
     index = {name: i for i, name in enumerate(names)}
 
@@ -43,13 +43,7 @@ def for_tumour(overlap, n=15, kind="functional", floor=0.15):
     if weights.sum() == 0:
         return []
 
-    lesion = (scores * weights[:, None]).sum(0) / weights.sum()
-    baseline = scores.mean(0)
-    # ratio against the whole brain, so common terms do not win every time
-    enrichment = lesion / np.maximum(baseline, 1e-6)
-    # a term barely present in the lesion can still divide to a huge ratio; drop those
-    enrichment[lesion < floor * lesion.max()] = 0
-
-    order = np.argsort(-enrichment)[:n]
-    return [{"term": words[i], "enrichment": round(float(enrichment[i]), 2),
-             "score": round(float(lesion[i]), 3)} for i in order if enrichment[i] > 0]
+    total = (scores * weights[:, None]).sum(0) / weights.sum()
+    order = np.argsort(-total)[:n]
+    return [{"term": words[i], "score": round(float(total[i]), 2)}
+            for i in order if total[i] > 0]

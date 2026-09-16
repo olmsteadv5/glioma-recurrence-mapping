@@ -89,14 +89,12 @@ says "no anatomical origin" in native.
 ## Functions at risk
 
 `function.py` reads Parcelsynth, which scores all 696 parcels against 334
-function terms. For a tumour it weights each involved parcel by how much of it
-is destroyed, then reports terms **over-represented against the whole-brain
-average** rather than raw scores, so common terms do not win every time.
+function terms. For a tumour it sums those profiles, weighting each involved
+parcel by how much of it the tumour occupies.
 
 ```
-UPENN-GBM-00036_11   grasp, arm, tactile, touch, finger    left sensorimotor
-UPENN-GBM-00002_11   unpleasant, aversive, anxiety         right amygdala, insula
-UPENN-GBM-00042_11   motion, auditory, sound               left temporal
+UPENN-GBM-00036_11   movement, sensorimotor, finger, hand   left sensorimotor
+UPENN-GBM-00002_11   pain, noxious, auditory, listen        right amygdala, insula
 ```
 
 These are **meta-analytic associations pooled across published studies**, not

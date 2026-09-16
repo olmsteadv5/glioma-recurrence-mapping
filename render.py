@@ -385,10 +385,7 @@ class Chart:
             "via": sum(len(e[4]) for e in self.link if e[5]),
             "spoke": sum(len(r) for _, _, r in self.spokes),
             "bow": self.strands - bare, "bare": bare,
-            # radial draws one line per relationship, not one per tract
-            "plain_n": sum(1 for e in self.link if not e[5]),
-            "via_n": sum(1 for e in self.link if e[5]),
-            "spoke_n": len(self.spokes)}
+            }
 
         # one wedge per region, so the ring order is anatomy and not the seed
         self.around = sorted(range(len(self.nodes)),
@@ -400,7 +397,7 @@ class Chart:
         self._key_was, self._key_art = None, None
         self.where = {}
         self.screen, self.scale = np.zeros((0, 2)), 1.0
-        self.middle, self.inner = np.zeros(2), 0.0
+        self.middle, self.round, self.seat = np.zeros(2), 1.0, {}
 
     def name(self, at):
         if at is None or at >= len(self.nodes):
@@ -437,44 +434,42 @@ class Chart:
         self.zoom, self.pan = 1.0, np.zeros(2)
 
     def swap(self):
-        self.plan = "spread" if self.plan == "radial" else "radial"
+        self.plan = "spread" if self.plan == "circle" else "circle"
         self.home()
         return self.plan
 
-    def _place_radial(self, wide, high):
-        # angle is the region going clockwise, radius is the real distance from
-        # the mass. every spoke is then radial and none of them can cross
-        pad = 78
+    def _place_circle(self, wide, high):
+        # parcels on a rim grouped by region, the mass in the middle. nothing
+        # here is a distance, so nothing pretends to be one
+        pad = 96
         self.middle = np.array([wide, high]) / 2 + self.pan
-        span = max(min(wide, high) / 2 - pad, 40) * self.zoom
-        self.inner = span * 0.2
-        self.reach = max(float(np.max(self.far)) if len(self.far) else 1.0, 1.0)
-        # a square root radius, because a couple of far parcels would otherwise
-        # squash the rest into one band. the rings carry the millimetres
-        self.scale = span - self.inner
-        self.outer = span
+        self.round = max(min(wide, high) / 2 - pad, 40) * self.zoom
+        self.scale = self.round / 100.0
         step = 2 * np.pi / max(len(self.nodes), 1)
 
         turn = np.array([self.slot[n] * step - np.pi / 2 for n in range(len(self.nodes))])
-        out = self._ring_at(np.asarray(self.far))
         self.screen = np.zeros((len(self.nodes) + 1, 2))
-        self.screen[:-1] = self.middle + out[:, None] * np.stack(
+        self.screen[:-1] = self.middle + self.round * np.stack(
             [np.cos(turn), np.sin(turn)], axis=1)
         self.screen[-1] = self.middle
+
+        # one seat per region, half way in, so a thread joins two regions
+        # before it joins two parcels and parallel tracts travel together
+        self.seat = {}
+        for lobe in sorted(set(self.lobes)):
+            slots = [self.slot[n] for n in range(len(self.nodes)) if self.lobes[n] == lobe]
+            mean = (min(slots) + max(slots)) / 2 * step - np.pi / 2
+            self.seat[lobe] = self.middle + self.round * 0.52 * np.array(
+                [np.cos(mean), np.sin(mean)])
         if self.guest is not None:
-            # a guest has no slot of its own, so it sits among what it links to
             near = [turn[k] for k, *_ in self.guest["link"]] or [0.0]
             mean = np.arctan2(np.mean(np.sin(near)), np.mean(np.cos(near)))
-            out = float(self._ring_at(np.array([self.guest["far"]]))[0])
-            self.guest["screen"] = self.middle + out * np.array(
+            self.guest["screen"] = self.middle + (self.round + 26) * np.array(
                 [np.cos(mean), np.sin(mean)])
 
-    def _ring_at(self, mm):
-        return self.inner + np.sqrt(np.clip(mm, 0, None) / self.reach) * self.scale
-
     def _place(self, wide, high):
-        if self.plan == "radial":
-            return self._place_radial(wide, high)
+        if self.plan == "circle":
+            return self._place_circle(wide, high)
         pad = 30
         low, span = self.points.min(0), np.ptp(self.points, axis=0)
         span[span == 0] = 1
@@ -495,10 +490,9 @@ class Chart:
         self._place(wide, high)
         near = self._neighbors()
 
-        radial = self.plan == "radial"
-        if radial:
-            self._wedges(canvas, wide, high)
-            self._rings(pen)
+        circle = self.plan == "circle"
+        if circle:
+            self._bands(pen)
         else:
             self._blobs(canvas, wide, high)
         # a line stays lit only if the picked node is one of its two ends. the
@@ -508,17 +502,19 @@ class Chart:
         for at, count, ratios in self.spokes:
             own = at == self.lit
             tone = self._shade(SPOKE, free or own)
-            if radial:
-                self._sheaf(pen, self.screen[at], self.screen[-1], ratios,
-                            tone, 3 if own else 1)
+            if circle:
+                self._ribbon(pen, self.screen[at], self.seat[self.lobes[at]],
+                             self.screen[-1], self.middle, len(ratios), tone,
+                             3 if own else 1)
             else:
                 self._strands(pen, self.screen[at], self.screen[-1], ratios,
                               tone, 3 if own else 2)
         for a, b, weight, _, ratios, crosses in self.link:
             own = self.lit in (a, b)
             tone = self._shade(self._tone(weight, crosses), free or own)
-            if radial:
-                self._chords(pen, self.screen[a], self.screen[b], ratios,
+            if circle:
+                self._ribbon(pen, self.screen[a], self.seat[self.lobes[a]],
+                             self.screen[b], self.seat[self.lobes[b]], len(ratios),
                              tone, 3 if own else 1)
             else:
                 self._strands(pen, self.screen[a], self.screen[b], ratios, tone,
@@ -526,9 +522,11 @@ class Chart:
         if self.guest is not None:
             for k, weight, _, ratios, crosses in self.guest["link"]:
                 tone = self._tone(weight, crosses)
-                if radial:
-                    self._chords(pen, self.screen[k], self.guest["screen"],
-                                 ratios, tone, 3)
+                if circle:
+                    self._ribbon(pen, self.screen[k], self.seat[self.lobes[k]],
+                                 self.guest["screen"],
+                                 self.seat.get(self.guest["lobe"], self.middle),
+                                 len(ratios), tone, 3)
                 else:
                     self._strands(pen, self.screen[k], self.guest["screen"], ratios, tone, 3)
         self._nodes(pen, near)
@@ -552,73 +550,38 @@ class Chart:
         pen.text((point[0], point[1] - 14), self.guest["name"], fill=LIT,
                  font=_font(11), anchor="ms")
 
-    def _wedges(self, canvas, wide, high):
-        # a region is a slice of the ring, so it is contiguous by construction
-        pen = ImageDraw.Draw(canvas)
+    def _bands(self, pen):
+        # a region is a run of the rim, so it is contiguous by construction
         step = 360.0 / max(len(self.nodes), 1)
-        rim = self.outer + 26
-        box = [self.middle[0] - rim, self.middle[1] - rim,
-               self.middle[0] + rim, self.middle[1] + rim]
+        out = self.round + 24
+        box = [self.middle[0] - out, self.middle[1] - out,
+               self.middle[0] + out, self.middle[1] + out]
         self.where = {}
         for lobe in sorted(set(self.lobes)):
             slots = [self.slot[n] for n in range(len(self.nodes)) if self.lobes[n] == lobe]
-            first, last = min(slots) * step - 90, max(slots) * step - 90
-            pen.pieslice(box, first - step * 0.5, last + step * 0.5, fill=_ground(*lobe))
+            pen.arc(box, min(slots) * step - 90 - step * 0.4,
+                    max(slots) * step - 90 + step * 0.4,
+                    fill=_ground(*lobe, lift=1.5), width=13)
             self.where[lobe] = None
-        hub = self.inner * 0.62
-        pen.ellipse([self.middle[0] - hub, self.middle[1] - hub,
-                     self.middle[0] + hub, self.middle[1] + hub], fill=PANEL)
 
-    def _rings(self, pen):
-        # the radius is millimetres, so say so on the ring rather than in a bar
-        font = _font(11)
-        for mm in (10, 20, 40, 60, 80, 100, 120, 160):
-            reach = float(self._ring_at(np.array([mm]))[0])
-            if mm > self.reach:
-                break
-            pen.ellipse([self.middle[0] - reach, self.middle[1] - reach,
-                         self.middle[0] + reach, self.middle[1] + reach],
-                        outline=KEY_EDGE)
-            pen.text((self.middle[0] + 5, self.middle[1] - reach), f"{mm} mm",
-                     fill=FAINT_INK, font=font, anchor="lm")
+    THREAD = np.linspace(0, 1, 26)[:, None, None]
 
-    STEPS = np.linspace(0, 1, 24)[:, None]
-    # neither axis here is a straight distance, so a drawn length cannot be a
-    # real length. a thread carries the order only, clamped at both ends: one
-    # pair in 283 measures at nothing and would otherwise sit on the line, and
-    # the longest run nine times its gap and would fold back through the middle
-    SHORT, LONG = 0.15, 3.0
-
-    @classmethod
-    def _along(cls, ratio):
-        return float(np.clip((ratio - cls.SHORT) / (cls.LONG - cls.SHORT), 0.0, 1.0))
-
-    def _chords(self, pen, start, stop, ratios, color, width=1):
-        # one thread per tract. a shallower pull is a longer path, so the longer
-        # tract dips further in and a bundle fans by how much its lengths differ
-        for ratio in ratios:
-            lean = 0.18 - 0.11 * self._along(ratio)
-            pull = self.middle + (start + stop - 2 * self.middle) * lean
-            curve = ((1 - self.STEPS) ** 2 * start
-                     + 2 * (1 - self.STEPS) * self.STEPS * pull + self.STEPS ** 2 * stop)
-            pen.line([tuple(point) for point in curve], fill=color, width=width)
-
-    def _sheaf(self, pen, start, stop, ratios, color, width=1):
-        # every tract as its own thread, fanned at the parcel and gathered at
-        # the mass, which is the shape they make in the brain. the longer ones
-        # bow out further, so the width of a sheaf is the spread of its lengths
-        along = stop - start
-        span = float(np.linalg.norm(along))
-        if span < 1:
-            return
-        side = np.array([-along[1], along[0]]) / span
-        reach = min(span * 0.10, 30.0)
-        for n, ratio in enumerate(ratios):
-            off = (1 if n % 2 else -1) * reach * (0.2 + 0.8 * self._along(ratio))
-            pull = start + along * 0.45 + side * off
-            curve = ((1 - self.STEPS) ** 2 * start
-                     + 2 * (1 - self.STEPS) * self.STEPS * pull + self.STEPS ** 2 * stop)
-            pen.line([tuple(point) for point in curve], fill=color, width=width)
+    def _ribbon(self, pen, a, seat_a, b, seat_b, many, color, width=1):
+        # one thread per tract, drawn through both regions on its way across.
+        # they are spread a little so a bundle reads as a ribbon, and its
+        # thickness is how many tracts there are, not how long any of them is
+        across = b - a
+        span = float(np.linalg.norm(across))
+        side = (np.array([-across[1], across[0]]) / span if span > 1
+                else np.array([0.0, 0.0]))
+        middle = self.middle * 0.6 + (seat_a + seat_b) * 0.2
+        for n in range(many):
+            off = side * (n - (many - 1) / 2) * 3.0
+            knots = np.array([a, seat_a + off, middle + off, seat_b + off, b])
+            q = np.repeat(knots[None], len(self.THREAD), 0)
+            for _ in range(4):
+                q = q[:, :-1] * (1 - self.THREAD) + q[:, 1:] * self.THREAD
+            pen.line([tuple(v) for v in q[:, 0]], fill=color, width=width)
 
     def _neighbors(self):
         # while a node is picked, its own edges stay lit and the rest fall back
@@ -702,14 +665,14 @@ class Chart:
         rows = sorted(self.where)
         tall = 262 + 14 * len(rows)
         if wide < 580 or high < tall + 40:
-            if self.plan != "radial":
+            if self.plan != "circle":
                 self._scale_bar(pen, wide, high, font)
             return
         if self._key_was != (tuple(rows), tall, self.plan):
             self._key_was = (tuple(rows), tall, self.plan)
             self._key_art = self._key_tile(tuple(rows), tall)
         canvas.paste(self._key_art, (14, 6))
-        if self.plan != "radial":
+        if self.plan != "circle":
             self._scale_bar(pen, wide, high, font)
 
     def _key_tile(self, rows, tall):
@@ -743,8 +706,7 @@ class Chart:
         pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=PANEL, outline=NODE_IN)
         y = line(y, "overlapped, with nothing linking to it", count["loose"]) + 6
 
-        if self.plan == "radial":
-            y = line(y, "ring: how far it is from the mass") + 6
+
         pen.text((x, y), "volume in the tumor", fill=INK, font=small, anchor="lm")
         y += 19
         step = x + 7
@@ -757,9 +719,7 @@ class Chart:
         pen.text((step - 8, y + 16), "mL", fill=FAINT_INK, font=small, anchor="lm")
         y += 33
 
-        # radial draws one line per pair, spread one per tract, so the column
-        # counts what is actually on screen rather than a number from elsewhere
-        radial = self.plan == "radial"
+        circle = self.plan == "circle"
         pen.text((x, y), "links, one per tract", fill=INK, font=small, anchor="lm")
         y += 17
         for color, text, key in ((self._tone(0.5, False), "parcel to parcel", "plain"),
@@ -768,11 +728,11 @@ class Chart:
                                  (SPOKE, "parcel to the mass", "spoke")):
             pen.line([(x, y), (x + 14, y)], fill=color, width=2)
             y = line(y, text, count[key])
-        if radial:
-            y = line(y, "further from the straight: the longer tract")
+        if circle:
+            y = line(y, "thicker: more tracts, not longer ones")
         y += 9
 
-        pen.text((x, y), "regions, clockwise from the top" if radial else "regions",
+        pen.text((x, y), "regions, clockwise from the top" if circle else "regions",
                  fill=INK, font=small, anchor="lm")
         y += 17
         for lobe in rows:
@@ -795,7 +755,10 @@ class Chart:
         pen.text((34 + bar, y), "50 mm between centers", fill=INK, font=font, anchor="lm")
 
     def _strands(self, pen, start, stop, ratios, color, width=2):
-        # one arc per tract, bowed until its drawn length is its real length
+        # one arc per tract, bowed toward its real length. it only gets there
+        # for the 47% that run between one and 1.8 times the straight gap: a
+        # shorter tract cannot be drawn shorter than the line between two dots,
+        # and a longer one is capped before it sweeps across the whole picture
         along = stop - start
         span = float(np.linalg.norm(along))
         if span < 1:

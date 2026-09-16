@@ -136,26 +136,27 @@ everything else and keeps only the lines that touch it; the lines between its
 neighbors dim too, since the parcel does not reach along them.
 
 `s` swaps the arrangement, the way it swaps space in the slices. **Spread** is
-the one above. **Radial** puts the mass in the middle, the angle around the ring
-is the region going clockwise, and the radius is how far the parcel is from the
-mass, on a square root scale with the rings labeled in millimeters. Every spoke
-is then radial, so none of them can cross, which is 57% of the lines on a
-subject like 36. Both arrangements draw all 1036 arcs. Radial fans a parcel's
-tracts into a sheaf that gathers at the mass, and nests a pair's tracts into a
-ribbon of chords, rather than bowing each one on its own. A thread's distance
-from the straight line is its own length, so a wide sheaf is a wide spread of
-lengths; within a spoke bundle the longest tract is 1.7 times the shortest at
-the median and 4.5 times at the 90th percentile. That can only carry the order
-and not the amount, because neither axis there is a straight distance, and it
-is clamped at both ends: one pair in 283 measures at nothing and would sit on
-the line, and the longest runs nine times its gap and would fold back through
-the middle. The scale bar is not drawn there either, for the same reason.
+the one above, laid out so the gaps are the real distances. **Circle** puts the
+parcels on a rim grouped by region and the mass in the middle, and routes every
+thread through both its regions on the way across, so parallel tracts travel
+together and the picture reads as bundles rather than as a hairball.
 
-Only spread carries both distances. Measured on subject 36, its drawn gaps match
-the real parcel to parcel distances to a median of 11%, and its distance from the
-mass ranks at r = 0.95. Radial gets the radius exactly right, r = 1.00, because
-that is what the radius is; but its angle is region order, so parcel to parcel
-gaps there are off by 79% and mean nothing.
+Both draw all 1036 arcs. Circle spreads a bundle's threads slightly, so a
+ribbon's thickness is how many tracts it carries. It says nothing about length
+or distance and does not pretend to: no scale bar, no rings, no bow. Every
+parcel is the same distance from the centre and neighbours on the rim are
+neighbours in the region order, nothing more.
+
+Spread is the one that carries distance. Measured on subject 36 its drawn gaps
+match the real parcel to parcel distances to a median of 10%, and it draws an
+arc at its tract's real length for the 47% of arcs that run between one and
+1.8 times the straight gap. The other two thirds it cannot: 34% of tracts are
+shorter than the gap, and no line between two dots can be shorter than the
+straight one, so they draw straight and read long; 19% run more than 1.8 times
+their gap, up to 11.3 times, and are capped before they sweep across the
+picture. The spokes are worse, 71% of them shorter than their gap, because the
+gap is measured to the middle of the mass and the tract only has to reach its
+edge.
 
 Zoom past about twice and every node is labeled; below that only the picked
 node and what it connects to. The bar at the bottom is 50 mm, which means

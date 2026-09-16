@@ -968,7 +968,7 @@ class Console(App):
                 (max(size.width * cell.width, 64), max(size.height * cell.height, 64)))
             viewer.styles.border_subtitle_align = "right"
             viewer.border_title = "graph"
-            other = "spread" if self.chart.plan == "radial" else "radial"
+            other = "spread" if self.chart.plan == "circle" else "circle"
             viewer.border_subtitle = keyed(
                 f"v 3d \u00b7 s {other} \u00b7 click the mass to reset")
         else:

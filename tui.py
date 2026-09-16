@@ -245,7 +245,7 @@ class Console(App):
         self.row_text, self.marked = [], None
         self.pending, self._spin, self._settle = [0.0, 0.0, 1.0], None, None
         self.modality_spans = []
-        self._panel_width = self._list_width = 0
+        self._panel_width = self._list_width = self._layers_width = 0
 
     # ---------------------------------------------------------------- compose
 
@@ -369,7 +369,8 @@ class Console(App):
 
     def refresh_layers(self):
         out = []
-        w = max(self.query_one("#layers", Rows).size.width, 30) - 4
+        self._layers_width = self.query_one("#layers", Rows).size.width
+        w = max(self._layers_width, 30) - 4
         volumes = self.results[self.subject]["labels_ml"]
         for key, name, colour in LAYERS:
             on = key not in self.hidden_layers
@@ -499,6 +500,8 @@ class Console(App):
             return
         if self.panel_width() != self._panel_width:
             self.refresh_inputs()
+            self.refresh_layers()
+        if self.query_one("#layers", Rows).size.width != self._layers_width:
             self.refresh_layers()
         listing = self.query_one("#parcels", ListView)
         if listing.size.width != self._list_width:

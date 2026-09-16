@@ -18,7 +18,26 @@ from paths import LABELS, MNI, MODALITIES, modality, out_dir, raw_dir, stripped_
 
 pv.OFF_SCREEN = True
 
-BG = "#282828"
+
+
+def _panel(base=(40, 40, 40)):
+    # kitty draws cell backgrounds at background_opacity but graphics fully
+    # opaque, so an image painted #282828 comes out lighter than the panels
+    # around it. paint it the colour those panels actually composite to.
+    where = os.environ.get("KITTY_CONFIG_DIRECTORY", os.path.expanduser("~/.config/kitty"))
+    opacity = 1.0
+    try:
+        for line in open(os.path.join(where, "kitty.conf")):
+            if line.split()[:1] == ["background_opacity"]:
+                opacity = min(max(float(line.split()[1]), 0.0), 1.0)
+    except (OSError, ValueError, IndexError):
+        pass
+    # the compositor behind the window is black, so the blend is a plain scale
+    return tuple(round(c * opacity) for c in base)
+
+
+PANEL = _panel()
+BG = "#%02x%02x%02x" % PANEL
 SHELL = (168, 153, 132)
 TRACT = (95, 155, 114)
 TRACT_MASS = (198, 124, 72)
@@ -32,7 +51,6 @@ MARGIN = (177, 98, 134)
 COMPARE = {"both": (235, 219, 178), "new": (251, 73, 52), "gone": (142, 192, 124)}
 MARGIN_MM = 20
 _hex = lambda t: "#%02x%02x%02x" % tuple(t)
-PANEL = (40, 40, 40)
 
 
 def fit(image, size, background=PANEL):
@@ -326,7 +344,7 @@ LOBE = {"Frontal": (64, 82, 104), "Parietal": (56, 92, 82), "Temporal": (100, 72
         "Corpus callosum": (78, 78, 78)}
 
 
-def _ground(side, lobe, lift=0.55):
+def _ground(side, lobe, lift=0.62):
     base = LOBE.get(lobe, (78, 78, 78))
     dim = 0.6 if side == "Right" else 1.0
     return tuple(int(c * dim * lift) for c in base)
@@ -483,7 +501,8 @@ class Chart:
 
     @staticmethod
     def _shade(color, lit):
-        return color if lit else tuple(int(c * 0.35 + 40 * 0.65) for c in color)
+        return (color if lit else
+                tuple(int(c * 0.35 + g * 0.65) for c, g in zip(color, PANEL)))
 
     def _blobs(self, canvas, wide, high):
         # a soft ground under each lobe's parcels, built small and blurred up
@@ -508,7 +527,7 @@ class Chart:
             if grid.sum() > 0:
                 ys, xs = np.nonzero(grid)
                 self.where[lobe] = (float(xs.mean()) * step, float(ys.mean()) * step)
-            mask = mask.resize((wide, high), Image.BILINEAR).point(lambda v: int(v * 0.42))
+            mask = mask.resize((wide, high), Image.BILINEAR).point(lambda v: int(v * 0.78))
             canvas.paste(Image.new("RGB", (wide, high), _ground(*lobe)), (0, 0), mask)
 
 

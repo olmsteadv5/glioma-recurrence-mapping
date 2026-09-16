@@ -4,7 +4,7 @@ import nibabel as nib
 import numpy as np
 import pyvista as pv
 from vtkmodules.util.numpy_support import vtk_to_numpy
-from vtkmodules.vtkRenderingCore import vtkWindowToImageFilter
+from vtkmodules.vtkRenderingCore import vtkCellPicker, vtkWindowToImageFilter
 from PIL import Image
 
 import atlas
@@ -149,7 +149,7 @@ class Scene:
     def pick(self, x, y):
         # ray cast against the parcels only, so the shell cannot intercept
         if self._picker is None:
-            self._picker = _vtk.vtkCellPicker()
+            self._picker = vtkCellPicker()
             self._picker.SetTolerance(0.001)
             for actor in self.parcel_actors.values():
                 self._picker.AddPickList(actor)

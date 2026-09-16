@@ -19,7 +19,8 @@ from textual_image.widget import Image as ImageWidget
 
 import function
 import render
-from paths import ATLAS_INPUT, MODALITIES, RESULTS, ROOT, stripped_dir, subject_id
+from paths import (ATLAS_INPUT, MODALITIES, REGIONS, RESULTS, ROOT, stripped_dir,
+                   subject_id)
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\r")
 
@@ -32,9 +33,9 @@ LAYERS = [("T:NETC", "NETC necrosis", "#f2c14e"), ("T:SNFH", "SNFH oedema", "#3f
           ("T:ET", "ET enhancing", "#e4572e"), ("tracts", "tracts crossing", "#689d6a"),
           ("shell", "brain surface", "#a89984"),
           ("parcels", "involved parcels", "#d3869b")]
-# each region takes the colour of the tissue it adds to the next smaller one:
-# WT adds the oedema, TC adds the necrosis, ET is the enhancement itself
-REGIONS = [("WT", "#3fa7d6"), ("TC", "#f2c14e"), ("ET", "#e4572e")]
+# WT, TC and ET are nested unions of the tissue classes, not classes themselves,
+# so each one gets a block per class it contains rather than a colour of its own
+TISSUE = {1: "#f2c14e", 2: "#3fa7d6", 3: "#e4572e"}
 ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
                ("YBA_696.glb", "meshes", "glb"),
                ("top5k_tracts_decimated.obj", "tracts", "3001"),
@@ -207,10 +208,11 @@ class Console(App):
     #cmd { border: none; height: 1; padding: 0; background: #282828; color: #ebdbb2; }
     #cmd:focus { border: none; background: #32302f; }
     #layers { height: auto; padding: 0 1; }
-    #parcels { height: 1fr; background: #282828; }
+    #parcels { height: 1fr; min-height: 5; background: #282828; }
     ListItem { background: #282828; color: #a89984; padding: 0 1; }
     ListItem.--highlight { background: #32302f; color: #ebdbb2; text-style: bold; }
-    #detail { height: 13; border-top: solid #504945; padding: 0 1; }
+    #detail { height: auto; max-height: 13; border-top: solid #504945;
+              padding: 0 1; overflow: hidden; }
     #listhead { height: 1; padding: 0 1; color: #ebdbb2; text-style: bold;
                 border-top: solid #504945; }
     #inputs, #log, #parcels {
@@ -334,9 +336,11 @@ class Console(App):
         d = self.results[self.subject]
         r = d["regions_ml"]
         out.append(f"[{DIM}]tumour[/]")
-        for name, colour in REGIONS:
-            out.append(f"[{colour}]  {name}[/]"
-                       f"[{DIM}]{f'{r[name]} mL':>{w - len(name) - 2}}[/]")
+        for name in ("WT", "TC", "ET"):
+            blocks = "".join(f"[{TISSUE[v]}]\u2588[/]" if v in REGIONS[name] else " "
+                             for v in sorted(TISSUE))
+            out.append(f"[{DIM}]  {name}[/] {blocks}"
+                       f"[{DIM}]{f'{r[name]} mL':>{w - 8}}[/]")
         in_parcels = f"{d['atlas']['in_parcels_ml']} mL"
         out.append(f"[{FAINT}]{row('  in parcels', in_parcels, w)}[/]")
         dice = f"{d['dice']['WT']:.2f}" if d.get("dice") else "no reference"
@@ -418,14 +422,16 @@ class Console(App):
         if self.listing == "parcels":
             rows = d["atlas"]["parcels"]
             self.query_one("#listhead", Static).update(f"parcels involved · {len(rows)}")
-            panel.border_title = self.band(panel, "breakdown", 9, ["f functions"])
+            title = "breakdown · parcels"
+            panel.border_title = self.band(panel, title, len(title), ["f functions"])
             panel.border_subtitle = "click here or in the 3d"
             self.row_text = [row(p["parcel"], f"{bar(p['fraction'])} {p['fraction']:>4.0%}", w - 2)
                              for p in rows]
         else:
             top = d.get("function", [])
             self.query_one("#listhead", Static).update(f"functions at risk · {len(top)}")
-            panel.border_title = self.band(panel, "breakdown", 9, ["f parcels"])
+            title = "breakdown · functions"
+            panel.border_title = self.band(panel, title, len(title), ["f parcels"])
             panel.border_subtitle = "meta-analytic, not this patient"
             peak = max((f["score"] for f in top), default=1)
             self.row_text = [row(f["term"], f"{bar(f['score'] / peak)} {f['score']:>5.2f}", w - 2)

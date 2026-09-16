@@ -296,12 +296,23 @@ NODE_TUMOUR = (214, 200, 175)
 EDGE = (80, 73, 69)
 SPOKE = (102, 92, 84)
 THROUGH = (146, 110, 70)
-HULL = (74, 69, 66)
-LOBE_NAME = (152, 138, 124)
-# one soft ground per lobe, dark enough to sit under the chart
-LOBE = {"Frontal": (46, 56, 68), "Parietal": (42, 62, 56), "Temporal": (66, 50, 42),
-        "Occipital": (56, 45, 64), "Insula": (68, 57, 40),
-        "Corpus callosum": (54, 54, 54)}
+INK = (168, 153, 132)
+FAINT_INK = (124, 111, 100)
+KEY_BACK = (32, 32, 32)
+KEY_EDGE = (68, 64, 62)
+EDGE_LIT = (120, 110, 100)
+# one soft ground per hemisphere and lobe, dark enough to sit under the chart.
+# the two sides of a lobe land far apart, so one ground for both would stretch
+# across half the picture and say nothing
+LOBE = {"Frontal": (64, 82, 104), "Parietal": (56, 92, 82), "Temporal": (100, 72, 58),
+        "Occipital": (82, 62, 96), "Insula": (102, 84, 52),
+        "Corpus callosum": (78, 78, 78)}
+
+
+def _ground(side, lobe, lift=0.62):
+    base = LOBE.get(lobe, (78, 78, 78))
+    dim = 0.6 if side == "Right" else 1.0
+    return tuple(int(c * dim * lift) for c in base)
 RISK = (131, 165, 152)
 
 
@@ -317,7 +328,7 @@ class Chart:
         self.points = graph.layout(len(self.nodes), self.link, to_tumour)
         info = atlas.parcels()
         self.names = [p["name"] for p in info]
-        self.lobes = [info[n]["lobe"] for n in self.nodes]
+        self.lobes = [(info[n]["hemisphere"], info[n]["lobe"]) for n in self.nodes]
 
         lost = {r["parcel"]: r["in_tumour_ml"] for r in overlap["parcels"]}
         self.lost = [lost.get(self.names[n], 0.0) for n in self.nodes]
@@ -359,7 +370,6 @@ class Chart:
         near = self._neighbours()
 
         self._blobs(canvas, wide, high)
-        self._lobe_names(pen)
         for at, count, ratios in self.spokes:
             self._strands(pen, at, len(self.screen) - 1, ratios,
                           self._shade(SPOKE, near is None or at in near))
@@ -397,7 +407,7 @@ class Chart:
         self.where = {}
         for lobe in sorted(set(self.lobes)):
             picked = [i for i, name in enumerate(self.lobes) if name == lobe]
-            if len(picked) < 3 or lobe not in LOBE:
+            if len(picked) < 3:
                 continue
             mask = Image.new("L", small, 0)
             brush = ImageDraw.Draw(mask)
@@ -412,13 +422,10 @@ class Chart:
             if grid.sum() > 0:
                 ys, xs = np.nonzero(grid)
                 self.where[lobe] = (float(xs.mean()) * step, float(ys.mean()) * step)
-            mask = mask.resize((wide, high), Image.BILINEAR).point(lambda v: int(v * 0.6))
-            canvas.paste(Image.new("RGB", (wide, high), LOBE[lobe]), (0, 0), mask)
+            mask = mask.resize((wide, high), Image.BILINEAR).point(lambda v: int(v * 0.78))
+            canvas.paste(Image.new("RGB", (wide, high), _ground(*lobe)), (0, 0), mask)
 
-    def _lobe_names(self, pen):
-        font = _font(12)
-        for lobe, middle in self.where.items():
-            pen.text(middle, lobe.lower(), fill=LOBE_NAME, font=font, anchor="mm")
+
 
     def _nodes(self, pen, near):
         for at, point in enumerate(self.screen):
@@ -451,21 +458,73 @@ class Chart:
                      fill=LIT if at == self.lit else NODE_OUT, font=font, anchor="ms")
 
     def _key(self, pen, wide, high):
-        font = _font(11)
+        # a clinician should not have to guess what a bigger dot means
+        font, small = _font(12), _font(11)
+        rows = sorted(self.where)
+        tall = 246 + 14 * len(rows)
+        if wide < 420 or high < tall + 40:
+            self._scale_bar(pen, wide, high, font)
+            return
+        box = (14, 14, 268, 14 + tall)
+        pen.rectangle(box, fill=KEY_BACK, outline=KEY_EDGE)
+        x, y = 26, 32
+
+        pen.text((x, y), "parcels", fill=FAINT_INK, font=small, anchor="lm")
+        y += 16
+        for color, text in ((NODE_IN, "in the tumour"), (NODE_OUT, "still intact"),
+                            (NODE_TUMOUR, "the tumour itself")):
+            pen.ellipse([x, y - 5, x + 10, y + 5], fill=color)
+            pen.text((x + 18, y), text, fill=INK, font=font, anchor="lm")
+            y += 15
+
+        y += 6
+        pen.text((x, y), "how much of it is gone", fill=FAINT_INK, font=small, anchor="lm")
+        y += 18
+        step = x + 6
+        for share in (0.15, 0.5, 1.0):
+            wide_ = 3.0 + 7.0 * share ** 0.5
+            pen.ellipse([step - wide_, y - wide_, step + wide_, y + wide_], fill=NODE_IN)
+            pen.text((step, y + 16), f"{self.most * share:.1f}", fill=FAINT_INK,
+                     font=small, anchor="mm")
+            step += 42
+        pen.text((step + 4, y + 16), "mL", fill=FAINT_INK, font=small, anchor="lm")
+        y += 32
+
+        pen.ellipse([x, y - 5, x + 10, y + 5], fill=NODE_OUT)
+        pen.ellipse([x - 4, y - 9, x + 14, y + 9], outline=RISK)
+        pen.text((x + 24, y), "losing its connections", fill=INK, font=font, anchor="lm")
+        y += 22
+
+        pen.text((x, y), "tracts", fill=FAINT_INK, font=small, anchor="lm")
+        y += 16
+        for color, text in ((THROUGH, "runs through the tumour"),
+                            (EDGE_LIT, "connects two parcels")):
+            pen.line([(x, y), (x + 14, y)], fill=color, width=1)
+            pen.text((x + 24, y), text, fill=INK, font=font, anchor="lm")
+            y += 15
+        pen.arc([x, y - 6, x + 14, y + 8], 180, 360, fill=EDGE_LIT)
+        pen.text((x + 24, y), "bowed: longer than the gap", fill=INK, font=font, anchor="lm")
+        y += 24
+
+        pen.text((x, y), "regions", fill=FAINT_INK, font=small, anchor="lm")
+        y += 16
+        for lobe in rows:
+            pen.rectangle([x, y - 5, x + 12, y + 5],
+                          fill=_ground(*lobe, lift=1.6), outline=KEY_EDGE)
+            pen.text((x + 20, y), f"{lobe[0].lower()} {lobe[1].lower()}",
+                     fill=INK, font=font, anchor="lm")
+            y += 14
+        self._scale_bar(pen, wide, high, font)
+
+    def _scale_bar(self, pen, wide, high, font):
         bar = 50.0 * self.scale
-        if 20 < bar < wide - 60:
-            y = high - 18
-            pen.line([(20, y), (20 + bar, y)], fill=NODE_OUT, width=1)
-            pen.line([(20, y - 3), (20, y + 3)], fill=NODE_OUT)
-            pen.line([(20 + bar, y - 3), (20 + bar, y + 3)], fill=NODE_OUT)
-            pen.text((24 + bar, y), "50 mm", fill=NODE_OUT, font=font, anchor="lm")
-        rows = [(NODE_IN, "in the tumour"), (NODE_OUT, "connected to it"),
-                (NODE_TUMOUR, "the tumour"), (RISK, "ring: connectivity at risk"),
-                (THROUGH, "brighter: tract crosses the tumour")]
-        for n, (color, text) in enumerate(rows):
-            y = 16 + n * 14
-            pen.ellipse([20 - 4, y - 4, 20 + 4, y + 4], fill=color)
-            pen.text((32, y), text, fill=NODE_OUT, font=font, anchor="lm")
+        if not 20 < bar < wide - 60:
+            return
+        y = high - 18
+        pen.line([(20, y), (20 + bar, y)], fill=INK, width=1)
+        for end in (20, 20 + bar):
+            pen.line([(end, y - 3), (end, y + 3)], fill=INK)
+        pen.text((24 + bar, y), "50 mm apart", fill=INK, font=font, anchor="lm")
 
     def _strands(self, pen, a, b, ratios, color):
         # one arc per tract, bowed until its drawn length is its real length

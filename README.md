@@ -137,12 +137,19 @@ Zoom past about twice and every node is labelled; below that only the picked
 node and what it connects to. The bar at the bottom is 50 mm, which means
 something because the gaps are real distances.
 
-Each lobe gets a soft ground under its parcels, drawn small, blurred, and
-scaled back up so it hugs them rather than boxing them in, with its name placed
-on the middle of the ground rather than on the middle of its nodes, which for a
-scattered lobe is somewhere else entirely. They overlap, because the layout is
-connectivity and not anatomy, and parcels from different lobes genuinely
-interleave in it.
+Each region gets a soft ground under its parcels, and a region is a hemisphere
+and a lobe, not a lobe. Subject 36 has 55 left frontal parcels and 8 right
+frontal ones whose centres land 79 units apart, so one ground for both stretched
+across half the picture and named neither. They are `left frontal` and `right
+frontal` now, right dimmer than left, and they are named in the key rather than
+on the chart.
+
+They still overlap, because the layout is connectivity and not anatomy, and
+parcels from different regions genuinely interleave in it.
+
+The key says what every channel means, including the one that is easiest to
+misread: three sized dots with the millilitres they stand for, so a bigger dot
+is a number rather than an impression.
 
 The nodes are placed by stress majorisation, so **the gaps on screen are the
 real distances between the parcels**, to a median of 10%. That uses

@@ -3,6 +3,7 @@
 import nibabel as nib
 import numpy as np
 import pyvista as pv
+from pyvista import _vtk
 from PIL import Image
 
 import atlas
@@ -19,6 +20,7 @@ TISSUE = {1: (242, 193, 78), 2: (63, 167, 214), 3: (228, 87, 46), 4: (142, 125, 
 CROSS = (250, 189, 47)
 _hex = lambda t: "#%02x%02x%02x" % tuple(t)
 PANEL = (40, 40, 40)
+DIMMED = 0.06
 
 
 def fit(image, size, background=PANEL):
@@ -52,7 +54,6 @@ class Scene:
         for name in involved:
             i = index[name]
             actor = self._mesh(surf[i].vertices, surf[i].faces, _hex(colours[i]), 1.0)
-            self.actors["P:" + name] = actor
             self.parcel_actors[name] = actor
 
         image = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
@@ -67,6 +68,7 @@ class Scene:
             self.actors["tracts"] = self.plotter.add_mesh(
                 lines, color=_hex(TRACT), line_width=1, opacity=0.55)
 
+        self._picker = None
         self.plotter.show(auto_close=False)
         self.home = self.plotter.camera_position
 
@@ -115,14 +117,28 @@ class Scene:
             actor.prop.opacity = float(value)
 
     def isolate(self, names):
-        # dim every parcel except the named ones
+        # everything else drops back so the chosen ones read on their own
         keep = {names} if isinstance(names, str) else set(names)
         for other, actor in self.parcel_actors.items():
-            actor.prop.opacity = 1.0 if other in keep else 0.06
+            actor.prop.opacity = 1.0 if other in keep else DIMMED
 
     def unisolate(self):
         for actor in self.parcel_actors.values():
             actor.prop.opacity = 1.0
+
+    def pick(self, x, y):
+        # ray cast against the parcels only, so the shell cannot intercept
+        if self._picker is None:
+            self._picker = _vtk.vtkCellPicker()
+            self._picker.SetTolerance(0.001)
+            for actor in self.parcel_actors.values():
+                self._picker.AddPickList(actor)
+            self._picker.PickFromListOn()
+        height = self.plotter.window_size[1]
+        if not self._picker.Pick(x, height - 1 - y, 0, self.plotter.renderer):
+            return None
+        hit = id(self._picker.GetActor())
+        return next((n for n, a in self.parcel_actors.items() if id(a) == hit), None)
 
     def recolour(self, palette):
         self.palette = palette

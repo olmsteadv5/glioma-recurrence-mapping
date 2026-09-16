@@ -11,7 +11,6 @@ import time
 
 from textual import events, on, work
 from textual.app import App, ComposeResult
-from textual.binding import Binding
 from textual.containers import Grid, Horizontal, Vertical
 from textual.widgets import Footer, Input, Label, ListItem, ListView, RichLog, Static
 from textual_image._terminal import get_cell_size
@@ -59,14 +58,20 @@ def row(left, right, width=30):
 class Canvas(ImageWidget, Renderable=Renderable):
     # 3D view: drag to rotate, scroll to zoom.
 
+    dragged = False
+
     def on_mouse_down(self, event):
         self.capture_mouse()
+        self.dragged = False
 
     def on_mouse_up(self, event):
         self.release_mouse()
+        if not self.dragged:
+            self.app.pick_parcel(event.x, event.y)
 
     def on_mouse_move(self, event):
         if event.button:
+            self.dragged = True
             self.app.rotate_scene(-event.delta_x * 3, event.delta_y * 3)
 
     def on_mouse_scroll_down(self, event):
@@ -117,13 +122,6 @@ class Rows(Static):
     def on_click(self, event):
         if self.handler:
             self.handler(event.y)
-
-
-class Picker(ListView):
-    # Clicking a row only moves to it. Enter and space are what hide a parcel.
-
-    def action_select_cursor(self):
-        self.app.action_hide()
 
 
 class Prompt(Input):
@@ -193,7 +191,6 @@ class Console(App):
         ("p", "palette", "colours"), ("f", "listing", "parcels/functions"),
         ("o", "overlay", "overlay"), ("h", "home", "reset view"),
         ("t", "shell", "prompt"), ("c", "cancel", "cancel run"),
-        Binding("space", "hide", "hide parcel", show=False),
     ]
 
     def __init__(self):
@@ -203,7 +200,7 @@ class Console(App):
         self.subject = self.subjects[0] if self.subjects else None
         self.mode, self.space, self.palette, self.listing = "3d", "native", "contrast", "parcels"
         self.scene = self.slices = self.proc = self._timer = self._clock = None
-        self.hidden_layers, self.hidden_parcels, self.subject_rows = set(), set(), {}
+        self.hidden_layers, self.subject_rows = set(), {}
         self.history, self.hpos, self.started = [], 0, 0
         self._panel_width = self._list_width = 0
 
@@ -223,7 +220,7 @@ class Console(App):
             with Vertical(id="right", classes="box"):
                 yield Rows(self.click_layer, id="layers")
                 yield Static("", id="listhead")
-                yield Picker(id="parcels")
+                yield ListView(id="parcels")
                 yield Static("", id="detail")
         with Vertical(id="shell", classes="box"):
             yield RichLog(id="log", wrap=True, markup=True, highlight=False)
@@ -265,7 +262,7 @@ class Console(App):
 
     def load_subject(self, subject):
         self.subject = subject
-        self.hidden_layers, self.hidden_parcels = set(), set()
+        self.hidden_layers = set()
         overlap = self.results[subject]["atlas"]
         self.scene = render.Scene(subject, overlap, palette=self.palette)
         self.scene.set_opacity("shell", SHELL_OPACITY)
@@ -349,7 +346,7 @@ class Console(App):
 
     def refresh_list(self):
         d = self.results[self.subject]
-        listing = self.query_one("#parcels", Picker)
+        listing = self.query_one("#parcels", ListView)
         listing.clear()
         self._list_width = listing.size.width
         w = max(listing.size.width - 3, 34)
@@ -357,13 +354,10 @@ class Console(App):
         if self.listing == "parcels":
             rows = d["atlas"]["parcels"]
             self.query_one("#listhead", Static).update(f"parcels involved · {len(rows)}")
-            panel.border_subtitle = "space hides one · f functions"
+            panel.border_subtitle = "click here or in the 3d · f functions"
             for p in rows:
-                on = p["parcel"] not in self.hidden_parcels
-                style = "" if on else f"[{FAINT}]"
-                left = f"{'[×]' if on else '[ ]'} {p['parcel']}"
                 right = f"{bar(p['fraction'])} {p['fraction']:>4.0%}"
-                listing.append(ListItem(Label(style + row(left, right, w))))
+                listing.append(ListItem(Label(row(" " + p["parcel"], right, w))))
         else:
             top = d.get("function", [])
             self.query_one("#listhead", Static).update(f"functions at risk · {len(top)}")
@@ -424,21 +418,7 @@ class Console(App):
             self.scene.isolate(n for n, _, _ in function.drivers(top[index]["term"], d["atlas"], 7))
         self.draw()
 
-    def action_hide(self):
-        # deliberately not on click: you click a parcel to read about it
-        if self.listing != "parcels" or not self.scene:
-            return
-        listing = self.query_one("#parcels", Picker)
-        index = listing.index or 0
-        rows = self.results[self.subject]["atlas"]["parcels"]
-        if index >= len(rows):
-            return
-        name = rows[index]["parcel"]
-        self.hidden_parcels ^= {name}
-        self.scene.set_visible("P:" + name, name not in self.hidden_parcels)
-        self.refresh_list()
-        listing.index = index
-        self.draw()
+
 
     # ----------------------------------------------------------------- render
 
@@ -448,7 +428,7 @@ class Console(App):
         if self.panel_width() != self._panel_width:
             self.refresh_inputs()
             self.refresh_layers()
-        listing = self.query_one("#parcels", Picker)
+        listing = self.query_one("#parcels", ListView)
         if listing.size.width != self._list_width:
             self._list_width = listing.size.width
             index = listing.index
@@ -492,6 +472,26 @@ class Console(App):
         lines += ["", f"[{FAINT}]pgup/pgdn steps the slice[/]"]
         self.query_one("#readout", Static).update("\n".join(lines))
 
+    def pick_parcel(self, column, line):
+        # a parcel clicked in the 3d becomes the selected row in the list
+        if self.mode != "3d" or not self.scene:
+            return
+        cell = get_cell_size()
+        name = self.scene.pick(column * cell.width + cell.width // 2,
+                               line * cell.height + cell.height // 2)
+        if name is None:
+            return
+        names = [r["parcel"] for r in self.results[self.subject]["atlas"]["parcels"]]
+        if self.listing != "parcels":
+            self.listing = "parcels"
+            self.refresh_list()
+            self.call_after_refresh(self.select_row, names.index(name))
+        else:
+            self.select_row(names.index(name))
+
+    def select_row(self, index):
+        self.query_one("#parcels", ListView).index = index
+
     def rotate_scene(self, azimuth, elevation):
         if self.mode == "3d" and self.scene:
             self.scene.rotate(azimuth, elevation)
@@ -509,7 +509,7 @@ class Console(App):
 
     # ---------------------------------------------------------------- actions
 
-    VIEW_ACTIONS = ("view", "space", "palette", "listing", "overlay", "home", "hide")
+    VIEW_ACTIONS = ("view", "space", "palette", "listing", "overlay", "home")
 
     def check_action(self, action, parameters):
         # grey a key out rather than let it look like it did nothing
@@ -521,8 +521,6 @@ class Console(App):
             return self.mode == "slices" or None
         if action == "cancel":
             return self.proc is not None or None
-        if action == "hide":
-            return self.listing == "parcels"
         return True
 
     def action_view(self):

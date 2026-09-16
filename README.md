@@ -81,17 +81,17 @@ readout. Clicking or dragging in any plane moves the crosshair in all three.
 v  3d / slices          p  parcel colouring     t  focus the prompt
 s  native / mni         f  parcels / functions  c  cancel the run
 o  segmentation overlay h  reset view           q  quit
-1-4  modality           pgup/pgdn  step slice   space  hide a parcel
+1-4  modality           pgup/pgdn  step slice
 ```
 
 Half of those only make sense in one of the two viewer modes. The ones that do
 not apply go grey in the footer rather than doing nothing silently.
 
 The breakdown lists the layers with their volumes, clickable to show and hide,
-then either the involved parcels or the functions at risk. **Clicking a row
-only selects it**, so you can read the panel underneath; space or enter is what
-hides a parcel. Whatever is selected lights up in the 3D and everything else
-dims.
+then either the involved parcels or the functions at risk. Whatever is selected
+lights up in the 3D and every other parcel drops back, so a row and a shape in
+the viewer are the same thing. It works both ways: click a parcel in the 3D and
+its row is selected, drag and it rotates instead.
 
 For a parcel the panel underneath gives its anatomy and its own Parcelsynth
 terms. For a function it gives the parcels that produced the score, each with

@@ -351,7 +351,7 @@ EDGE = (84, 102, 112)
 ATLAS = (64, 70, 76)
 SPOKE = (152, 100, 108)
 THROUGH = (154, 112, 72)
-STRAY = (104, 70, 76)
+STRAY = (170, 116, 176)
 # the interface palette, so the key is the same grays as every other panel
 INK = (168, 153, 132)
 FAINT_INK = (124, 111, 100)

@@ -910,13 +910,15 @@ class Chart:
         y += 17
         # strongest evidence first, so the last row can refer back to it. the
         # color is about the tract, never about whether the ends are overlapped
+        # the column counts lines, so the rows have to be named as lines. they
+        # used to say tracts, which is a different object and a different number
         for color, text, key in (
-                (THROUGH, "tracts through the tumor joining two parcels", "pair"),
-                (SPOKE, "tracts through the tumor reaching one parcel", "spoke"),
-                (STRAY, "tracts through the tumor reaching no parcel", "stray")):
+                (THROUGH, "between two parcels", "pair"),
+                (SPOKE, "between a parcel and the tumor", "spoke"),
+                (STRAY, "out of the tumor, reaching no parcel", "stray")):
             pen.line([(x, y), (x + 14, y)], fill=color, width=2)
             y = line(y, text, count[key])
-        y = line(y, f"{self.strands} lines for {self.crossed} tracts through it")
+        y = line(y, f"{self.strands} lines carrying {self.crossed} tracts")
         y = line(y, "a thicker line carries more of them")
         y += 9
 

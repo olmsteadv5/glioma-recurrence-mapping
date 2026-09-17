@@ -137,10 +137,10 @@ along it, which is what a plan needs to know. 190 tracts cross the tumor and
 reach no parcel at all, so they have no end to be drawn to and are marked at
 the tumor as a burst rather than dropped.
 
-`tracts through the tumor` in the left panel and the graph are the same tracts,
-and the key says so: its three rows sum to its own total, and that total is
-`312 lines for 408 tracts through it` against the panel's 408. There are fewer
-lines than tracts because a line carries as many as run along it. Toggle the
+The key counts lines and names them as lines, and its three rows sum to its own
+total: `1000 lines carrying 1034 tracts` on subject 2. That tract count is the
+left panel's `tracts through the tumor` exactly, and the two differ from each
+other only because a line carries as many tracts as run along it. Toggle the
 layer and the 3d shows exactly what the chart is built from.
 
 Orange nodes are parcels the tumor overlaps, aqua ones are parcels it misses,

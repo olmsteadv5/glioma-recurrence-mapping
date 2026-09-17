@@ -379,7 +379,7 @@ class Chart:
         import graph
         self.subject = subject
         (self.nodes, self.link, self.far, self.inside, self.spokes,
-         self.stray, self.crossed) = graph.build(subject, overlap)
+         self.void, self.crossed) = graph.build(subject, overlap)
         self.points = graph.layout(len(self.nodes), self.link, self.far)
         info = atlas.parcels()
         self.names = [p["name"] for p in info]
@@ -400,12 +400,12 @@ class Chart:
         # one line per connection, never one per tract: the tract count is the
         # line's weight, so the picture stays a connectome and not a hairball
         # every mark the key lists, so its rows sum to its own total
-        self.strands = len(self.link) + len(self.spokes) + len(self.stray)
+        self.strands = len(self.link) + len(self.spokes) + len(self.void)
         self.tally = {
             "in": len(self.inside), "out": len(self.nodes) - len(self.inside),
             "mass": 1, "loose": len(self.loose),
             "pair": len(self.link), "spoke": len(self.spokes),
-            "stray": len(self.stray)}
+            "void": len(self.void)}
 
         # one wedge per region, so the ring order is anatomy and not the seed
         self.around = sorted(range(len(self.nodes)),
@@ -419,7 +419,10 @@ class Chart:
         self._key_was, self._key_art = None, None
         self.where = {}
         self.screen, self.scale = np.zeros((0, 2)), 1.0
-        self.middle, self.round, self.seat = np.zeros(2), 1.0, {}
+        self.middle, self.seat = np.zeros(2), {}
+        self.wide, self.tall = 1.0, 1.0
+        # the tumor, then the hub for every far end the atlas cannot name
+        self.hub, self.gone = len(self.nodes), len(self.nodes) + 1
 
     def name(self, at):
         if at is None or at >= len(self.nodes):
@@ -463,19 +466,22 @@ class Chart:
         return self.plan
 
     def _place_circle(self, wide, high):
-        # parcels on a rim grouped by region, the mass in the middle. nothing
-        # here is a distance, so nothing pretends to be one
-        pad = 96
+        # parcels on a rim grouped by region, the two hubs abreast in the middle.
+        # an ellipse because the pane is wider than it is tall and two hubs want
+        # the width. nothing here is a distance, so nothing pretends to be one
         self.middle = np.array([wide, high]) / 2 + self.pan
-        self.round = max(min(wide, high) / 2 - pad, 40) * self.zoom
-        self.scale = self.round / 100.0
+        self.wide = max(wide / 2 - 104, 40) * self.zoom
+        self.tall = max(high / 2 - 74, 40) * self.zoom
+        self.scale = self.tall / 100.0
         step = 2 * np.pi / max(len(self.nodes), 1)
 
         turn = np.array([self.slot[n] * step - np.pi / 2 for n in range(len(self.nodes))])
-        self.screen = np.zeros((len(self.nodes) + 1, 2))
-        self.screen[:-1] = self.middle + self.round * np.stack(
-            [np.cos(turn), np.sin(turn)], axis=1)
-        self.screen[-1] = self.middle
+        self.screen = np.zeros((len(self.nodes) + 2, 2))
+        self.screen[:len(self.nodes)] = self.middle + np.stack(
+            [self.wide * np.cos(turn), self.tall * np.sin(turn)], axis=1)
+        apart = self.wide * 0.3
+        self.screen[self.hub] = self.middle - [apart, 0]
+        self.screen[self.gone] = self.middle + [apart, 0]
 
         # one seat per region, half way in, so a thread joins two regions
         # before it joins two parcels and parallel tracts travel together
@@ -483,13 +489,13 @@ class Chart:
         for lobe in sorted(set(self.lobes)):
             slots = [self.slot[n] for n in range(len(self.nodes)) if self.lobes[n] == lobe]
             mean = (min(slots) + max(slots)) / 2 * step - np.pi / 2
-            self.seat[lobe] = self.middle + self.round * 0.52 * np.array(
-                [np.cos(mean), np.sin(mean)])
+            self.seat[lobe] = self.middle + 0.52 * np.array(
+                [self.wide * np.cos(mean), self.tall * np.sin(mean)])
         if self.guest is not None:
             near = [turn[k] for k, *_ in self.guest["link"]] or [0.0]
             mean = np.arctan2(np.mean(np.sin(near)), np.mean(np.cos(near)))
-            self.guest["screen"] = self.middle + (self.round + 26) * np.array(
-                [np.cos(mean), np.sin(mean)])
+            self.guest["screen"] = self.middle + np.array(
+                [(self.wide + 26) * np.cos(mean), (self.tall + 26) * np.sin(mean)])
 
     def _place(self, wide, high):
         if self.plan == "circle":
@@ -513,6 +519,12 @@ class Chart:
         pen = ImageDraw.Draw(canvas)
         self._place(wide, high)
         near = self._neighbors()
+        if len(self.screen) == len(self.nodes) + 1:
+            # the spread layout solves for the parcels and the tumor only, so
+            # the hub for the unnamed ends is set beside it rather than solved
+            span = np.ptp(self.screen[:-1], axis=0).max() or 1.0
+            self.screen = np.vstack([self.screen,
+                                     self.screen[self.hub] + [span * 0.16, 0]])
 
         circle = self.plan == "circle"
         if circle:
@@ -525,8 +537,12 @@ class Chart:
         free = near is None
         for at, many, lengths, ids in self.spokes:
             own = at == self.lit or (self.tract is not None and self.tract in ids)
-            self._join(pen, circle, at, None, many, lengths, self.far[at],
+            self._join(pen, circle, at, self.hub, many, lengths, self.far[at],
                        self._shade(SPOKE, free or own), own)
+        for at, many, lengths, ids in self.void:
+            own = at == self.lit or (self.tract is not None and self.tract in ids)
+            self._join(pen, circle, self.hub if at is None else at, self.gone,
+                       many, lengths, 60.0, self._shade(STRAY, free or own), own)
         for a, b, many, gap, lengths, ids in self.link:
             own = self.lit in (a, b) or (self.tract is not None and self.tract in ids)
             self._join(pen, circle, a, b, many, lengths, gap,
@@ -534,10 +550,10 @@ class Chart:
         if self.guest is not None:
             for k, many, gap, lengths, ids in self.guest["link"]:
                 self._join(pen, circle, k, "guest", many, lengths, gap, THROUGH, True)
-        self._strays(pen, near, min(wide, high))
         self._nodes(pen, near)
         if self.guest is not None:
             self._guest(pen)
+        self._hubs(pen)
         self._labels(pen, near)
         self._key(canvas, pen, wide, high)
         self._shelf(pen, wide, high)
@@ -554,9 +570,8 @@ class Chart:
     def _bands(self, pen):
         # a region is a run of the rim, so it is contiguous by construction
         step = 360.0 / max(len(self.nodes), 1)
-        out = self.round + 24
-        box = [self.middle[0] - out, self.middle[1] - out,
-               self.middle[0] + out, self.middle[1] + out]
+        box = [self.middle[0] - self.wide - 24, self.middle[1] - self.tall - 24,
+               self.middle[0] + self.wide + 24, self.middle[1] + self.tall + 24]
         self.where = {}
         for lobe in sorted(set(self.lobes)):
             slots = [self.slot[n] for n in range(len(self.nodes)) if self.lobes[n] == lobe]
@@ -726,32 +741,18 @@ class Chart:
             pen.text((edge_x + reach + cap + 5, y), f"{mm:.0f}",
                      fill=FAINT_INK, font=small, anchor="lm")
 
-    def _strays(self, pen, near, across):
-        # through the mass and out into nothing the atlas names. they have no
-        # end to be drawn to, so they are marked at the mass rather than dropped
-        if not self.stray:
-            return
-        hub = self.screen[-1]
-        room = across * 0.10 * self.zoom
-        longest = max(self.stray) or 1.0
-        tone = self._shade(STRAY, near is None)
-        step = 2 * np.pi / len(self.stray)
-        for n, mm in enumerate(self.stray):
-            out = np.array([np.cos(n * step), np.sin(n * step)])
-            pen.line([tuple(hub + out * 13),
-                      tuple(hub + out * (13 + mm / longest * room))], fill=tone)
-
     def _join(self, pen, circle, a, b, many, lengths, gap, tone, own):
         # one line for one connection. its weight is how many tracts run along
         # it, which is what a plan needs: how much is riding on this link
         start = self.screen[a]
-        stop = (self.guest["screen"] if b == "guest" else
-                self.screen[-1] if b is None else self.screen[b])
+        stop = self.guest["screen"] if b == "guest" else self.screen[b]
         width = (1 if many < 2 else 2 if many < 5 else 3 if many < 12 else 4) + own
         if circle:
-            seat_a = self.seat[self.lobes[a]]
+            seat_a = (self.screen[a] if a >= len(self.nodes)
+                      else self.seat[self.lobes[a]])
             seat_b = (self.seat.get(self.guest["lobe"], self.middle) if b == "guest"
-                      else self.middle if b is None else self.seat[self.lobes[b]])
+                      else self.screen[b] if b >= len(self.nodes)
+                      else self.seat[self.lobes[b]])
             self._ribbon(pen, start, seat_a, stop, seat_b, 1, tone, width)
         else:
             self._strands(pen, start, stop, [float(np.median(lengths)) / max(gap, 1e-6)],
@@ -817,10 +818,10 @@ class Chart:
 
     def _nodes(self, pen, near):
         for at, point in enumerate(self.screen):
-            last = at == len(self.screen) - 1
+            last = at >= len(self.nodes)
             if last:
-                wide = 11
-                color = NODE_TUMOR
+                wide = 11 if at == self.hub else 8
+                color = NODE_TUMOR if at == self.hub else STRAY
             else:
                 # area says how much of that parcel the tumor took
                 wide = 3.0 + 7.0 * (self.lost[at] / self.most) ** 0.5
@@ -832,6 +833,17 @@ class Chart:
                         outline=(LIT if at == self.lit
                                  else color if hollow else PANEL),
                         width=3 if at == self.lit else 1)
+
+    def _hubs(self, pen):
+        # the second one needs saying: it is not a place, it is the absence of
+        # one, and both sit under every line in the chart so they need a plate
+        font = _font(11)
+        for at, text in ((self.hub, "the tumor"), (self.gone, "no parcel")):
+            x, y = self.screen[at]
+            room = pen.textlength(text, font=font) / 2 + 5
+            pen.rectangle([x - room, y + 14, x + room, y + 28], fill=PANEL)
+            pen.text((x, y + 21), text, font=font, anchor="mm",
+                     fill=INK if at == self.hub else FAINT_INK)
 
     def _labels(self, pen, near):
         if self.zoom < 1.8 and near is None:
@@ -915,7 +927,7 @@ class Chart:
         for color, text, key in (
                 (THROUGH, "between two parcels", "pair"),
                 (SPOKE, "between a parcel and the tumor", "spoke"),
-                (STRAY, "out of the tumor, reaching no parcel", "stray")):
+                (STRAY, "to somewhere the atlas cannot name", "void")):
             pen.line([(x, y), (x + 14, y)], fill=color, width=2)
             y = line(y, text, count[key])
         y = line(y, f"{self.strands} lines carrying {self.crossed} tracts")

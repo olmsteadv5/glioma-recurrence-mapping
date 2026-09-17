@@ -1084,10 +1084,12 @@ class Console(App):
         at = self.chart.pick(x, y)
         if at is None:
             return
-        if at == len(self.chart.screen) - 1:
-            # the mass is the one node that is not a parcel, so it clears
+        if at >= len(self.chart.nodes):
+            # neither hub is a parcel, so clicking either one clears
             self.chart.home()
             self.chart.focus(None)
+            self.chart.tract = None
+            self.scene.show_tract(None)
             self.draw()
             return
         name = self.chart.name(at)

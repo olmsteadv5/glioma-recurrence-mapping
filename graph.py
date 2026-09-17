@@ -83,34 +83,41 @@ def through(subject):
 
     reach = collections.defaultdict(list)     # parcel -> [(tract, mm to the mass)]
     joins = collections.defaultdict(list)     # parcel pair -> [(tract, mm apart)]
+    skirt = collections.defaultdict(list)     # parcel -> [(tract, mm)] missing the mass
     crossing, stray = 0, []
     for n, line in enumerate(tractography.centerlines()):
         ijk = np.rint(nib.affines.apply_affine(inverse, line)).astype(int)
         inside = np.all((ijk >= 0) & (ijk < shape), axis=1)
         keep = ijk[inside]
-        if not len(keep) or not tumor[keep[:, 0], keep[:, 1], keep[:, 2]].any():
+        if not len(keep):
             continue
-        crossing += 1
         at = labels[keep[:, 0], keep[:, 1], keep[:, 2]]
         points = line[inside]
         walked = np.concatenate([[0.0], np.cumsum(
             np.linalg.norm(np.diff(points, axis=0), axis=1))])
-        mass = int(np.median(np.where(tumor[keep[:, 0], keep[:, 1], keep[:, 2]])[0]))
-
         middles = {}
         for value in np.unique(at):
             if value <= 0:
                 continue
             middles[int(value) - 1] = int(np.median(np.where(at == value)[0]))
+
+        if not tumor[keep[:, 0], keep[:, 1], keep[:, 2]].any():
+            # it misses the mass, so it is nothing to the connectome, but it
+            # does run through the tissue the tumor has taken
+            for parcel in middles:
+                skirt[parcel].append((n, float(walked[-1])))
+            continue
+        crossing += 1
+        mass = int(np.median(np.where(tumor[keep[:, 0], keep[:, 1], keep[:, 2]])[0]))
         if not middles:
-            stray.append(float(walked[-1]))
+            stray.append((n, float(walked[-1])))
             continue
         for parcel, where in middles.items():
             reach[parcel].append((n, max(abs(float(walked[mass] - walked[where])), 1.0)))
         for a, b in itertools.combinations(sorted(middles), 2):
             joins[(a, b)].append(
                 (n, max(abs(float(walked[middles[a]] - walked[middles[b]])), 1.0)))
-    return dict(reach), dict(joins), crossing, stray
+    return dict(reach), dict(joins), dict(skirt), crossing, stray
 
 
 def build(subject, overlap, least=LEAST):
@@ -119,7 +126,7 @@ def build(subject, overlap, least=LEAST):
     names = [p["name"] for p in parcels()]
     index = {name: i for i, name in enumerate(names)}
     inside = {index[r["parcel"]] for r in overlap["parcels"] if r["parcel"] in index}
-    reach, joins, crossing, stray = through(subject)
+    reach, joins, skirt, crossing, stray = through(subject)
 
     # a parcel one stray tract grazes is noise on a plan; a parcel a dozen run
     # into is the point of the picture, so a parcel earns its place by count
@@ -140,7 +147,18 @@ def build(subject, overlap, least=LEAST):
                          if not np.isnan(middle[n]).any() else 60.0 for n in nodes])
     spokes = [(place[n], len(reach[n]), [mm for _, mm in reach[n]],
                [t for t, _ in reach[n]]) for n in nodes if n in reach]
-    return nodes, link, to_tumor, inside, spokes, stray, crossing
+
+    # a second hub for everything whose far end the atlas cannot name: the
+    # tracts that leave the mass and land nowhere, and the ones that miss the
+    # mass but run through the tissue it has taken
+    clipped = sorted(inside & set(skirt))
+    void = [(None, len(stray), [mm for _, mm in stray], [t for t, _ in stray])]
+    void += [(place[n], len(hits), [mm for _, mm in hits], [t for t, _ in hits])
+             for n in clipped if n in place]
+    # a tract clipping two involved parcels is one tract on two lines, so the
+    # total the chart accounts for counts it once
+    clips = len({t for n in clipped for t, _ in skirt[n]})
+    return nodes, link, to_tumor, inside, spokes, void, crossing + clips
 
 
 def layout(count_of_nodes, link, to_tumor, rounds=120):
@@ -176,7 +194,7 @@ def attach(subject, nodes, parcel, least=1):
     if parcel not in names or names.index(parcel) in nodes:
         return None
     n = names.index(parcel)
-    reach, joins, _, _ = through(subject)
+    reach, joins, _, _, _ = through(subject)
     middle, tumor = centers(subject)
     seat = {v: k for k, v in enumerate(nodes)}
 

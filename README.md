@@ -130,18 +130,25 @@ A parcel is a node if the tumor overlaps it, or if at least three tracts
 through the tumor reach it. One or two is a graze and would only crowd a plan.
 Subject 2 comes to 233 nodes and 810 lines from its 1034 crossing tracts.
 
-Only two kinds of line, and both are the same fact told twice: **rose** is a
-parcel and the tumor, **amber** is two parcels a single crossing tract joins.
-One line is one connection, never one per tract; a thicker line is more tracts
-along it, which is what a plan needs to know. 190 tracts cross the tumor and
-reach no parcel at all, so they have no end to be drawn to and are marked at
-the tumor as a burst rather than dropped.
+There are two hubs. The yellow one is the tumor. The second, **no parcel**, is
+not a place but the absence of one: the far end the atlas has no name for. The
+190 tracts that cross the tumor and land in unnamed tissue run to it, and so do
+the 173 that miss the tumor but pass through the parcels it has taken, which
+would otherwise be nowhere at all on the chart. Because two hubs want the width
+and the pane is wider than it is tall, the rim is an ellipse rather than a
+circle, with the hubs abreast in the middle.
+
+Three kinds of line: **amber** joins two parcels a crossing tract ties together,
+**rose** joins a parcel and the tumor, **orchid** goes to no parcel. One line is
+one connection, never one per tract; a thicker line is more tracts along it,
+which is what a plan needs to know.
 
 The key counts lines and names them as lines, and its three rows sum to its own
-total: `1000 lines carrying 1034 tracts` on subject 2. That tract count is the
-left panel's `tracts through the tumor` exactly, and the two differ from each
-other only because a line carries as many tracts as run along it. Toggle the
-layer and the 3d shows exactly what the chart is built from.
+total: `824 lines carrying 1207 tracts` on subject 2. That tract count is the
+left panel's two tract rows added, 1034 through the tumor and 173 clipping a
+parcel, and it differs from the line count only because a line carries as many
+tracts as run along it. Toggle either layer and the 3d shows exactly what the
+chart is built from.
 
 Orange nodes are parcels the tumor overlaps, aqua ones are parcels it misses,
 and the yellow hub is the tumor. A node's **area** is how much of that parcel

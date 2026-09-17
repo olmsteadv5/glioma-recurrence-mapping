@@ -139,7 +139,7 @@ def through(subject):
 
     import itertools
 
-    hits, crossing = collections.defaultdict(list), set()
+    hits, crossing, landed = collections.defaultdict(list), set(), []
     for line in tractography.centerlines():
         ijk = np.rint(nib.affines.apply_affine(inverse, line)).astype(int)
         keep = ijk[np.all((ijk >= 0) & (ijk < shape), axis=1)]
@@ -160,7 +160,9 @@ def through(subject):
         # this tract crosses the mass, so every pair it joins is affected
         reached = sorted(int(v) - 1 for v in np.unique(at) if v > 0)
         crossing.update(itertools.combinations(reached, 2))
-    return {k: (len(v), v) for k, v in hits.items()}, crossing
+        # kept per tract as well, so a chart can say how many of them it stands for
+        landed.append(frozenset(reached))
+    return {k: (len(v), v) for k, v in hits.items()}, crossing, landed
 
 
 def build(subject, overlap, floor=FLOOR):
@@ -178,7 +180,7 @@ def build(subject, overlap, floor=FLOOR):
     nodes = sorted(near)
     place = {n: k for k, n in enumerate(nodes)}
 
-    reach, crossing = through(subject)
+    reach, crossing, _ = through(subject)
     runs, link = bundles(), []
     for a in range(len(nodes)):
         for b in range(a + 1, len(nodes)):
@@ -244,7 +246,7 @@ def attach(subject, nodes, parcel, most=12):
     if parcel not in names or names.index(parcel) in nodes:
         return None
     n = names.index(parcel)
-    runs, (_, crossing) = bundles(), through(subject)
+    runs, (_, crossing, _) = bundles(), through(subject)
     order = sorted(range(len(nodes)), key=lambda k: -count[n, nodes[k]])[:most]
 
     link = []

@@ -379,6 +379,10 @@ class Chart:
         # tract behind it, so the count is of lines drawn, not tracts measured
         self.strands = (sum(len(r) for _, _, r in self.spokes)
                         + sum(len(e[4]) for e in self.link))
+        # what those lines stand for, so the key reconciles with the left panel
+        mine = set(self.nodes)
+        landed = graph.through(subject)[2]
+        self.crossed, self.stands = len(landed), sum(1 for r in landed if r & mine)
         bare = sum(len(e[4]) for e in self.link if e[4] == [1.0])
         self.tally = {
             "in": len(self.inside), "out": len(self.nodes) - len(self.inside),
@@ -808,7 +812,8 @@ class Chart:
         # a title cut into the top edge, headings over quieter rows
         font = _font(12)
         rows = sorted(self.where)
-        tall = 262 + 14 * len(rows)
+        # the circle adds a line about thickness that the spread does not
+        tall = (292 if self.plan == "circle" else 277) + 14 * len(rows)
         if wide < 580 or high < tall + 40:
             if self.plan != "circle":
                 self._scale_bar(pen, wide, high, font)
@@ -875,6 +880,8 @@ class Chart:
                 (self._tone(0.5, False), "the atlas connects two parcels, no such tract", "plain")):
             pen.line([(x, y), (x + 14, y)], fill=color, width=2)
             y = line(y, text, count[key])
+        y = line(y, f"{self.strands} lines, from {self.stands} of the "
+                 f"{self.crossed} tracts through it")
         if circle:
             y = line(y, "thickness is how many tracts, not how long")
         y += 9

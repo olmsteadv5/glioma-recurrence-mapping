@@ -122,6 +122,17 @@ crosshair in all three; and the graph.
 
 Every parcel the tumor reaches is a node, every white matter connection
 between them is an edge, and the tumor itself is the large node in the middle.
+Three tract numbers appear in the interface and they count three different
+things, so the key states how they reconcile: `727 lines, from 543 of the 1034
+tracts through it`. The left panel's **tracts crossing** is a union, a tract
+that goes through the mass **or** clips an involved parcel, 1207 on subject 2.
+A line on the chart needs both at once, so 173 that only clip fall away, then
+190 that cross the mass but land in no parcel at all, then 301 more that land
+only in parcels too weakly tied to have made the chart. That leaves 543. Those
+543 are counted once per charted parcel they touch, which is 805 touches, and
+the eight strand cap draws 484 of them. The other two rows are not tracts in
+the same sense: 117 of them are atlas connections with no tract behind them.
+
 A line's color is about the tract, never about its two ends. Amber means a
 tract that crosses the tumor joins those two parcels; rose means such a tract
 reaches that one parcel; blue-gray means the atlas connects them and no such

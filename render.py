@@ -329,8 +329,10 @@ NODE_TUMOR = (250, 189, 47)
 # one hue per kind of link: cool where the mass is not in the path, warm where
 # it is. strength brightens a line without draining its hue
 EDGE = (84, 102, 112)
+ATLAS = (64, 70, 76)
 SPOKE = (152, 100, 108)
 THROUGH = (154, 112, 72)
+STRAY = (104, 70, 76)
 # the interface palette, so the key is the same grays as every other panel
 INK = (168, 153, 132)
 FAINT_INK = (124, 111, 100)
@@ -358,7 +360,7 @@ class Chart:
         import graph
         self.subject = subject
         (self.nodes, self.link, self.far,
-         self.inside, self.spokes) = graph.build(subject, overlap)
+         self.inside, self.spokes, self.stray) = graph.build(subject, overlap)
         self.points = graph.layout(len(self.nodes), self.link, self.far)
         info = atlas.parcels()
         self.names = [p["name"] for p in info]
@@ -378,20 +380,19 @@ class Chart:
         # two thirds of the parcel to parcel lines stand for a strength with no
         # tract behind it, so the count is of lines drawn, not tracts measured
         self.strands = (sum(len(r) for _, _, r in self.spokes)
-                        + sum(len(e[4]) for e in self.link))
+                        + sum(len(e[4]) for e in self.link) + len(self.stray))
         # what those lines stand for, so the key reconciles with the left panel
         mine = set(self.nodes)
         landed = graph.through(subject)[2]
         self.crossed, self.stands = len(landed), sum(1 for r in landed if r & mine)
-        bare = sum(len(e[4]) for e in self.link if e[4] == [1.0])
         self.tally = {
             "in": len(self.inside), "out": len(self.nodes) - len(self.inside),
             "mass": 1, "loose": len(self.loose),
-            "plain": sum(len(e[4]) for e in self.link if not e[5]),
-            "via": sum(len(e[4]) for e in self.link if e[5]),
+            "via": sum(len(e[4]) for e in self.link if e[5] == "via"),
+            "clear": sum(len(e[4]) for e in self.link if e[5] == "clear"),
+            "atlas": sum(len(e[4]) for e in self.link if e[5] == "atlas"),
             "spoke": sum(len(r) for _, _, r in self.spokes),
-            "bow": self.strands - bare, "bare": bare,
-            }
+            "stray": len(self.stray)}
 
         # one wedge per region, so the ring order is anatomy and not the seed
         self.around = sorted(range(len(self.nodes)),
@@ -503,6 +504,11 @@ class Chart:
             self._bands(pen)
         else:
             self._blobs(canvas, wide, high)
+        # with every tract drawn there are thousands of lines, so they go on
+        # their own layer and come back at a weight set by how many there are.
+        # the ink then reads as density instead of saturating to a solid block
+        layer = canvas.copy()
+        pen = ImageDraw.Draw(layer)
         # a line stays lit only if the picked node is one of its two ends. the
         # neighbors themselves stay lit, but the lines between them do not,
         # which used to read as the picked parcel reaching further than it does
@@ -517,9 +523,9 @@ class Chart:
             else:
                 self._strands(pen, self.screen[at], self.screen[-1], ratios,
                               tone, 2 if own else 1)
-        for a, b, weight, _, ratios, crosses in self.link:
+        for a, b, weight, _, ratios, kind in self.link:
             own = self.lit in (a, b)
-            tone = self._shade(self._tone(weight, crosses), free or own)
+            tone = self._shade(self._tone(weight, kind), free or own)
             if circle:
                 self._ribbon(pen, self.screen[a], self.seat[self.lobes[a]],
                              self.screen[b], self.seat[self.lobes[b]], len(ratios),
@@ -528,8 +534,8 @@ class Chart:
                 self._strands(pen, self.screen[a], self.screen[b], ratios, tone,
                               2 if own else 1)
         if self.guest is not None:
-            for k, weight, _, ratios, crosses in self.guest["link"]:
-                tone = self._tone(weight, crosses)
+            for k, weight, _, ratios, kind in self.guest["link"]:
+                tone = self._tone(weight, kind)
                 if circle:
                     self._ribbon(pen, self.screen[k], self.seat[self.lobes[k]],
                                  self.guest["screen"],
@@ -537,6 +543,9 @@ class Chart:
                                  len(ratios), tone, 3)
                 else:
                     self._strands(pen, self.screen[k], self.guest["screen"], ratios, tone, 3)
+        self._strays(pen, near, min(wide, high))
+        canvas = Image.blend(canvas, layer, self._weight())
+        pen = ImageDraw.Draw(canvas)
         self._nodes(pen, near)
         if self.guest is not None:
             self._guest(pen)
@@ -545,9 +554,11 @@ class Chart:
         self._shelf(pen, wide, high)
         return canvas
 
-    @staticmethod
-    def _tone(weight, crosses):
-        base = THROUGH if crosses else EDGE
+    KINDS = {"via": THROUGH, "clear": EDGE, "atlas": ATLAS}
+
+    @classmethod
+    def _tone(cls, weight, kind):
+        base = cls.KINDS[kind if isinstance(kind, str) else ("via" if kind else "clear")]
         gain = 1.0 + 0.9 * min(weight, 1.0)
         return tuple(min(int(c * gain), 240) for c in base)
 
@@ -615,16 +626,16 @@ class Chart:
             return self._runs
         out = []
         if self.guest is not None:
-            for k, weight, straight, ratios, crosses in self.guest["link"]:
-                tone = self._tone(min(weight, 1.0), crosses)
+            for k, weight, straight, ratios, kind in self.guest["link"]:
+                tone = self._tone(min(weight, 1.0), kind)
                 out += [(r * straight, tone, self.GUEST, k) for r in ratios]
         else:
-            for a, b, weight, straight, ratios, crosses in self.link:
+            for a, b, weight, straight, ratios, kind in self.link:
                 if self.lit is not None and self.lit not in (a, b):
                     continue
                 # the picked parcel is always the one on the left
                 near, far = (b, a) if self.lit == b else (a, b)
-                tone = self._tone(min(weight, 1.0), crosses)
+                tone = self._tone(min(weight, 1.0), kind)
                 out += [(r * straight, tone, near, far) for r in ratios]
             for at, count, ratios in self.spokes:
                 if self.lit is not None and at != self.lit:
@@ -732,6 +743,24 @@ class Chart:
             pen.text((edge_x + reach + cap + 5, y), f"{mm:.0f}",
                      fill=FAINT_INK, font=small, anchor="lm")
 
+    def _strays(self, pen, near, across):
+        # through the mass and out into nothing the atlas names. they have no
+        # end to be drawn to, so they are marked at the mass rather than dropped
+        if not self.stray:
+            return
+        hub = self.screen[-1]
+        room = across * 0.10 * self.zoom
+        longest = max(self.stray) or 1.0
+        tone = self._shade(STRAY, near is None)
+        step = 2 * np.pi / len(self.stray)
+        for n, mm in enumerate(self.stray):
+            out = np.array([np.cos(n * step), np.sin(n * step)])
+            pen.line([tuple(hub + out * 13),
+                      tuple(hub + out * (13 + mm / longest * room))], fill=tone)
+
+    def _weight(self):
+        return float(np.clip(1100.0 / max(self.strands, 1), 0.3, 1.0))
+
     def _neighbors(self):
         # while a node is picked, its own edges stay lit and the rest fall back
         if self.guest is not None:
@@ -813,7 +842,7 @@ class Chart:
         font = _font(12)
         rows = sorted(self.where)
         # the circle adds a line about thickness that the spread does not
-        tall = (292 if self.plan == "circle" else 277) + 14 * len(rows)
+        tall = (322 if self.plan == "circle" else 307) + 14 * len(rows)
         if wide < 580 or high < tall + 40:
             if self.plan != "circle":
                 self._scale_bar(pen, wide, high, font)
@@ -875,9 +904,11 @@ class Chart:
         # strongest evidence first, so the last row can refer back to it. the
         # color is about the tract, never about whether the ends are overlapped
         for color, text, key in (
-                (self._tone(0.5, True), "a tract crosses the tumor and joins two parcels", "via"),
-                (SPOKE, "a tract crosses the tumor and reaches one parcel", "spoke"),
-                (self._tone(0.5, False), "the atlas connects two parcels, no such tract", "plain")):
+                (self._tone(0.5, "via"), "a tract crosses the tumor, joining two parcels", "via"),
+                (SPOKE, "a tract crosses the tumor, reaching one parcel", "spoke"),
+                (STRAY, "a tract crosses the tumor, reaching no parcel", "stray"),
+                (self._tone(0.5, "clear"), "a tract misses the tumor, joining two parcels", "clear"),
+                (self._tone(0.5, "atlas"), "the atlas connects two parcels, no tract at all", "atlas")):
             pen.line([(x, y), (x + 14, y)], fill=color, width=2)
             y = line(y, text, count[key])
         y = line(y, f"{self.strands} lines, from {self.stands} of the "

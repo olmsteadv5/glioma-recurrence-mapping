@@ -15,17 +15,12 @@ from paths import MNI, out_dir
 # SC_Length is clamped: over half the edges sit at its maximum. SC_EuclDist is
 # the real center to center distance, so that is what sets the drawn lengths.
 FLOOR = 0.15
-STRANDS = 8
 
 
-def sample(lengths, n=STRANDS):
-    # An even spread across the sorted lengths. Taking the first n instead drops
-    # the longest paths, which is the half of the spread that says most.
-    lengths = sorted(float(v) for v in lengths)
-    if len(lengths) <= n:
-        return lengths
-    step = (len(lengths) - 1) / (n - 1)
-    return [lengths[round(i * step)] for i in range(n)]
+def sample(lengths):
+    # Every tract, longest last. There used to be a cap of eight a parcel here,
+    # which quietly hid 182 of L_CC_B's tracts behind a drawn 8.
+    return sorted(float(v) for v in lengths)
 
 
 @functools.lru_cache(maxsize=1)
@@ -139,7 +134,7 @@ def through(subject):
 
     import itertools
 
-    hits, crossing, landed = collections.defaultdict(list), set(), []
+    hits, crossing, landed, stray = collections.defaultdict(list), set(), [], []
     for line in tractography.centerlines():
         ijk = np.rint(nib.affines.apply_affine(inverse, line)).astype(int)
         keep = ijk[np.all((ijk >= 0) & (ijk < shape), axis=1)]
@@ -162,7 +157,11 @@ def through(subject):
         crossing.update(itertools.combinations(reached, 2))
         # kept per tract as well, so a chart can say how many of them it stands for
         landed.append(frozenset(reached))
-    return {k: (len(v), v) for k, v in hits.items()}, crossing, landed
+        if not reached:
+            # through the mass and into nothing the atlas names. it still ran
+            # somewhere, so the chart owes it a mark rather than a silent drop
+            stray.append(float(walked[-1]))
+    return ({k: (len(v), v) for k, v in hits.items()}, crossing, landed, stray)
 
 
 def build(subject, overlap, floor=FLOOR):
@@ -174,26 +173,27 @@ def build(subject, overlap, floor=FLOOR):
     if not inside:
         return [], [], np.zeros((0, 2))
 
-    near = set(inside)
+    reach, crossing, _, stray = through(subject)
+    near = set(inside) | set(reach)
     for i in inside:
         near |= set(np.where(count[i] >= floor)[0].tolist())
     nodes = sorted(near)
     place = {n: k for k, n in enumerate(nodes)}
 
-    reach, crossing, _ = through(subject)
     runs, link = bundles(), []
     for a in range(len(nodes)):
         for b in range(a + 1, len(nodes)):
-            weight = count[nodes[a], nodes[b]]
-            if weight < floor:
+            key = (min(nodes[a], nodes[b]), max(nodes[a], nodes[b]))
+            weight, real = count[nodes[a], nodes[b]], runs.get(key)
+            # a measured tract earns a line whatever the atlas says about the
+            # pair, and the atlas earns one on its own above the floor
+            if real is None and weight < floor:
                 continue
             straight = float(distance[nodes[a], nodes[b]]) or 1.0
-            # one arc per real tract where the geometry has them, else one
-            # straight line, since a strength with no path has no shape
-            real = runs.get((min(nodes[a], nodes[b]), max(nodes[a], nodes[b])))
             ratios = [1.0] if real is None else sample(v / straight for v in real)
-            key = (min(nodes[a], nodes[b]), max(nodes[a], nodes[b]))
-            link.append((a, b, float(weight), straight, ratios, key in crossing))
+            kind = ("via" if key in crossing else "clear" if real is not None
+                    else "atlas")
+            link.append((a, b, float(weight), straight, ratios, kind))
 
     middle, tumor = centers(subject)
     # the tumor is the last node, its distance to each parcel being the real one
@@ -208,7 +208,7 @@ def build(subject, overlap, floor=FLOOR):
             if not np.isnan(middle[n]).any() else 60.0
         spokes.append((place[n], reach[n][0],
                        sample(v / near for v in reach[n][1]) or [1.0]))
-    return nodes, link, np.array(to_tumor), set(inside), spokes
+    return nodes, link, np.array(to_tumor), set(inside), spokes, stray
 
 
 def layout(count_of_nodes, link, to_tumor, rounds=120):
@@ -246,7 +246,7 @@ def attach(subject, nodes, parcel, most=12):
     if parcel not in names or names.index(parcel) in nodes:
         return None
     n = names.index(parcel)
-    runs, (_, crossing, _) = bundles(), through(subject)
+    runs, (_, crossing, _, _) = bundles(), through(subject)
     order = sorted(range(len(nodes)), key=lambda k: -count[n, nodes[k]])[:most]
 
     link = []
@@ -258,7 +258,8 @@ def attach(subject, nodes, parcel, most=12):
         key = (min(n, nodes[k]), max(n, nodes[k]))
         real = runs.get(key)
         ratios = [1.0] if real is None else sample(v / straight for v in real)
-        link.append((k, weight, straight, ratios, key in crossing))
+        kind = "via" if key in crossing else "clear" if real is not None else "atlas"
+        link.append((k, weight, straight, ratios, kind))
 
     middle, tumor = centers(subject)
     far = (float(np.linalg.norm(middle[n] - tumor))

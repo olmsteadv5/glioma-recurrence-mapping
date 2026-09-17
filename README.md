@@ -122,16 +122,24 @@ crosshair in all three; and the graph.
 
 Every parcel the tumor reaches is a node, every white matter connection
 between them is an edge, and the tumor itself is the large node in the middle.
-Three tract numbers appear in the interface and they count three different
-things, so the key states how they reconcile: `727 lines, from 543 of the 1034
-tracts through it`. The left panel's **tracts crossing** is a union, a tract
-that goes through the mass **or** clips an involved parcel, 1207 on subject 2.
-A line on the chart needs both at once, so 173 that only clip fall away, then
-190 that cross the mass but land in no parcel at all, then 301 more that land
-only in parcels too weakly tied to have made the chart. That leaves 543. Those
-543 are counted once per charted parcel they touch, which is 805 touches, and
-the eight strand cap draws 484 of them. The other two rows are not tracts in
-the same sense: 117 of them are atlas connections with no tract behind them.
+Every tract is drawn. There used to be a cap of eight arcs a parcel, which on
+subject 2 meant `L_CC_B` had 182 tracts into the mass and eight lines to show
+for it; the cap is gone. The node set grew with it: a parcel is on the chart if
+the tumor overlaps it, or the atlas ties it to one that is, or a tract through
+the mass reaches it, which takes subject 2 from 158 nodes to 322. Pairs joined
+by a measured tract get a line whether or not the atlas rates them above the
+floor, so the 160 tracts that miss the mass but clip two charted parcels are
+drawn too. Tracts that cross the mass and land in no parcel at all, 190 of them,
+have no end to be drawn to, so they are marked at the mass as a burst rather
+than dropped.
+
+That is 6472 lines on subject 2, against 727 before, and the key reconciles
+them: `6472 lines, from 844 of the 1034 tracts through it`. One tract joining
+two parcels is three of those lines, an arc for the pair and a spoke to each
+end, which is why the total runs well above the tract count. At that density
+the lines are drawn on their own layer and blended back at a weight set by how
+many there are, so the ink reads as density rather than saturating to a solid
+block.
 
 A line's color is about the tract, never about its two ends. Amber means a
 tract that crosses the tumor joins those two parcels; rose means such a tract

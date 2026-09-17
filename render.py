@@ -629,25 +629,33 @@ class Chart:
         self._runs_was, self._runs = key, sorted(out, key=lambda t: -t[0])
         return self._runs
 
-    def _head(self, pen, x, y, name, runs, font):
-        # what the parcel is and how much of it has gone, not only its name
+    def _head(self, pen, x, y, wide, name, runs, font):
+        # label left, value right, the way the left panel sets its numbers
         about, detail = self.about.get(name), self.detail.get(name, {})
         ends = len({self.name(f) for _, _, _, f in runs})
-        lines = [detail.get("long_name", "")[:44]]
+        rows = []
         if about:
-            lines.append(f"in the tumor  {about['in_tumor_ml']:.2f} of "
-                         f"{about['parcel_ml']:.2f} mL  {about['fraction']:.0%}")
-            lines.append(f"mostly {about['tissue']} · {about['lobe'].lower()}")
+            rows.append(("in the tumor", f"{about['in_tumor_ml']:.2f} of "
+                                         f"{about['parcel_ml']:.2f} mL"))
+            rows.append(("that is", f"{about['fraction']:.0%} of it"))
+            rows.append(("mostly", about["tissue"]))
         else:
-            lines.append("the tumor misses it")
-            lines.append(f"{detail.get('gyrus', '')} · "
-                         f"{detail.get('lobe', '').lower()}")
-        lines.append(f"{len(runs)} tracts · {runs[-1][0]:.0f} to "
-                     f"{runs[0][0]:.0f} mm · {ends} ends")
+            rows.append(("in the tumor", "none of it"))
+        rows.append(("lobe", detail.get("lobe", "").lower()))
+        rows.append(("tracts", str(len(runs))))
+        rows.append(("reaching", f"{ends} parcel" + ("s" if ends != 1 else "")))
+        rows.append(("longest", f"{runs[0][0]:.0f} mm"))
 
         pen.text((x, y), name, fill=INK, font=font, anchor="lm")
-        for n, text in enumerate(l for l in lines if l.strip(" ·")):
-            pen.text((x, y + 15 * (n + 1)), text, fill=FAINT_INK, font=font, anchor="lm")
+        long = detail.get("long_name", "")
+        if long:
+            pen.text((x, y + 15), long[:44], fill=FAINT_INK, font=font, anchor="lm")
+        at = y + (30 if long else 15)
+        for label, value in rows:
+            pen.text((x + 2, at), label, fill=FAINT_INK, font=font, anchor="lm")
+            pen.text((x + wide, at), value, fill=INK, font=font, anchor="rm")
+            at += 14
+        return at + 10
 
     def _shelf(self, pen, wide, high):
         # the same dots and lines as the chart, laid out rather than arranged,
@@ -658,7 +666,8 @@ class Chart:
         runs = self.runs()
         if wide < self.SHELF + 620:
             return
-        head = 118
+        name = self.guest["name"] if self.guest else self.name(self.lit)
+        head = 58 + 14 * (7 if name in self.about else 5)
         pitch = min(19.0, max((high - 40 - head - 40) / max(len(runs), 1), 2.6))
         tall = int(min(high - 28, max(head + 34 + len(runs) * pitch, head + 40)))
         left, top = wide - 14 - self.SHELF, 14
@@ -668,19 +677,22 @@ class Chart:
         pen.rectangle((left + 10, top - 5, left + 66, top + 5), fill=PANEL)
         pen.text((left + 14, top), "tracts", font=font, anchor="lm", fill=BRIGHT_INK)
 
-        name = self.guest["name"] if self.guest else self.name(self.lit)
         if not runs:
             pen.text((left + 16, top + 24), name or "", fill=INK, font=small, anchor="lm")
             pen.text((left + 16, top + 44), "no tract runs to it",
                      fill=FAINT_INK, font=small, anchor="lm")
             return
-        self._head(pen, left + 16, top + 24, name, runs, small)
+        self._head(pen, left + 16, top + 24, self.SHELF - 34, name, runs, small)
 
         cap = max(pitch / 2 - 0.5, 1.0)
         named = pitch >= 12
+        # the column is only as wide as the longest name in it, so a panel of
+        # short names does not leave the chart squeezed into the right half
+        column = (max((pen.textlength(self.name(f) or "", font=small)
+                       for _, _, _, f in runs), default=0) + 10) if named else 0
         # the far ends line up in a column on the left with their names beside
         # them, and each tract runs right from there to the parcel that is picked
-        edge_x = left + 18 + (86 if named else 0) + cap
+        edge_x = left + 18 + column + cap
         room = (left + self.SHELF - 18 - cap - (46 if named else 0)) - edge_x
         longest, y0 = runs[0][0] or 1.0, top + head
         foot = y0 + len(runs) * pitch
@@ -834,7 +846,7 @@ class Chart:
         for color, text, tally in ((NODE_IN, "overlapped by the tumor", count["in"]),
                                    (NODE_OUT, "not overlapped, linked to an overlapped parcel",
                                     count["out"]),
-                                   (NODE_TUMOR, "the tumor mass", count["mass"])):
+                                   (NODE_TUMOR, "the tumor itself", count["mass"])):
             pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=color)
             y = line(y, text, tally)
         pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=PANEL, outline=NODE_IN)
@@ -854,16 +866,16 @@ class Chart:
         y += 33
 
         circle = self.plan == "circle"
-        pen.text((x, y), "links, one per tract", fill=INK, font=small, anchor="lm")
+        pen.text((x, y), "lines", fill=INK, font=small, anchor="lm")
         y += 17
-        for color, text, key in ((self._tone(0.5, False), "parcel to parcel", "plain"),
-                                 (self._tone(0.5, True),
-                                  "parcel to parcel, through the mass", "via"),
-                                 (SPOKE, "parcel to the mass", "spoke")):
+        for color, text, key in (
+                (self._tone(0.5, False), "between two parcels, clear of the tumor", "plain"),
+                (self._tone(0.5, True), "between two parcels, crossing the tumor", "via"),
+                (SPOKE, "between a parcel and the tumor", "spoke")):
             pen.line([(x, y), (x + 14, y)], fill=color, width=2)
             y = line(y, text, count[key])
         if circle:
-            y = line(y, "thicker: more tracts, not longer ones")
+            y = line(y, "thickness is how many tracts, not how long")
         y += 9
 
         pen.text((x, y), "regions, clockwise from the top" if circle else "regions",

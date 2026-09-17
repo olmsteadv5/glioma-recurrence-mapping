@@ -159,9 +159,10 @@ gap is measured to the middle of the mass and the tract only has to reach its
 edge.
 
 Pick a parcel and an inventory of its tracts opens top right; with nothing
-picked there is no panel. It heads with what the parcel is and how much of it
-has gone, `0.06 of 1.16 mL, 5%`, its class and lobe, and how many tracts it has
-over what range and to how many different ends. Then one row per tract: the far
+picked there is no panel. It heads with what the parcel is, set out
+label and value the way the left panel sets its numbers: how much of it is in
+the tumor and what share that is, its class and lobe, how many tracts it has,
+how many different parcels they reach, and the longest. Then one row per tract: the far
 end in a column down the left with its parcel named beside it, the tract
 running right at its real length in millimeters, the picked parcel on the end
 of it, and that length printed alongside, following its own bar rather than

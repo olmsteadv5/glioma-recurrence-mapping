@@ -364,6 +364,8 @@ class Chart:
         self.names = [p["name"] for p in info]
         self.lobes = [(info[n]["hemisphere"], info[n]["lobe"]) for n in self.nodes]
 
+        self.about = {r["parcel"]: r for r in overlap["parcels"]}
+        self.detail = {p["name"]: p for p in info}
         lost = {r["parcel"]: r["in_tumor_ml"] for r in overlap["parcels"]}
         self.lost = [lost.get(self.names[n], 0.0) for n in self.nodes]
         self.most = max(self.lost, default=1.0) or 1.0
@@ -627,17 +629,38 @@ class Chart:
         self._runs_was, self._runs = key, sorted(out, key=lambda t: -t[0])
         return self._runs
 
+    def _head(self, pen, x, y, name, runs, font):
+        # what the parcel is and how much of it has gone, not only its name
+        about, detail = self.about.get(name), self.detail.get(name, {})
+        ends = len({self.name(f) for _, _, _, f in runs})
+        lines = [detail.get("long_name", "")[:44]]
+        if about:
+            lines.append(f"in the tumor  {about['in_tumor_ml']:.2f} of "
+                         f"{about['parcel_ml']:.2f} mL  {about['fraction']:.0%}")
+            lines.append(f"mostly {about['tissue']} · {about['lobe'].lower()}")
+        else:
+            lines.append("the tumor misses it")
+            lines.append(f"{detail.get('gyrus', '')} · "
+                         f"{detail.get('lobe', '').lower()}")
+        lines.append(f"{len(runs)} tracts · {runs[-1][0]:.0f} to "
+                     f"{runs[0][0]:.0f} mm · {ends} ends")
+
+        pen.text((x, y), name, fill=INK, font=font, anchor="lm")
+        for n, text in enumerate(l for l in lines if l.strip(" ·")):
+            pen.text((x, y + 15 * (n + 1)), text, fill=FAINT_INK, font=font, anchor="lm")
+
     def _shelf(self, pen, wide, high):
         # the same dots and lines as the chart, laid out rather than arranged,
-        # so that a line's length can be the tract's length
-        # it is about whatever is picked, so with nothing picked there is no panel
+        # so that a line's length can be the tract's length. it is about
+        # whatever is picked, so with nothing picked there is no panel
         if self.lit is None and self.guest is None:
             return
         runs = self.runs()
         if wide < self.SHELF + 620:
             return
-        pitch = min(19.0, max((high - 130) / max(len(runs), 1), 2.6))
-        tall = int(min(high - 28, max(96 + len(runs) * pitch, 104)))
+        head = 118
+        pitch = min(19.0, max((high - 40 - head - 40) / max(len(runs), 1), 2.6))
+        tall = int(min(high - 28, max(head + 34 + len(runs) * pitch, head + 40)))
         left, top = wide - 14 - self.SHELF, 14
         pen.rounded_rectangle((left, top, wide - 14, top + tall), radius=6,
                               fill=PANEL, outline=KEY_EDGE)
@@ -645,50 +668,54 @@ class Chart:
         pen.rectangle((left + 10, top - 5, left + 66, top + 5), fill=PANEL)
         pen.text((left + 14, top), "tracts", font=font, anchor="lm", fill=BRIGHT_INK)
 
-        name = (self.guest["name"] if self.guest else
-                self.name(self.lit) if self.lit is not None else None)
-        pen.text((left + 16, top + 22), name or "every parcel",
-                 fill=INK if name else FAINT_INK, font=small, anchor="lm")
+        name = self.guest["name"] if self.guest else self.name(self.lit)
         if not runs:
-            pen.text((left + 16, top + 54), "no tract runs to it",
+            pen.text((left + 16, top + 24), name or "", fill=INK, font=small, anchor="lm")
+            pen.text((left + 16, top + 44), "no tract runs to it",
                      fill=FAINT_INK, font=small, anchor="lm")
             return
+        self._head(pen, left + 16, top + 24, name, runs, small)
 
         cap = max(pitch / 2 - 0.5, 1.0)
         named = pitch >= 12
-        # the far ends line up in a column and the bars trail left from it, so
-        # the picked parcel is still the left end of every one of them
-        edge_x = left + self.SHELF - 18 - cap - (86 if named else 0)
-        room = edge_x - (left + 18 + cap)
-        longest, y0 = runs[0][0] or 1.0, top + 54
+        # the far ends line up in a column on the left with their names beside
+        # them, and each tract runs right from there to the parcel that is picked
+        edge_x = left + 18 + (86 if named else 0) + cap
+        room = (left + self.SHELF - 18 - cap - (46 if named else 0)) - edge_x
+        longest, y0 = runs[0][0] or 1.0, top + head
         foot = y0 + len(runs) * pitch
 
         # the scale runs under the rows, so a length can be read and not guessed
         step = next((v for v in self.STEPS_MM if longest / v <= 5), self.STEPS_MM[-1])
+        last = edge_x
         for mm in range(0, int(longest) + step, step):
-            at = edge_x - mm / longest * room
-            if at < edge_x - room - 2:
+            at = edge_x + mm / longest * room
+            if at > edge_x + room + 2:
                 break
             pen.line([(at, y0 - 6), (at, foot + 2)], fill=KEY_EDGE)
             pen.text((at, foot + 12), str(mm), fill=FAINT_INK, font=small, anchor="mm")
-        pen.text((edge_x + 10, foot + 12), "mm", fill=FAINT_INK, font=small, anchor="lm")
+            last = at
+        pen.text((last + 16, foot + 12), "mm", fill=FAINT_INK, font=small, anchor="lm")
 
         for n, (mm, tone, near, far) in enumerate(runs):
             y = y0 + n * pitch
             reach = max(mm / longest * room, 2.0)
-            pen.line([(edge_x - reach, y), (edge_x, y)], fill=tone,
+            pen.line([(edge_x, y), (edge_x + reach, y)], fill=tone,
                      width=2 if pitch >= 5 else 1)
-            for at, side in ((near, edge_x - reach), (far, edge_x)):
+            for at, side in ((far, edge_x), (near, edge_x + reach)):
                 size, fill, edge = self._dot(at)
                 size = min(size, cap)
                 pen.ellipse([side - size, y - size, side + size, y + size],
                             fill=fill, outline=edge)
+            if not named:
+                continue
             # the mass is the one yellow dot on the chart, so it names itself
-            if named and self.name(far):
-                pen.text((edge_x + 10, y), self.name(far),
-                         fill=FAINT_INK, font=small, anchor="lm")
-        pen.text((left + 16, y0 - 22), f"{len(runs)} tracts, {runs[-1][0]:.0f} "
-                 f"to {longest:.0f} mm", fill=FAINT_INK, font=small, anchor="lm")
+            if self.name(far):
+                pen.text((edge_x - cap - 8, y), self.name(far),
+                         fill=FAINT_INK, font=small, anchor="rm")
+            # the length follows its own bar rather than sitting in a column
+            pen.text((edge_x + reach + cap + 5, y), f"{mm:.0f}",
+                     fill=FAINT_INK, font=small, anchor="lm")
 
     def _neighbors(self):
         # while a node is picked, its own edges stay lit and the rest fall back

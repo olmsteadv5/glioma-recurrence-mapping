@@ -159,19 +159,23 @@ gap is measured to the middle of the mass and the tract only has to reach its
 edge.
 
 Pick a parcel and an inventory of its tracts opens top right; with nothing
-picked there is no panel. One row per tract: the far end in a column down the
-right with its parcel named beside it, the tract trailing left at its real
-length in millimeters, and the picked parcel on the left end of it. A grey
-scale in millimeters runs underneath the rows rather than over them, zero at
-the right. Both dots keep the size and color they have on the chart, and the
-mass is not named because it is the one yellow dot.
+picked there is no panel. It heads with what the parcel is and how much of it
+has gone, `0.06 of 1.16 mL, 5%`, its class and lobe, and how many tracts it has
+over what range and to how many different ends. Then one row per tract: the far
+end in a column down the left with its parcel named beside it, the tract
+running right at its real length in millimeters, the picked parcel on the end
+of it, and that length printed alongside, following its own bar rather than
+sitting in a column of its own. A grey scale in millimeters runs underneath the
+rows rather than over them. Both dots keep the size and color they have on the
+chart, and the mass is not named because it is the one yellow dot.
 
-The right hand column is the point of it. For `L_SF8_C` on subject 36 the
-longest tracts run to `R_SF8_C` and `R_M2_C`, across to the other hemisphere
-and into parcels the tumor missed; the middle band all goes to `L_CC_B`, the
-corpus callosum, which the tumor overlaps; and the shortest go to the mass
-itself and to its own neighbours. The chart cannot show any of this, because a
-line there is as long as the gap between the two dots it joins.
+The left hand column is the point of it. For `L_SF8_C` on subject 36 the
+longest tracts, 111 to 129 mm, run to `R_SF8_C` and `R_M2_C`, across to the
+other hemisphere and into parcels the tumor missed; the middle band at 50 to 61
+mm all goes to `L_CC_B`, the corpus callosum, which the tumor overlaps; and the
+shortest, 4 to 32 mm, go to the mass itself and to its own neighbours. The
+chart cannot show any of this, because a line there is as long as the gap
+between the two dots it joins.
 
 Zoom past about twice and every node is labeled; below that only the picked
 node and what it connects to. The bar at the bottom is 50 mm, which means

@@ -122,6 +122,16 @@ crosshair in all three; and the graph.
 
 Every parcel the tumor reaches is a node, every white matter connection
 between them is an edge, and the tumor itself is the large node in the middle.
+A line's color is about the tract, never about its two ends. Amber means a
+tract that crosses the tumor joins those two parcels; rose means such a tract
+reaches that one parcel; blue-gray means the atlas connects them and no such
+tract exists. On subject 36, 98 of the 168 blue-gray lines join two parcels the
+tumor overlaps, so the color says nothing about overlap, which is what the dots
+are for. And 158 of those 168 have no measured tract at all: they are a
+connection strength from the atlas with no centerline in the 3001-tract mesh
+joining that pair, which is why the key says no such tract rather than claiming
+the path avoids the tumor.
+
 Orange nodes are parcels the tumor overlaps, aqua ones are parcels it misses
 that are tied to an overlapped one by white matter, and the yellow hub is the
 mass. Clicking a node opens whichever list has a row for that parcel, orange

@@ -867,10 +867,12 @@ class Chart:
         circle = self.plan == "circle"
         pen.text((x, y), "lines", fill=INK, font=small, anchor="lm")
         y += 17
+        # strongest evidence first, so the last row can refer back to it. the
+        # color is about the tract, never about whether the ends are overlapped
         for color, text, key in (
-                (self._tone(0.5, False), "joins two parcels, not through the tumor", "plain"),
-                (self._tone(0.5, True), "joins two parcels, through the tumor", "via"),
-                (SPOKE, "joins a parcel to the tumor", "spoke")):
+                (self._tone(0.5, True), "a tract crosses the tumor and joins two parcels", "via"),
+                (SPOKE, "a tract crosses the tumor and reaches one parcel", "spoke"),
+                (self._tone(0.5, False), "the atlas connects two parcels, no such tract", "plain")):
             pen.line([(x, y), (x + 14, y)], fill=color, width=2)
             y = line(y, text, count[key])
         if circle:

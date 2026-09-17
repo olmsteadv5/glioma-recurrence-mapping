@@ -630,6 +630,9 @@ class Chart:
     def _shelf(self, pen, wide, high):
         # the same dots and lines as the chart, laid out rather than arranged,
         # so that a line's length can be the tract's length
+        # it is about whatever is picked, so with nothing picked there is no panel
+        if self.lit is None and self.guest is None:
+            return
         runs = self.runs()
         if wide < self.SHELF + 620:
             return
@@ -653,32 +656,36 @@ class Chart:
 
         cap = max(pitch / 2 - 0.5, 1.0)
         named = pitch >= 12
-        x0 = left + 18 + cap
-        room = self.SHELF - 40 - 2 * cap - (86 if named else 0)
+        # the far ends line up in a column and the bars trail left from it, so
+        # the picked parcel is still the left end of every one of them
+        edge_x = left + self.SHELF - 18 - cap - (86 if named else 0)
+        room = edge_x - (left + 18 + cap)
         longest, y0 = runs[0][0] or 1.0, top + 54
         foot = y0 + len(runs) * pitch
 
         # the scale runs under the rows, so a length can be read and not guessed
         step = next((v for v in self.STEPS_MM if longest / v <= 5), self.STEPS_MM[-1])
         for mm in range(0, int(longest) + step, step):
-            at = x0 + mm / longest * room
-            if at > x0 + room + 2:
+            at = edge_x - mm / longest * room
+            if at < edge_x - room - 2:
                 break
             pen.line([(at, y0 - 6), (at, foot + 2)], fill=KEY_EDGE)
             pen.text((at, foot + 12), str(mm), fill=FAINT_INK, font=small, anchor="mm")
-        pen.text((x0 + room + 16, foot + 12), "mm", fill=FAINT_INK, font=small, anchor="lm")
+        pen.text((edge_x + 10, foot + 12), "mm", fill=FAINT_INK, font=small, anchor="lm")
 
         for n, (mm, tone, near, far) in enumerate(runs):
             y = y0 + n * pitch
             reach = max(mm / longest * room, 2.0)
-            pen.line([(x0, y), (x0 + reach, y)], fill=tone, width=2 if pitch >= 5 else 1)
-            for at, side in ((near, x0), (far, x0 + reach)):
+            pen.line([(edge_x - reach, y), (edge_x, y)], fill=tone,
+                     width=2 if pitch >= 5 else 1)
+            for at, side in ((near, edge_x - reach), (far, edge_x)):
                 size, fill, edge = self._dot(at)
                 size = min(size, cap)
                 pen.ellipse([side - size, y - size, side + size, y + size],
                             fill=fill, outline=edge)
-            if named:
-                pen.text((x0 + room + 10, y), self.name(far) or "the mass",
+            # the mass is the one yellow dot on the chart, so it names itself
+            if named and self.name(far):
+                pen.text((edge_x + 10, y), self.name(far),
                          fill=FAINT_INK, font=small, anchor="lm")
         pen.text((left + 16, y0 - 22), f"{len(runs)} tracts, {runs[-1][0]:.0f} "
                  f"to {longest:.0f} mm", fill=FAINT_INK, font=small, anchor="lm")

@@ -158,18 +158,20 @@ picture. The spokes are worse, 71% of them shorter than their gap, because the
 gap is measured to the middle of the mass and the tract only has to reach its
 edge.
 
-Top right is an inventory of whatever is picked. One row per tract: the picked
-parcel on the left, whatever the tract runs to on the right, and between them
-the tract at its real length in millimeters, named on the right by whatever it
-lands on. A grey scale in millimeters runs underneath the rows rather than over
-them. Both dots keep the size and color they have on the chart, so the right
-hand column reads straight off: for
-`L_SF8_C` on subject 36 the longest tracts end on aqua dots, parcels the tumor
-missed, the middle ones on orange, parcels it overlaps, and the shortest on the
-yellow mass itself. The chart cannot show any of this, because a line there is
-as long as the gap between the two dots it joins. With nothing picked it lists
-every tract, and the long end is almost entirely amber and rose, which is to
-say the long tracts are the ones the mass is sitting on.
+Pick a parcel and an inventory of its tracts opens top right; with nothing
+picked there is no panel. One row per tract: the far end in a column down the
+right with its parcel named beside it, the tract trailing left at its real
+length in millimeters, and the picked parcel on the left end of it. A grey
+scale in millimeters runs underneath the rows rather than over them, zero at
+the right. Both dots keep the size and color they have on the chart, and the
+mass is not named because it is the one yellow dot.
+
+The right hand column is the point of it. For `L_SF8_C` on subject 36 the
+longest tracts run to `R_SF8_C` and `R_M2_C`, across to the other hemisphere
+and into parcels the tumor missed; the middle band all goes to `L_CC_B`, the
+corpus callosum, which the tumor overlaps; and the shortest go to the mass
+itself and to its own neighbours. The chart cannot show any of this, because a
+line there is as long as the gap between the two dots it joins.
 
 Zoom past about twice and every node is labeled; below that only the picked
 node and what it connects to. The bar at the bottom is 50 mm, which means

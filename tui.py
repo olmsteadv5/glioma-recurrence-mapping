@@ -41,7 +41,6 @@ TISSUE = {"NETC": "#f2c14e", "SNFH": "#3fa7d6", "ET": "#e4572e", "RC": "#8e7dbe"
           "WT": "#d6c8af"}
 # the whole tumor as one shape, with its three parts under it
 PARTS = ("T:SNFH", "T:ET", "T:NETC", "T:RC")
-CROSSING = ("tracts:mass", "tracts:near")
 LAYERS = [("T:margin", "margin 2 cm", "#b16286", 0),
           ("T:WT", "tumor", TISSUE["WT"], 0),
           ("T:SNFH", "SNFH edema", TISSUE["SNFH"], 1),
@@ -49,9 +48,8 @@ LAYERS = [("T:margin", "margin 2 cm", "#b16286", 0),
           ("T:NETC", "NETC necrosis", TISSUE["NETC"], 1),
           ("T:RC", "RC cavity", TISSUE["RC"], 1),
           ("--a", "", "", 0),
-          ("tracts", "tracts crossing", "#689d6a", 0),
-          ("tracts:mass", "through the tumor", "#c67c48", 1),
-          ("tracts:near", "clipping a parcel only", "#76a096", 1),
+          ("tracts", "tracts through the tumor", "#c67c48", 0),
+          ("tracts:near", "tracts clipping a parcel", "#76a096", 0),
           ("shell", "brain surface", "#a89984", 0),
           ("--b", "", "", 0),
           ("C:both", "both timepoints", "#ebdbb2", 0),
@@ -659,7 +657,7 @@ class Console(App):
                 continue
             on = key not in self.hidden_layers
             # the combined shape stands in for the parts when none of them is on
-            if key in ("T:WT", "tracts"):
+            if key == "T:WT":
                 on = on and not self.split(key)
             if key in self.scene.actors:
                 self.scene.set_visible(key, on)
@@ -667,7 +665,7 @@ class Console(App):
 
     def split(self, parent):
         # the children of a parent row that are on and have something to draw
-        kin = PARTS if parent == "T:WT" else CROSSING
+        kin = PARTS
         return [k for k in kin
                 if k not in self.hidden_layers and k in self.scene.actors]
 
@@ -679,17 +677,14 @@ class Console(App):
             return
         tumor = {"T:WT", *PARTS}
         change = {k for k, *_ in LAYERS if k.startswith("C:")}
-        if key in ("T:WT", "tracts"):
-            # the parent carries its children with it
-            kin = tumor if key == "T:WT" else {"tracts", *CROSSING}
-            self.hidden_layers = (self.hidden_layers - kin if key in self.hidden_layers
-                                  else self.hidden_layers | kin)
+        if key == "T:WT":
+            # the parent carries its parts with it
+            self.hidden_layers = (self.hidden_layers - tumor if key in self.hidden_layers
+                                  else self.hidden_layers | tumor)
         else:
             self.hidden_layers ^= {key}
             if key in PARTS and key not in self.hidden_layers:
                 self.hidden_layers.discard("T:WT")
-            if key in CROSSING and key not in self.hidden_layers:
-                self.hidden_layers.discard("tracts")
         # these two draw the same tissue, so only one of them at a time. nothing
         # else is a rival: the margin, the tracts and the shell sit over any of it
         if key not in self.hidden_layers:
@@ -881,6 +876,11 @@ class Console(App):
         index = event.list_view.index or 0
         self.mark_row(index)
         self.refresh_detail(index)
+        # a different parcel is a different list of tracts, so the picked one goes
+        if self.chart is not None:
+            self.chart.tract = None
+        if self.scene:
+            self.scene.show_tract(None)
         self.focus_row(index)
         self.draw()
 
@@ -966,6 +966,7 @@ class Console(App):
             size = widget.content_size
             widget.image = self.chart.image(
                 (max(size.width * cell.width, 64), max(size.height * cell.height, 64)))
+            self.scene.show_tract(self.chart.tract)
             viewer.styles.border_subtitle_align = "right"
             viewer.border_title = "graph"
             other = "spread" if self.chart.plan == "circle" else "circle"
@@ -1073,6 +1074,13 @@ class Console(App):
         cell = get_cell_size()
         x = column * cell.width + cell.width // 2
         y = line * cell.height + cell.height // 2
+        # a row in the inventory is one tract, and picking it is picking that
+        # tract everywhere, so the 3d can show the same line
+        tract = self.chart.picked_row(x, y)
+        if tract is not None:
+            self.chart.tract = None if tract == self.chart.tract else tract
+            self.draw()
+            return
         at = self.chart.pick(x, y)
         if at is None:
             return
@@ -1218,6 +1226,9 @@ class Console(App):
         self.query_one("#canvas").display = self.mode == "3d"
         self.query_one("#grid").display = self.mode == "slices"
         self.query_one("#board").display = self.mode == "graph"
+        # a tract picked in the chart stays picked in the 3d and the other way
+        if self.scene and self.chart is not None:
+            self.scene.show_tract(self.chart.tract)
         if self.scene:
             self.focus_row()
         self.refresh_bindings()

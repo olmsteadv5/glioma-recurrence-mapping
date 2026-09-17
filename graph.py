@@ -14,13 +14,8 @@ from paths import MNI, out_dir
 
 # SC_Length is clamped: over half the edges sit at its maximum. SC_EuclDist is
 # the real center to center distance, so that is what sets the drawn lengths.
-FLOOR = 0.15
-
-
-def sample(lengths):
-    # Every tract, longest last. There used to be a cap of eight a parcel here,
-    # which quietly hid 182 of L_CC_B's tracts behind a drawn 8.
-    return sorted(float(v) for v in lengths)
+# a parcel joins the chart once this many tracts through the tumor reach it
+LEAST = 3
 
 
 @functools.lru_cache(maxsize=1)
@@ -71,59 +66,13 @@ def centers(subject):
     return middle, tumor
 
 
-@functools.lru_cache(maxsize=1)
-def bundles():
-    # Every centerline's real length, filed under the parcels it runs between.
-    # Tracts curve: the median one is 2.2 times the straight line it spans, and
-    # two tracts joining the same pair differ in length by about a fifth.
-    import collections
-    import itertools
-    import tracts as tractography
-
-    cache = ATLAS_DIR / "graph_bundles_middles.npz"
-    if cache.exists():
-        held = np.load(cache)
-        return {tuple(k): v for k, v in zip(held["pairs"], np.split(
-            held["lengths"], held["offsets"][1:-1]))}
-
-    labels, names = label_volume(nib.load(MNI))
-    mni = nib.load(MNI)
-    inverse = np.linalg.inv(mni.affine)
-    shape = np.array(labels.shape)
-
-    runs = collections.defaultdict(list)
-    for line in tractography.centerlines():
-        ijk = np.rint(nib.affines.apply_affine(inverse, line)).astype(int)
-        keep = np.all((ijk >= 0) & (ijk < shape), axis=1)
-        if keep.sum() < 2:
-            continue
-        points = line[keep]
-        sel = ijk[keep]
-        at = labels[sel[:, 0], sel[:, 1], sel[:, 2]]
-        walked = np.concatenate([[0.0], np.cumsum(
-            np.linalg.norm(np.diff(points, axis=0), axis=1))])
-        seen = [int(v) - 1 for v in np.unique(at) if v > 0]
-        for a, b in itertools.combinations(sorted(seen), 2):
-            # middle of the run in one parcel to middle of the run in the other,
-            # to match the center to center gap the chart draws it across. the
-            # nearest touching points instead would measure edge to edge, which
-            # is near zero for parcels that share a border
-            here, there = np.where(at == a + 1)[0], np.where(at == b + 1)[0]
-            runs[(a, b)].append(abs(float(walked[int(np.median(here))]
-                                          - walked[int(np.median(there))])))
-
-    pairs = sorted(runs)
-    lengths = np.concatenate([runs[k] for k in pairs]) if pairs else np.zeros(0)
-    offsets = np.cumsum([0] + [len(runs[k]) for k in pairs])
-    ATLAS_DIR.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(cache, pairs=np.array(pairs), lengths=lengths, offsets=offsets)
-    return {k: np.array(runs[k]) for k in pairs}
-
-
 @functools.lru_cache(maxsize=4)
 def through(subject):
-    # How many tract centerlines run through both the tumor and each parcel.
+    # Every centerline that runs through the tumor: which parcels it reaches,
+    # how far along itself from the mass to each of them, and which pairs of
+    # parcels it therefore joins. This is the whole of what the chart draws.
     import collections
+    import itertools
     import tracts as tractography
 
     labels, names = label_volume(nib.load(MNI))
@@ -132,83 +81,66 @@ def through(subject):
     inverse = np.linalg.inv(seg.affine)
     shape = np.array(tumor.shape)
 
-    import itertools
-
-    hits, crossing, landed, stray = collections.defaultdict(list), set(), [], []
-    for line in tractography.centerlines():
+    reach = collections.defaultdict(list)     # parcel -> [(tract, mm to the mass)]
+    joins = collections.defaultdict(list)     # parcel pair -> [(tract, mm apart)]
+    crossing, stray = 0, []
+    for n, line in enumerate(tractography.centerlines()):
         ijk = np.rint(nib.affines.apply_affine(inverse, line)).astype(int)
-        keep = ijk[np.all((ijk >= 0) & (ijk < shape), axis=1)]
+        inside = np.all((ijk >= 0) & (ijk < shape), axis=1)
+        keep = ijk[inside]
         if not len(keep) or not tumor[keep[:, 0], keep[:, 1], keep[:, 2]].any():
             continue
+        crossing += 1
         at = labels[keep[:, 0], keep[:, 1], keep[:, 2]]
-        points = line[np.all((ijk >= 0) & (ijk < shape), axis=1)]
+        points = line[inside]
         walked = np.concatenate([[0.0], np.cumsum(
             np.linalg.norm(np.diff(points, axis=0), axis=1))])
-        mass = np.where(tumor[keep[:, 0], keep[:, 1], keep[:, 2]])[0]
-        middle = int(np.median(mass))
+        mass = int(np.median(np.where(tumor[keep[:, 0], keep[:, 1], keep[:, 2]])[0]))
+
+        middles = {}
         for value in np.unique(at):
             if value <= 0:
                 continue
-            there = np.where(at == value)[0]
-            hits[int(value) - 1].append(
-                max(abs(float(walked[middle] - walked[int(np.median(there))])), 1.0))
-        # this tract crosses the mass, so every pair it joins is affected
-        reached = sorted(int(v) - 1 for v in np.unique(at) if v > 0)
-        crossing.update(itertools.combinations(reached, 2))
-        # kept per tract as well, so a chart can say how many of them it stands for
-        landed.append(frozenset(reached))
-        if not reached:
-            # through the mass and into nothing the atlas names. it still ran
-            # somewhere, so the chart owes it a mark rather than a silent drop
+            middles[int(value) - 1] = int(np.median(np.where(at == value)[0]))
+        if not middles:
             stray.append(float(walked[-1]))
-    return ({k: (len(v), v) for k, v in hits.items()}, crossing, landed, stray)
+            continue
+        for parcel, where in middles.items():
+            reach[parcel].append((n, max(abs(float(walked[mass] - walked[where])), 1.0)))
+        for a, b in itertools.combinations(sorted(middles), 2):
+            joins[(a, b)].append(
+                (n, max(abs(float(walked[middles[a]] - walked[middles[b]])), 1.0)))
+    return dict(reach), dict(joins), crossing, stray
 
 
-def build(subject, overlap, floor=FLOOR):
-    # Involved parcels, plus whatever the white matter ties them to.
-    count, distance = edges()
+def build(subject, overlap, least=LEAST):
+    # The connectome the tumor sits in: parcels as nodes, the tumor as one more,
+    # and an edge wherever a tract that runs through the tumor ties two of them.
     names = [p["name"] for p in parcels()]
     index = {name: i for i, name in enumerate(names)}
-    inside = [index[r["parcel"]] for r in overlap["parcels"] if r["parcel"] in index]
-    if not inside:
-        return [], [], np.zeros((0, 2))
+    inside = {index[r["parcel"]] for r in overlap["parcels"] if r["parcel"] in index}
+    reach, joins, crossing, stray = through(subject)
 
-    reach, crossing, _, stray = through(subject)
-    near = set(inside) | set(reach)
-    for i in inside:
-        near |= set(np.where(count[i] >= floor)[0].tolist())
-    nodes = sorted(near)
+    # a parcel one stray tract grazes is noise on a plan; a parcel a dozen run
+    # into is the point of the picture, so a parcel earns its place by count
+    nodes = sorted({p for p, hits in reach.items() if len(hits) >= least} | inside)
     place = {n: k for k, n in enumerate(nodes)}
-
-    runs, link = bundles(), []
-    for a in range(len(nodes)):
-        for b in range(a + 1, len(nodes)):
-            key = (min(nodes[a], nodes[b]), max(nodes[a], nodes[b]))
-            weight, real = count[nodes[a], nodes[b]], runs.get(key)
-            # a measured tract earns a line whatever the atlas says about the
-            # pair, and the atlas earns one on its own above the floor
-            if real is None and weight < floor:
-                continue
-            straight = float(distance[nodes[a], nodes[b]]) or 1.0
-            ratios = [1.0] if real is None else sample(v / straight for v in real)
-            kind = ("via" if key in crossing else "clear" if real is not None
-                    else "atlas")
-            link.append((a, b, float(weight), straight, ratios, kind))
-
     middle, tumor = centers(subject)
-    # the tumor is the last node, its distance to each parcel being the real one
-    to_tumor = [float(np.linalg.norm(middle[n] - tumor))
-                 if not np.isnan(middle[n]).any() else 60.0 for n in nodes]
-    # and its edges are real: centerlines that pass through the mass and the parcel
-    spokes = []
-    for n in nodes:
-        if not reach.get(n):
-            continue
-        near = max(float(np.linalg.norm(middle[n] - tumor)), 1.0) \
-            if not np.isnan(middle[n]).any() else 60.0
-        spokes.append((place[n], reach[n][0],
-                       sample(v / near for v in reach[n][1]) or [1.0]))
-    return nodes, link, np.array(to_tumor), set(inside), spokes, stray
+
+    def gap(a, b):
+        return max(float(np.linalg.norm(middle[a] - middle[b])), 1.0)
+
+    link = []
+    for (a, b), hits in joins.items():
+        if a in place and b in place:
+            link.append((place[a], place[b], len(hits), gap(a, b),
+                         [mm for _, mm in hits], [n for n, _ in hits]))
+
+    to_tumor = np.array([float(np.linalg.norm(middle[n] - tumor))
+                         if not np.isnan(middle[n]).any() else 60.0 for n in nodes])
+    spokes = [(place[n], len(reach[n]), [mm for _, mm in reach[n]],
+               [t for t, _ in reach[n]]) for n in nodes if n in reach]
+    return nodes, link, to_tumor, inside, spokes, stray, crossing
 
 
 def layout(count_of_nodes, link, to_tumor, rounds=120):
@@ -237,34 +169,29 @@ def layout(count_of_nodes, link, to_tumor, rounds=120):
     return points
 
 
-def attach(subject, nodes, parcel, most=12):
-    # One more parcel for a chart already built: a connectivity row can name
-    # something too weakly tied to have made the node set, and a row that
-    # highlights nothing is worse than a weak edge drawn honestly.
-    count, distance = edges()
+def attach(subject, nodes, parcel, least=1):
+    # One more parcel for a chart already built, for a connectivity row naming
+    # something too lightly touched to have earned a node of its own.
     names = [p["name"] for p in parcels()]
     if parcel not in names or names.index(parcel) in nodes:
         return None
     n = names.index(parcel)
-    runs, (_, crossing, _, _) = bundles(), through(subject)
-    order = sorted(range(len(nodes)), key=lambda k: -count[n, nodes[k]])[:most]
+    reach, joins, _, _ = through(subject)
+    middle, tumor = centers(subject)
+    seat = {v: k for k, v in enumerate(nodes)}
 
     link = []
-    for k in order:
-        weight = float(count[n, nodes[k]])
-        if weight <= 0:
+    for (a, b), hits in joins.items():
+        other = b if a == n else a if b == n else None
+        if other is None or other not in seat or len(hits) < least:
             continue
-        straight = float(distance[n, nodes[k]]) or 1.0
-        key = (min(n, nodes[k]), max(n, nodes[k]))
-        real = runs.get(key)
-        ratios = [1.0] if real is None else sample(v / straight for v in real)
-        kind = "via" if key in crossing else "clear" if real is not None else "atlas"
-        link.append((k, weight, straight, ratios, kind))
-
-    middle, tumor = centers(subject)
+        far = max(float(np.linalg.norm(middle[n] - middle[other])), 1.0)
+        link.append((seat[other], len(hits), far,
+                     [mm for _, mm in hits], [t for t, _ in hits]))
+    mine = reach.get(n, [])
     far = (float(np.linalg.norm(middle[n] - tumor))
            if not np.isnan(middle[n]).any() else 60.0)
-    return n, link, far
+    return n, link, far, [mm for _, mm in mine], [t for t, _ in mine]
 
 
 def settle(points, link, far, rounds=60):

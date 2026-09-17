@@ -120,72 +120,38 @@ crosshair in all three; and the graph.
 
 ## The graph
 
-Every parcel the tumor reaches is a node, every white matter connection
-between them is an edge, and the tumor itself is the large node in the middle.
-Every tract is drawn. There used to be a cap of eight arcs a parcel, which on
-subject 2 meant `L_CC_B` had 182 tracts into the mass and eight lines to show
-for it; the cap is gone. The node set grew with it: a parcel is on the chart if
-the tumor overlaps it, or the atlas ties it to one that is, or a tract through
-the mass reaches it, which takes subject 2 from 158 nodes to 322. Pairs joined
-by a measured tract get a line whether or not the atlas rates them above the
-floor, so the 160 tracts that miss the mass but clip two charted parcels are
-drawn too. Tracts that cross the mass and land in no parcel at all, 190 of them,
-have no end to be drawn to, so they are marked at the mass as a burst rather
-than dropped.
+The connectome the tumor sits in. Every parcel is a node, the tumor is one more
+in the middle, and there is a line wherever a tract that **runs through the
+tumor** ties two of them together. That is the whole rule, and every number in
+the view follows from it: irradiate this volume and these are the connections
+that go through it.
 
-That is 6472 lines on subject 2, against 727 before, and the key reconciles
-them: `6472 lines, from 844 of the 1034 tracts through it`. One tract joining
-two parcels is three of those lines, an arc for the pair and a spoke to each
-end, which is why the total runs well above the tract count. At that density
-the lines are drawn on their own layer and blended back at a weight set by how
-many there are, so the ink reads as density rather than saturating to a solid
-block.
+A parcel is a node if the tumor overlaps it, or if at least three tracts
+through the tumor reach it. One or two is a graze and would only crowd a plan.
+Subject 2 comes to 233 nodes and 810 lines from its 1034 crossing tracts.
 
-A line's color is about the tract, never about its two ends. Amber means a
-tract that crosses the tumor joins those two parcels; rose means such a tract
-reaches that one parcel; blue-gray means the atlas connects them and no such
-tract exists. On subject 36, 98 of the 168 blue-gray lines join two parcels the
-tumor overlaps, so the color says nothing about overlap, which is what the dots
-are for. And 158 of those 168 have no measured tract at all: they are a
-connection strength from the atlas with no centerline in the 3001-tract mesh
-joining that pair, which is why the key says no such tract rather than claiming
-the path avoids the tumor.
+Only two kinds of line, and both are the same fact told twice: **rose** is a
+parcel and the tumor, **amber** is two parcels a single crossing tract joins.
+One line is one connection, never one per tract; a thicker line is more tracts
+along it, which is what a plan needs to know. 190 tracts cross the tumor and
+reach no parcel at all, so they have no end to be drawn to and are marked at
+the tumor as a burst rather than dropped.
 
-Orange nodes are parcels the tumor overlaps, aqua ones are parcels it misses
-that are tied to an overlapped one by white matter, and the yellow hub is the
-mass. Clicking a node opens whichever list has a row for that parcel, orange
-into `parcels` and aqua into `connectivity`, and selecting a row lights its
-node. Drag to pan, scroll to zoom, click the mass to put it back.
+`tracts through the tumor` in the left panel and the graph are the same 1034
+tracts. Toggle it and the 3d shows exactly what the chart is built from.
 
-A node's **area** is how much of that parcel is inside the tumor, from 0 to
-2.9 mL on subject 36. Lines come in three colors: blue-gray parcel to parcel,
-amber where a tract crossing the mass joins the pair, rose from a parcel into
-the mass. For subject 36 that is 183, 258 and 595 arcs. Picking a node dims
-everything else and keeps only the lines that touch it; the lines between its
-neighbors dim too, since the parcel does not reach along them.
+Orange nodes are parcels the tumor overlaps, aqua ones are parcels it misses,
+and the yellow hub is the tumor. A node's **area** is how much of that parcel
+is inside the tumor. Clicking a node opens whichever list has a row for that
+parcel and selecting a row lights its node. Drag to pan, scroll to zoom, click
+the tumor to put it back.
 
 `s` swaps the arrangement, the way it swaps space in the slices. **Spread** is
-the one above, laid out so the gaps are the real distances. **Circle** puts the
-parcels on a rim grouped by region and the mass in the middle, and routes every
-thread through both its regions on the way across, so parallel tracts travel
-together and the picture reads as bundles rather than as a hairball.
-
-Both draw all 1036 arcs. Circle spreads a bundle's threads slightly, so a
-ribbon's thickness is how many tracts it carries. It says nothing about length
-or distance and does not pretend to: no scale bar, no rings, no bow. Every
-parcel is the same distance from the centre and neighbours on the rim are
-neighbours in the region order, nothing more.
-
-Spread is the one that carries distance. Measured on subject 36 its drawn gaps
-match the real parcel to parcel distances to a median of 10%, and it draws an
-arc at its tract's real length for the 47% of arcs that run between one and
-1.8 times the straight gap. The other two thirds it cannot: 34% of tracts are
-shorter than the gap, and no line between two dots can be shorter than the
-straight one, so they draw straight and read long; 19% run more than 1.8 times
-their gap, up to 11.3 times, and are capped before they sweep across the
-picture. The spokes are worse, 71% of them shorter than their gap, because the
-gap is measured to the middle of the mass and the tract only has to reach its
-edge.
+laid out so the gaps are the real distances between parcels, to a median of
+10%. **Circle** puts the parcels on a rim grouped by region and routes every
+line through both its regions on the way across, so parallel tracts travel
+together and the picture reads as bundles. Circle says nothing about distance
+and does not pretend to: no scale bar, no rings, no bow.
 
 Pick a parcel and an inventory of its tracts opens top right; with nothing
 picked there is no panel. It heads with what the parcel is, set out

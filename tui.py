@@ -1073,9 +1073,6 @@ class Console(App):
         cell = get_cell_size()
         x = column * cell.width + cell.width // 2
         y = line * cell.height + cell.height // 2
-        if self.chart.tabbed(x, y):
-            self.draw()
-            return
         at = self.chart.pick(x, y)
         if at is None:
             return

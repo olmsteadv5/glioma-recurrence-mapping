@@ -399,7 +399,8 @@ class Chart:
 
         # one line per connection, never one per tract: the tract count is the
         # line's weight, so the picture stays a connectome and not a hairball
-        self.strands = len(self.link) + len(self.spokes)
+        # every mark the key lists, so its rows sum to its own total
+        self.strands = len(self.link) + len(self.spokes) + len(self.stray)
         self.tally = {
             "in": len(self.inside), "out": len(self.nodes) - len(self.inside),
             "mass": 1, "loose": len(self.loose),
@@ -915,8 +916,8 @@ class Chart:
                 (STRAY, "tracts through the tumor reaching no parcel", "stray")):
             pen.line([(x, y), (x + 14, y)], fill=color, width=2)
             y = line(y, text, count[key])
-        y = line(y, f"{self.strands} lines for {self.crossed} tracts")
-        y = line(y, "a thicker line is more tracts")
+        y = line(y, f"{self.strands} lines for {self.crossed} tracts through it")
+        y = line(y, "a thicker line carries more of them")
         y += 9
 
         pen.text((x, y), "regions, clockwise from the top" if circle else "regions",

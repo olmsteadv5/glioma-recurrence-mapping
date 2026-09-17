@@ -644,7 +644,6 @@ class Chart:
         rows.append(("lobe", detail.get("lobe", "").lower()))
         rows.append(("tracts", str(len(runs))))
         rows.append(("reaching", f"{ends} parcel" + ("s" if ends != 1 else "")))
-        rows.append(("longest", f"{runs[0][0]:.0f} mm"))
 
         pen.text((x, y), name, fill=INK, font=font, anchor="lm")
         long = detail.get("long_name", "")
@@ -667,7 +666,7 @@ class Chart:
         if wide < self.SHELF + 620:
             return
         name = self.guest["name"] if self.guest else self.name(self.lit)
-        head = 58 + 14 * (7 if name in self.about else 5)
+        head = 58 + 14 * (6 if name in self.about else 4)
         pitch = min(19.0, max((high - 40 - head - 40) / max(len(runs), 1), 2.6))
         tall = int(min(high - 28, max(head + 34 + len(runs) * pitch, head + 40)))
         left, top = wide - 14 - self.SHELF, 14
@@ -869,9 +868,9 @@ class Chart:
         pen.text((x, y), "lines", fill=INK, font=small, anchor="lm")
         y += 17
         for color, text, key in (
-                (self._tone(0.5, False), "between two parcels, clear of the tumor", "plain"),
-                (self._tone(0.5, True), "between two parcels, crossing the tumor", "via"),
-                (SPOKE, "between a parcel and the tumor", "spoke")):
+                (self._tone(0.5, False), "joins two parcels, not through the tumor", "plain"),
+                (self._tone(0.5, True), "joins two parcels, through the tumor", "via"),
+                (SPOKE, "joins a parcel to the tumor", "spoke")):
             pen.line([(x, y), (x + 14, y)], fill=color, width=2)
             y = line(y, text, count[key])
         if circle:

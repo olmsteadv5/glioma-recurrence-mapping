@@ -160,8 +160,10 @@ edge.
 
 Top right is an inventory of whatever is picked. One row per tract: the picked
 parcel on the left, whatever the tract runs to on the right, and between them
-the tract at its real length in millimeters. Both dots keep the size and color
-they have on the chart, so the right hand column reads straight off: for
+the tract at its real length in millimeters, named on the right by whatever it
+lands on. A grey scale in millimeters runs underneath the rows rather than over
+them. Both dots keep the size and color they have on the chart, so the right
+hand column reads straight off: for
 `L_SF8_C` on subject 36 the longest tracts end on aqua dots, parcels the tumor
 missed, the middle ones on orange, parcels it overlaps, and the shortest on the
 yellow mass itself. The chart cannot show any of this, because a line there is

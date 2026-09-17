@@ -507,20 +507,20 @@ class Chart:
             if circle:
                 self._ribbon(pen, self.screen[at], self.seat[self.lobes[at]],
                              self.screen[-1], self.middle, len(ratios), tone,
-                             3 if own else 1)
+                             2 if own else 1)
             else:
                 self._strands(pen, self.screen[at], self.screen[-1], ratios,
-                              tone, 3 if own else 2)
+                              tone, 2 if own else 1)
         for a, b, weight, _, ratios, crosses in self.link:
             own = self.lit in (a, b)
             tone = self._shade(self._tone(weight, crosses), free or own)
             if circle:
                 self._ribbon(pen, self.screen[a], self.seat[self.lobes[a]],
                              self.screen[b], self.seat[self.lobes[b]], len(ratios),
-                             tone, 3 if own else 1)
+                             tone, 2 if own else 1)
             else:
                 self._strands(pen, self.screen[a], self.screen[b], ratios, tone,
-                              3 if own else 2)
+                              2 if own else 1)
         if self.guest is not None:
             for k, weight, _, ratios, crosses in self.guest["link"]:
                 tone = self._tone(weight, crosses)
@@ -586,8 +586,9 @@ class Chart:
                 q = q[:, :-1] * (1 - self.THREAD) + q[:, 1:] * self.THREAD
             pen.line([tuple(v) for v in q[:, 0]], fill=color, width=width)
 
-    SHELF = 320
+    SHELF = 392
     GUEST = object()
+    STEPS_MM = (10, 20, 25, 50, 100, 200, 500)
 
     def _dot(self, n):
         # the size and color that node has on the chart
@@ -633,7 +634,7 @@ class Chart:
         if wide < self.SHELF + 620:
             return
         pitch = min(19.0, max((high - 130) / max(len(runs), 1), 2.6))
-        tall = int(min(high - 28, max(86 + len(runs) * pitch, 104)))
+        tall = int(min(high - 28, max(96 + len(runs) * pitch, 104)))
         left, top = wide - 14 - self.SHELF, 14
         pen.rounded_rectangle((left, top, wide - 14, top + tall), radius=6,
                               fill=PANEL, outline=KEY_EDGE)
@@ -643,7 +644,7 @@ class Chart:
 
         name = (self.guest["name"] if self.guest else
                 self.name(self.lit) if self.lit is not None else None)
-        pen.text((left + 16, top + 28), name or "every parcel",
+        pen.text((left + 16, top + 22), name or "every parcel",
                  fill=INK if name else FAINT_INK, font=small, anchor="lm")
         if not runs:
             pen.text((left + 16, top + 54), "no tract runs to it",
@@ -651,9 +652,22 @@ class Chart:
             return
 
         cap = max(pitch / 2 - 0.5, 1.0)
+        named = pitch >= 12
         x0 = left + 18 + cap
-        room = self.SHELF - 40 - 2 * cap
+        room = self.SHELF - 40 - 2 * cap - (86 if named else 0)
         longest, y0 = runs[0][0] or 1.0, top + 54
+        foot = y0 + len(runs) * pitch
+
+        # the scale runs under the rows, so a length can be read and not guessed
+        step = next((v for v in self.STEPS_MM if longest / v <= 5), self.STEPS_MM[-1])
+        for mm in range(0, int(longest) + step, step):
+            at = x0 + mm / longest * room
+            if at > x0 + room + 2:
+                break
+            pen.line([(at, y0 - 6), (at, foot + 2)], fill=KEY_EDGE)
+            pen.text((at, foot + 12), str(mm), fill=FAINT_INK, font=small, anchor="mm")
+        pen.text((x0 + room + 16, foot + 12), "mm", fill=FAINT_INK, font=small, anchor="lm")
+
         for n, (mm, tone, near, far) in enumerate(runs):
             y = y0 + n * pitch
             reach = max(mm / longest * room, 2.0)
@@ -663,11 +677,11 @@ class Chart:
                 size = min(size, cap)
                 pen.ellipse([side - size, y - size, side + size, y + size],
                             fill=fill, outline=edge)
-        pen.text((left + 16, y0 - 12), f"{longest:.0f} mm", fill=FAINT_INK,
-                 font=small, anchor="lm")
-        pen.text((left + 16, y0 + len(runs) * pitch + 10),
-                 f"{runs[-1][0]:.0f} mm · {len(runs)} tracts",
-                 fill=FAINT_INK, font=small, anchor="lm")
+            if named:
+                pen.text((x0 + room + 10, y), self.name(far) or "the mass",
+                         fill=FAINT_INK, font=small, anchor="lm")
+        pen.text((left + 16, y0 - 22), f"{len(runs)} tracts, {runs[-1][0]:.0f} "
+                 f"to {longest:.0f} mm", fill=FAINT_INK, font=small, anchor="lm")
 
     def _neighbors(self):
         # while a node is picked, its own edges stay lit and the rest fall back

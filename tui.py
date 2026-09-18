@@ -41,17 +41,18 @@ TISSUE = {"NETC": "#f2c14e", "SNFH": "#3fa7d6", "ET": "#e4572e", "RC": "#8e7dbe"
           "WT": "#d6c8af"}
 # the whole tumor as one shape, with its three parts under it
 PARTS = ("T:SNFH", "T:ET", "T:NETC", "T:RC")
-LAYERS = [("T:margin", "margin 2 cm", "#b16286", 0),
+LAYERS = [("shell", "brain surface", "#a89984", 0),
+          ("--a", "", "", 0),
+          ("T:margin", "margin 2 cm", "#b16286", 0),
           ("T:WT", "tumor", TISSUE["WT"], 0),
           ("T:SNFH", "SNFH edema", TISSUE["SNFH"], 1),
           ("T:ET", "ET enhancing", TISSUE["ET"], 1),
           ("T:NETC", "NETC necrosis", TISSUE["NETC"], 1),
           ("T:RC", "RC cavity", TISSUE["RC"], 1),
-          ("--a", "", "", 0),
+          ("--b", "", "", 0),
           ("tracts", "tracts through the tumor", "#c67c48", 0),
           ("tracts:near", "tracts clipping a parcel", "#76a096", 0),
-          ("shell", "brain surface", "#a89984", 0),
-          ("--b", "", "", 0),
+          ("--c", "", "", 0),
           ("C:both", "both timepoints", "#ebdbb2", 0),
           ("C:new", "new in the later", "#fb4934", 0),
           ("C:gone", "gone since the first", "#8ec07c", 0)]
@@ -611,7 +612,7 @@ class Console(App):
         self.layer_rows = [r for r in LAYERS
                            if (not r[0].startswith("T:") or r[0] in ("T:WT", "T:margin")
                                or r[0][2:] in volumes)
-                           and (pair or not (r[0].startswith("C:") or r[0] == "--b"))]
+                           and (pair or not (r[0].startswith("C:") or r[0] == "--c"))]
         for key, name, color, deep in self.layer_rows:
             if key.startswith("--"):
                 out.append(f"[{FAINT}]{'\u2500' * (w + 4)}[/]")

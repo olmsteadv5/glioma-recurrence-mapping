@@ -328,6 +328,35 @@ def _font(size):
     return ImageFont.load_default()
 
 
+@functools.lru_cache(maxsize=8192)
+def _stamp(text, size, fill, anchor):
+    # PIL rasterises a string from scratch every time it is drawn, and the
+    # tract panel writes a hundred short ones a frame. Keep each as a tile.
+    font = _font(size)
+    box = font.getbbox(text, anchor=anchor)
+    tile = Image.new("RGBA", (max(box[2] - box[0], 1), max(box[3] - box[1], 1)),
+                     (0, 0, 0, 0))
+    ImageDraw.Draw(tile).text((-box[0], -box[1]), text, font=font,
+                              fill=tuple(fill) + (255,), anchor=anchor)
+    return tile, box[0], box[1]
+
+
+class Ink:
+    # an ImageDraw whose text() pastes a cached tile instead of rasterising
+
+    def __init__(self, canvas):
+        self.canvas, self.pen = canvas, ImageDraw.Draw(canvas)
+
+    def __getattr__(self, name):
+        return getattr(self.pen, name)
+
+    def text(self, xy, text, font=None, fill=None, anchor="la"):
+        if not text or fill is None or font is None:
+            return self.pen.text(xy, text, font=font, fill=fill, anchor=anchor)
+        tile, dx, dy = _stamp(str(text), font.size, tuple(fill), anchor)
+        self.canvas.paste(tile, (int(xy[0]) + dx, int(xy[1]) + dy), tile)
+
+
 NODE_IN = (228, 87, 46)
 NODE_OUT = (132, 186, 108)
 NODE_TUMOR = (250, 189, 47)
@@ -418,6 +447,7 @@ class Chart:
 
         self._runs_was, self._runs, self._rows_at = object(), [], None
         self.at, self.fits = 0, 1
+        self._body_was, self._body = None, None
 
         self.lit, self.guest, self.zoom, self.pan = None, None, 1.0, np.zeros(2)
         self.crowd, self.label = set(), None
@@ -513,10 +543,20 @@ class Chart:
 
     def image(self, size):
         wide, high = max(size[0], 64), max(size[1], 64)
-        canvas = Image.new("RGB", (wide, high), PANEL)
         if not len(self.nodes):
+            return Image.new("RGB", (wide, high), PANEL)
+        # scrolling the panel changes nothing about the chart under it, so the
+        # chart is kept and only the panel is drawn again
+        seen = (wide, high, self.zoom, tuple(self.pan), self.lit, self.tract,
+                tuple(sorted(self.crowd)),
+                self.guest["name"] if self.guest else None)
+        if seen == self._body_was:
+            canvas = self._body.copy()
+            self._place(wide, high)
+            self._shelf(Ink(canvas), wide, high)
             return canvas
-        pen = ImageDraw.Draw(canvas)
+        canvas = Image.new("RGB", (wide, high), PANEL)
+        pen = Ink(canvas)
         self._place(wide, high)
         near = self._neighbors()
         self._bands(pen)
@@ -555,6 +595,7 @@ class Chart:
         self._hubs(pen, near, hot)
         self._labels(pen, near)
         self._key(canvas, pen, wide, high)
+        self._body_was, self._body = seen, canvas.copy()
         self._shelf(pen, wide, high)
         return canvas
 
@@ -922,7 +963,7 @@ class Chart:
         font, small = _font(12), _font(11)
         # the top edge is inset so the title sitting on it is not clipped
         tile = Image.new("RGB", (620, tall + 9), PANEL)
-        pen = ImageDraw.Draw(tile)
+        pen = Ink(tile)
         pen.rounded_rectangle((0, 8, 619, tall + 8), radius=6, fill=PANEL, outline=KEY_EDGE)
         pen.rectangle((10, 3, 46, 13), fill=PANEL)
         pen.text((14, 8), "key", fill=BRIGHT_INK, font=font, anchor="lm")

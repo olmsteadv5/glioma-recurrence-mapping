@@ -358,7 +358,7 @@ class Console(App):
         self.row_text, self.marked, self.at_risk = [], None, []
         self.parcel_rows = []
         self.pending, self._spin, self._settle = [0.0, 0.0, 1.0], None, None
-        self.waiting = [1.0, 0.0, 0.0]
+        self.waiting = [1.0, 0.0, 0.0, 0]
         self.strip_spans = {}
         self.strip_spans = {}
         self._panel_width = self._list_width = self._layers_width = 0
@@ -1111,8 +1111,9 @@ class Console(App):
         x, y = column * cell.width, line * cell.height
         if not self.chart.over_shelf(x, y):
             return False
-        self.chart.scroll_shelf(by)
-        self.draw()
+        # a wheel sends notches faster than a frame takes to draw, so they are
+        # collected on the same clock as panning rather than drawn one by one
+        self.queue_chart(roll=by)
         return True
 
     def pick_node(self, column, line):
@@ -1186,13 +1187,14 @@ class Console(App):
     def select_row(self, index):
         self.query_one("#parcels", ListView).index = index
 
-    def queue_chart(self, zoom=1.0, pan=(0.0, 0.0)):
+    def queue_chart(self, zoom=1.0, pan=(0.0, 0.0), roll=0):
         # the terminal sends a move event per pixel, so collect and draw on a clock
         if self.mode != "graph" or self.chart is None:
             return
         self.waiting[0] *= zoom
         self.waiting[1] += pan[0]
         self.waiting[2] += pan[1]
+        self.waiting[3] += roll
         if self._spin is None:
             self._spin = self.set_interval(1 / 30, self.flush_chart)
         if self._settle is not None:
@@ -1200,10 +1202,12 @@ class Console(App):
         self._settle = self.set_timer(0.3, self.settle_chart)
 
     def flush_chart(self):
-        zoom, across, down = self.waiting
-        self.waiting = [1.0, 0.0, 0.0]
-        if zoom == 1.0 and not across and not down:
+        zoom, across, down, roll = self.waiting
+        self.waiting = [1.0, 0.0, 0.0, 0]
+        if zoom == 1.0 and not across and not down and not roll:
             return
+        if roll:
+            self.chart.scroll_shelf(roll)
         self.chart.move(zoom, (across, down))
         self.draw()
 

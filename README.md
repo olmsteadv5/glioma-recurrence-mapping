@@ -136,7 +136,7 @@ not a place but the absence of one: the far end the atlas has no name for. The
 the 173 that miss the tumor but pass through the parcels it has taken, which
 would otherwise be nowhere at all on the chart. Because two hubs want the width
 and the pane is wider than it is tall, the rim is an ellipse rather than a
-circle, with the hubs abreast in the middle. It stops stretching at 2.2 times
+circle, with the hubs abreast in the middle. It stops stretching at 1.85 times
 as wide as it is tall, so on an ultrawide the extra width goes to the margins
 and not into a flatter and flatter shape.
 
@@ -158,6 +158,13 @@ hemisphere, at one lightness held equal in CIELAB. Encoding the hemisphere as
 brightness made the right hand regions read as a faded version of the left
 rather than as a different side; the same rgb value is a far lighter yellow
 than it is a blue, so the equalising has to happen in a perceptual space.
+
+Picking a term in the `functions` list lights every parcel behind it at once,
+with all of their lines, and the inventory lists their tracts together under
+the term. A function is a weighted sum over many parcels, so lighting only its
+strongest driver would read as the function living in that one place. Past
+thirty parcels the names come off the chart, since fifty labels at once are
+worse than none.
 
 Orange nodes are parcels the tumor overlaps, green ones are parcels it misses,
 and the yellow hub is the tumor. A node's **area** is how much of that parcel

@@ -434,6 +434,7 @@ class Chart:
         self.at, self.fits = 0, 1
 
         self.lit, self.guest, self.zoom, self.pan = None, None, 1.0, np.zeros(2)
+        self.crowd, self.label = set(), None
         self._key_was, self._key_art = None, None
         self.where = {}
         self.screen, self.scale = np.zeros((0, 2)), 1.0
@@ -447,12 +448,26 @@ class Chart:
             return None
         return self.names[self.nodes[at]]
 
+    def picked(self):
+        # what the pick covers: one parcel, or the several a function is made of
+        if self.crowd:
+            return set(self.crowd)
+        return {self.lit} if self.lit is not None else set()
+
+    def gather(self, parcels, label):
+        # a function is a weighted sum over parcels, so it lights all of them
+        self.lit = self.guest = None
+        seat = {self.names[n]: k for k, n in enumerate(self.nodes)}
+        self.crowd = {seat[p] for p in parcels if p in seat}
+        self.label = label if self.crowd else None
+
     def focus(self, parcel):
         # the node for the picked row: the one already drawn, or a guest placed
         # by its real distances, for a row naming a parcel too lightly touched
         # to have earned a node of its own
         import graph
-        self.lit = self.guest = None
+        self.lit = self.guest = self.label = None
+        self.crowd = set()
         if parcel is None:
             return
         self.lit = next((n for n in range(len(self.nodes))
@@ -556,23 +571,24 @@ class Chart:
         # neighbors themselves stay lit, but the lines between them do not,
         # which used to read as the picked parcel reaching further than it does
         free = near is None
+        picked = self.picked()
         mine = lambda ids: self.tract is not None and self.tract in ids
         # the dim ones first and the picked ones over them, so a pick is never
         # buried under the lines it was picked out of
         for lit in (False, True):
             for at, many, lengths, ids in self.spokes:
-                own = at == self.lit or mine(ids)
+                own = at in picked or mine(ids)
                 if own == lit:
                     self._join(pen, circle, at, self.hub, many, lengths, self.far[at],
                                self._shade(SPOKE, free or own), own)
             for at, many, lengths, ids in self.void:
-                own = at == self.lit or mine(ids)
+                own = at in picked or mine(ids)
                 if own == lit:
                     tone = STRAY if at is None else CLIP
                     self._join(pen, circle, self.hub if at is None else at, self.gone,
                                many, lengths, 60.0, self._shade(tone, free or own), own)
             for a, b, many, gap, lengths, ids in self.link:
-                own = self.lit in (a, b) or mine(ids)
+                own = a in picked or b in picked or mine(ids)
                 if own == lit:
                     self._join(pen, circle, a, b, many, lengths, gap,
                                self._shade(THROUGH, free or own), own)
@@ -580,7 +596,7 @@ class Chart:
             for k, many, gap, lengths, ids in self.guest["link"]:
                 self._join(pen, circle, k, "guest", many, lengths, gap, THROUGH, True)
         hot = self._hot()
-        self._nodes(pen, near, hot)
+        self._nodes(pen, near, hot, picked)
         if self.guest is not None:
             self._guest(pen)
         self._hubs(pen, near, hot)
@@ -630,7 +646,7 @@ class Chart:
             pen.line([tuple(v) for v in q[:, 0]], fill=color, width=width)
 
     # how far the ellipse may run wider than it is tall, however wide the pane
-    STRETCH = 2.2
+    STRETCH = 1.85
     SHELF = 392
     GUEST = object()
     STEPS_MM = (10, 20, 25, 50, 100, 200, 500)
@@ -641,6 +657,9 @@ class Chart:
             return 7.0, NODE_TUMOR, PANEL
         if n is self.GUEST:
             return 3.0, NODE_OUT, LIT
+        if n >= len(self.nodes):
+            # a hub, which is not a parcel and has no volume to size it by
+            return (7.0, NODE_TUMOR, PANEL) if n == self.hub else (6.0, STRAY, PANEL)
         size = 3.0 + 7.0 * (self.lost[n] / self.most) ** 0.5
         fill = NODE_IN if self.nodes[n] in self.inside else NODE_OUT
         return (size, PANEL, fill) if n in self.loose else (size, fill, PANEL)
@@ -648,7 +667,8 @@ class Chart:
     def runs(self):
         # every tract of whatever is picked, longest first, each carrying the
         # id of the centerline itself so the 3d can be asked to show that one
-        key = (self.lit, self.guest["name"] if self.guest else None)
+        key = (self.lit, tuple(sorted(self.crowd)),
+               self.guest["name"] if self.guest else None)
         if key == self._runs_was:
             return self._runs
         out = []
@@ -658,15 +678,20 @@ class Chart:
             out += [(mm, SPOKE, self.GUEST, None, t)
                     for mm, t in zip(self.guest["lengths"], self.guest["ids"])]
         else:
+            picked = self.picked()
             for a, b, many, gap, lengths, ids in self.link:
-                if self.lit is not None and self.lit not in (a, b):
+                if picked and not (a in picked or b in picked):
                     continue
-                near, far = (b, a) if self.lit == b else (a, b)
+                near, far = (b, a) if b in picked and a not in picked else (a, b)
                 out += [(mm, THROUGH, near, far, t) for mm, t in zip(lengths, ids)]
             for at, many, lengths, ids in self.spokes:
-                if self.lit is not None and at != self.lit:
+                if picked and at not in picked:
                     continue
                 out += [(mm, SPOKE, at, None, t) for mm, t in zip(lengths, ids)]
+            for at, many, lengths, ids in self.void:
+                if not picked or at not in picked:
+                    continue
+                out += [(mm, CLIP, at, self.gone, t) for mm, t in zip(lengths, ids)]
         self._runs_was, self._runs = key, sorted(out, key=lambda t: -t[0])
         return self._runs
 
@@ -675,6 +700,19 @@ class Chart:
         about, detail = self.about.get(name), self.detail.get(name, {})
         ends = len({self.name(f) for _, _, _, f, _ in runs})
         rows = []
+        if self.crowd:
+            took = sum(self.lost[n] for n in self.crowd)
+            rows.append(("parcels behind it", str(len(self.crowd))))
+            rows.append(("in the tumor", f"{took:.2f} mL of them"))
+            rows.append(("tracts", str(len(runs))))
+            rows.append(("reaching", f"{ends} parcel" + ("s" if ends != 1 else "")))
+            pen.text((x, y), name or "", fill=INK, font=font, anchor="lm")
+            at = y + 15
+            for label, value in rows:
+                pen.text((x + 2, at), label, fill=FAINT_INK, font=font, anchor="lm")
+                pen.text((x + wide, at), value, fill=INK, font=font, anchor="rm")
+                at += 14
+            return at + 10
         if about:
             rows.append(("in the tumor", f"{about['in_tumor_ml']:.2f} of "
                                          f"{about['parcel_ml']:.2f} mL"))
@@ -701,13 +739,14 @@ class Chart:
         # the same dots and lines as the chart, laid out rather than arranged,
         # so that a line's length can be the tract's length. it is about
         # whatever is picked, so with nothing picked there is no panel
-        if self.lit is None and self.guest is None:
+        if self.lit is None and self.guest is None and not self.crowd:
             return
         runs = self.runs()
         if wide < self.SHELF + 620:
             return
-        name = self.guest["name"] if self.guest else self.name(self.lit)
-        head = 58 + 14 * (6 if name in self.about else 4)
+        name = (self.label if self.crowd else
+                self.guest["name"] if self.guest else self.name(self.lit))
+        head = 58 + 14 * (5 if self.crowd else 6 if name in self.about else 4)
         # rows keep a readable height and the list scrolls, rather than 534 of
         # them being squeezed into the pane until none of them can be read
         pitch = 15.0
@@ -829,13 +868,14 @@ class Chart:
         # while a node is picked, its own edges stay lit and the rest fall back
         if self.guest is not None:
             return {k for k, *_ in self.guest["link"]}
-        if self.lit is None:
+        picked = self.picked()
+        if not picked:
             return None
-        near = {self.lit}
+        near = set(picked)
         for a, b, *_ in self.link:
-            if a == self.lit:
+            if a in picked:
                 near.add(b)
-            elif b == self.lit:
+            elif b in picked:
                 near.add(a)
         return near
 
@@ -874,20 +914,20 @@ class Chart:
 
     def _hot(self):
         # which hubs the pick reaches, so they can show it the way a node does
-        out = set()
-        if self.lit is None and self.tract is None:
+        out, picked = set(), self.picked()
+        if not picked and self.tract is None:
             return out
         for at, many, lengths, ids in self.spokes:
-            if at == self.lit or self.tract in ids:
+            if at in picked or self.tract in ids:
                 out.add(self.hub)
         for at, many, lengths, ids in self.void:
-            if at == self.lit or self.tract in ids:
+            if at in picked or self.tract in ids:
                 out.add(self.gone)
                 if at is None:
                     out.add(self.hub)
         return out
 
-    def _nodes(self, pen, near, hot):
+    def _nodes(self, pen, near, hot, picked):
         for at, point in enumerate(self.screen):
             last = at >= len(self.nodes)
             if last:
@@ -902,7 +942,7 @@ class Chart:
                                 (at in hot if last else at in near))
             box = [point[0] - wide, point[1] - wide, point[0] + wide, point[1] + wide]
             hollow = at in self.loose
-            ring = at == self.lit or at in hot
+            ring = at in picked or at in hot
             pen.ellipse(box, fill=PANEL if hollow else color,
                         outline=LIT if ring else color if hollow else PANEL,
                         width=3 if ring else 1)
@@ -919,15 +959,23 @@ class Chart:
                      fill=self._shade(INK if at == self.hub else FAINT_INK,
                                       near is None or at in hot))
 
+    MANY = 30
+
     def _labels(self, pen, near):
         if self.zoom < 1.8 and near is None:
             return
+        picked = self.picked()
+        # one parcel's neighborhood is worth naming; a function's fifty is not,
+        # so past a point only the picked ones are named, and then none of them
+        show = near
+        if near is not None and len(near) > self.MANY:
+            show = picked if len(picked) <= self.MANY else set()
         font = _font(11)
-        for at, point in enumerate(self.screen[:-1]):
-            if near is not None and at not in near and self.zoom < 1.8:
+        for at, point in enumerate(self.screen[:len(self.nodes)]):
+            if show is not None and at not in show and self.zoom < 1.8:
                 continue
             pen.text((point[0], point[1] - 10), self.name(at),
-                     fill=LIT if at == self.lit else NODE_OUT, font=font, anchor="ms")
+                     fill=LIT if at in picked else NODE_OUT, font=font, anchor="ms")
 
     def _key(self, canvas, pen, wide, high):
         # the same box as every other panel: panel ground, dim round border,

@@ -900,10 +900,20 @@ class Console(App):
             self.light_node()
 
     def light_node(self):
-        # a parcel row and a connectivity row are each about one parcel. a
-        # function is a weighted sum over many, so lighting its strongest
-        # driver would read as the function living in that one parcel
-        names = [] if self.listing == "functions" else self.selected_parcels()
+        # a parcel row and a connectivity row are each about one parcel, so one
+        # node lights. a function is a weighted sum over many, so all of them do
+        if self.listing == "functions":
+            d = self.results[self.subject]
+            top = d.get("function", [])
+            at = self.picked()
+            if 0 <= at < len(top):
+                term = top[at]["term"]
+                self.chart.gather([n for n, _, _ in function.drivers(term, d["atlas"])],
+                                  term)
+            else:
+                self.chart.focus(None)
+            return
+        names = self.selected_parcels()
         self.chart.focus(names[0] if names else None)
 
     def seek_parcel(self, index):

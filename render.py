@@ -351,7 +351,7 @@ EDGE = (84, 102, 112)
 ATLAS = (64, 70, 76)
 SPOKE = (152, 100, 108)
 THROUGH = (154, 112, 72)
-STRAY = (170, 116, 176)
+STRAY = (108, 170, 232)
 # the interface palette, so the key is the same grays as every other panel
 INK = (168, 153, 132)
 FAINT_INK = (124, 111, 100)
@@ -848,7 +848,23 @@ class Chart:
 
 
 
+    def _hot(self):
+        # which hubs the pick reaches, so they can show it the way a node does
+        out = set()
+        if self.lit is None and self.tract is None:
+            return out
+        for at, many, lengths, ids in self.spokes:
+            if at == self.lit or self.tract in ids:
+                out.add(self.hub)
+        for at, many, lengths, ids in self.void:
+            if at == self.lit or self.tract in ids:
+                out.add(self.gone)
+                if at is None:
+                    out.add(self.hub)
+        return out
+
     def _nodes(self, pen, near):
+        hot = self._hot()
         for at, point in enumerate(self.screen):
             last = at >= len(self.nodes)
             if last:
@@ -862,10 +878,10 @@ class Chart:
             color = color if last else self._shade(color, near is None or at in near)
             box = [point[0] - wide, point[1] - wide, point[0] + wide, point[1] + wide]
             hollow = at in self.loose
+            ring = at == self.lit or at in hot
             pen.ellipse(box, fill=PANEL if hollow else color,
-                        outline=(LIT if at == self.lit
-                                 else color if hollow else PANEL),
-                        width=3 if at == self.lit else 1)
+                        outline=LIT if ring else color if hollow else PANEL,
+                        width=3 if ring else 1)
 
     def _hubs(self, pen):
         # the second one needs saying: it is not a place, it is the absence of
@@ -894,7 +910,7 @@ class Chart:
         font = _font(12)
         rows = sorted(self.where)
         # the circle adds a line about thickness that the spread does not
-        tall = (322 if self.plan == "circle" else 307) + 14 * len(rows)
+        tall = (337 if self.plan == "circle" else 322) + 14 * len(rows)
         if wide < 580 or high < tall + 40:
             if self.plan != "circle":
                 self._scale_bar(pen, wide, high, font)
@@ -931,7 +947,9 @@ class Chart:
         for color, text, tally in ((NODE_IN, "overlapped by the tumor", count["in"]),
                                    (NODE_OUT, "not overlapped, linked to an overlapped parcel",
                                     count["out"]),
-                                   (NODE_TUMOR, "the tumor itself", count["mass"])):
+                                   (NODE_TUMOR, "the tumor itself", count["mass"]),
+                                   (STRAY, "no parcel: an end the atlas cannot name",
+                                    count["mass"])):
             pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=color)
             y = line(y, text, tally)
         pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=PANEL, outline=NODE_IN)

@@ -139,7 +139,9 @@ and the pane is wider than it is tall, the rim is an ellipse rather than a
 circle, with the hubs abreast in the middle.
 
 Three kinds of line: **amber** joins two parcels a crossing tract ties together,
-**rose** joins a parcel and the tumor, **orchid** goes to no parcel. One line is
+**rose** joins a parcel and the tumor, **blue** goes to no parcel. Neither hub
+dims when something is picked, and both take a bright ring when the pick reaches
+them, the way a picked parcel does. One line is
 one connection, never one per tract; a thicker line is more tracts along it,
 which is what a plan needs to know.
 

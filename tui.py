@@ -203,10 +203,12 @@ class Board(ImageWidget, Renderable=Renderable):
                                       event.delta_y * cell.height))
 
     def on_mouse_scroll_down(self, event):
-        self.app.queue_chart(zoom=0.85)
+        if not self.app.scroll_shelf(event.x, event.y, 3):
+            self.app.queue_chart(zoom=0.85)
 
     def on_mouse_scroll_up(self, event):
-        self.app.queue_chart(zoom=1.18)
+        if not self.app.scroll_shelf(event.x, event.y, -3):
+            self.app.queue_chart(zoom=1.18)
 
     def on_resize(self, event):
         self.app.schedule_draw()
@@ -1066,6 +1068,19 @@ class Console(App):
         if self.mode == "slices" and name in self.slices.readout()["modalities"]:
             self.slices.modality = name
             self.draw()
+
+    def scroll_shelf(self, column, line, by):
+        # the wheel scrolls the tract list when the pointer is over it, and
+        # zooms the chart when it is not
+        if self.mode != "graph" or self.chart is None:
+            return False
+        cell = get_cell_size()
+        x, y = column * cell.width, line * cell.height
+        if not self.chart.over_shelf(x, y):
+            return False
+        self.chart.scroll_shelf(by)
+        self.draw()
+        return True
 
     def pick_node(self, column, line):
         # a node clicked in the chart becomes the selected row in the list

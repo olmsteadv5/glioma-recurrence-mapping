@@ -170,7 +170,9 @@ the tumor and what share that is, its class and lobe, how many tracts it has,
 and how many different parcels they reach. Then one row per tract: the far
 end in a column down the left with its parcel named beside it, the tract
 running right at its real length in millimeters, the picked parcel on the end
-of it, and that length printed alongside, following its own bar rather than
+of it, and that length printed alongside. Rows keep a readable height and the
+list scrolls on the wheel rather than squeezing; `L_CC_B` has 717 tracts and
+they are still one row each. The length is printed alongside, following its own bar rather than
 sitting in a column of its own. A grey scale in millimeters runs underneath the
 rows rather than over them. Both dots keep the size and color they have on the
 chart, and the mass is not named because it is the one yellow dot.

@@ -414,6 +414,7 @@ class Chart:
         self.plan = "spread"
 
         self._runs_was, self._runs, self._rows_at = object(), [], None
+        self.at, self.fits = 0, 1
 
         self.lit, self.guest, self.zoom, self.pan = None, None, 1.0, np.zeros(2)
         self._key_was, self._key_art = None, None
@@ -535,18 +536,25 @@ class Chart:
         # neighbors themselves stay lit, but the lines between them do not,
         # which used to read as the picked parcel reaching further than it does
         free = near is None
-        for at, many, lengths, ids in self.spokes:
-            own = at == self.lit or (self.tract is not None and self.tract in ids)
-            self._join(pen, circle, at, self.hub, many, lengths, self.far[at],
-                       self._shade(SPOKE, free or own), own)
-        for at, many, lengths, ids in self.void:
-            own = at == self.lit or (self.tract is not None and self.tract in ids)
-            self._join(pen, circle, self.hub if at is None else at, self.gone,
-                       many, lengths, 60.0, self._shade(STRAY, free or own), own)
-        for a, b, many, gap, lengths, ids in self.link:
-            own = self.lit in (a, b) or (self.tract is not None and self.tract in ids)
-            self._join(pen, circle, a, b, many, lengths, gap,
-                       self._shade(THROUGH, free or own), own)
+        mine = lambda ids: self.tract is not None and self.tract in ids
+        # the dim ones first and the picked ones over them, so a pick is never
+        # buried under the lines it was picked out of
+        for lit in (False, True):
+            for at, many, lengths, ids in self.spokes:
+                own = at == self.lit or mine(ids)
+                if own == lit:
+                    self._join(pen, circle, at, self.hub, many, lengths, self.far[at],
+                               self._shade(SPOKE, free or own), own)
+            for at, many, lengths, ids in self.void:
+                own = at == self.lit or mine(ids)
+                if own == lit:
+                    self._join(pen, circle, self.hub if at is None else at, self.gone,
+                               many, lengths, 60.0, self._shade(STRAY, free or own), own)
+            for a, b, many, gap, lengths, ids in self.link:
+                own = self.lit in (a, b) or mine(ids)
+                if own == lit:
+                    self._join(pen, circle, a, b, many, lengths, gap,
+                               self._shade(THROUGH, free or own), own)
         if self.guest is not None:
             for k, many, gap, lengths, ids in self.guest["link"]:
                 self._join(pen, circle, k, "guest", many, lengths, gap, THROUGH, True)
@@ -676,8 +684,13 @@ class Chart:
             return
         name = self.guest["name"] if self.guest else self.name(self.lit)
         head = 58 + 14 * (6 if name in self.about else 4)
-        pitch = min(19.0, max((high - 40 - head - 40) / max(len(runs), 1), 2.6))
-        tall = int(min(high - 28, max(head + 34 + len(runs) * pitch, head + 40)))
+        # rows keep a readable height and the list scrolls, rather than 534 of
+        # them being squeezed into the pane until none of them can be read
+        pitch = 15.0
+        fits = self.fits = max(int((high - 28 - head - 34) / pitch), 1)
+        self.at = int(np.clip(self.at, 0, max(len(runs) - fits, 0)))
+        part = runs[self.at:self.at + fits]
+        tall = int(head + 34 + len(part) * pitch)
         left, top = wide - 14 - self.SHELF, 14
         pen.rounded_rectangle((left, top, wide - 14, top + tall), radius=6,
                               fill=PANEL, outline=KEY_EDGE)
@@ -691,6 +704,8 @@ class Chart:
                      fill=FAINT_INK, font=small, anchor="lm")
             return
         self._head(pen, left + 16, top + 24, self.SHELF - 34, name, runs, small)
+        longest = runs[0][0] or 1.0
+        runs = part
 
         cap = max(pitch / 2 - 0.5, 1.0)
         named = pitch >= 12
@@ -702,7 +717,7 @@ class Chart:
         # them, and each tract runs right from there to the parcel that is picked
         edge_x = left + 18 + column + cap
         room = (left + self.SHELF - 18 - cap - (46 if named else 0)) - edge_x
-        longest, y0 = runs[0][0] or 1.0, top + head
+        y0 = top + head
         foot = y0 + len(runs) * pitch
 
         # the scale runs under the rows, so a length can be read and not guessed
@@ -717,7 +732,15 @@ class Chart:
             last = at
         pen.text((last + 16, foot + 12), "mm", fill=FAINT_INK, font=small, anchor="lm")
 
-        self._rows_at = (y0, pitch, left + 8, self.SHELF - 16)
+        self._rows_at = (y0, pitch, left + 8, self.SHELF - 16, self.at)
+        if len(self._runs) > len(runs):
+            # a track down the edge, so a long list says it is a long list
+            deep = tall - head - 20
+            high_ = max(deep * len(runs) / len(self._runs), 12)
+            at = deep * self.at / max(len(self._runs) - len(runs), 1) * (1 - high_ / deep)
+            bar = left + self.SHELF - 7
+            pen.line([(bar, y0 - 8), (bar, y0 - 8 + deep)], fill=KEY_EDGE)
+            pen.line([(bar, y0 - 8 + at), (bar, y0 - 8 + at + high_)], fill=INK, width=2)
         for n, (mm, tone, near, far, tract) in enumerate(runs):
             y = y0 + n * pitch
             if tract == self.tract:
@@ -758,15 +781,24 @@ class Chart:
             self._strands(pen, start, stop, [float(np.median(lengths)) / max(gap, 1e-6)],
                           tone, width)
 
+    def over_shelf(self, x, y):
+        if self._rows_at is None:
+            return False
+        y0, pitch, left, wide, _ = self._rows_at
+        return left <= x <= left + wide and y0 - 90 <= y <= y0 + self.fits * pitch
+
+    def scroll_shelf(self, by):
+        self.at = max(self.at + by, 0)
+
     def picked_row(self, x, y):
         # which tract row the pointer is on, if the panel is up and it is on one
         if self._rows_at is None:
             return None
-        y0, pitch, left, wide = self._rows_at
+        y0, pitch, left, wide, first = self._rows_at
         runs = self.runs()
-        if not (left <= x <= left + wide and y0 - pitch <= y <= y0 + len(runs) * pitch):
+        if not (left <= x <= left + wide and y0 - pitch <= y <= y0 + self.fits * pitch):
             return None
-        at = int(round((y - y0) / max(pitch, 1e-6)))
+        at = first + int(round((y - y0) / max(pitch, 1e-6)))
         return runs[at][4] if 0 <= at < len(runs) else None
 
     def _neighbors(self):

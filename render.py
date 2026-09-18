@@ -352,23 +352,38 @@ ATLAS = (64, 70, 76)
 SPOKE = (152, 100, 108)
 THROUGH = (154, 112, 72)
 STRAY = (108, 170, 232)
+CLIP = (96, 96, 208)
 # the interface palette, so the key is the same grays as every other panel
 INK = (168, 153, 132)
 FAINT_INK = (124, 111, 100)
 BRIGHT_INK = (235, 219, 178)
 KEY_EDGE = (80, 73, 69)
-# one soft ground per hemisphere and lobe, dark enough to sit under the chart.
-# the two sides of a lobe land far apart, so one ground for both would stretch
-# across half the picture and say nothing
-LOBE = {"Frontal": (64, 82, 104), "Parietal": (56, 92, 82), "Temporal": (100, 72, 58),
-        "Occipital": (82, 62, 96), "Insula": (102, 84, 52),
-        "Corpus callosum": (78, 78, 78)}
+# one ground per hemisphere and lobe. the lobe picks the hue and the hemisphere
+# how much of it there is. the lightness is held equal in CIELAB, not in rgb,
+# because the same rgb value is a much lighter yellow than it is a blue, which
+# is what made the right hand regions read as a fainter version of the left
+LOBE = {"Frontal": 268, "Parietal": 150, "Temporal": 40, "Occipital": 310,
+        "Insula": 80, "Corpus callosum": None}
 
 
+@functools.lru_cache(maxsize=64)
 def _ground(side, lobe, lift=0.62):
-    base = LOBE.get(lobe, (78, 78, 78))
-    dim = 0.6 if side == "Right" else 1.0
-    return tuple(int(c * dim * lift) for c in base)
+    import math
+    light = 62.0 if lift > 1.0 else 26.0
+    turn = LOBE.get(lobe)
+    chroma = 0.0 if turn is None else (34.0 if side == "Left" else 15.0)
+    a = chroma * math.cos(math.radians(turn or 0))
+    b = chroma * math.sin(math.radians(turn or 0))
+
+    y = (light + 16) / 116
+    x, z = y + a / 500, y - b / 200
+    undo = lambda t: t ** 3 if t ** 3 > 0.008856 else (t - 16 / 116) / 7.787
+    x, y, z = undo(x) * 0.95047, undo(y), undo(z) * 1.08883
+    out = (x * 3.2406 - y * 1.5372 - z * 0.4986,
+           -x * 0.9689 + y * 1.8758 + z * 0.0415,
+           x * 0.0557 - y * 0.2040 + z * 1.0570)
+    gamma = lambda u: 12.92 * u if u <= 0.0031308 else 1.055 * u ** (1 / 2.4) - 0.055
+    return tuple(int(round(255 * min(max(gamma(max(v, 0.0)), 0.0), 1.0))) for v in out)
 
 
 class Chart:
@@ -404,10 +419,10 @@ class Chart:
         self.tally = {
             "in": len(self.inside), "out": len(self.nodes) - len(self.inside),
             "mass": 1, "loose": len(self.loose),
-            "pair": len(self.link), "spoke": len(self.spokes),
-            "void": len(self.void),
-            "gone_mass": sum(1 for at, *_ in self.void if at is None),
-            "gone_parcel": sum(1 for at, *_ in self.void if at is not None)}
+            "pair": sum(e[2] for e in self.link),
+            "spoke": sum(e[1] for e in self.spokes),
+            "gone_mass": sum(many for at, many, *_ in self.void if at is None),
+            "gone_parcel": sum(many for at, many, *_ in self.void if at is not None)}
 
         # one wedge per region, so the ring order is anatomy and not the seed
         self.around = sorted(range(len(self.nodes)),
@@ -550,8 +565,9 @@ class Chart:
             for at, many, lengths, ids in self.void:
                 own = at == self.lit or mine(ids)
                 if own == lit:
+                    tone = STRAY if at is None else CLIP
                     self._join(pen, circle, self.hub if at is None else at, self.gone,
-                               many, lengths, 60.0, self._shade(STRAY, free or own), own)
+                               many, lengths, 60.0, self._shade(tone, free or own), own)
             for a, b, many, gap, lengths, ids in self.link:
                 own = self.lit in (a, b) or mine(ids)
                 if own == lit:
@@ -971,7 +987,8 @@ class Chart:
         y += 33
 
         circle = self.plan == "circle"
-        pen.text((x, y), "lines, one per connection", fill=INK, font=small, anchor="lm")
+        pen.text((x, y), "lines, one per connection, counted in tracts",
+                 fill=INK, font=small, anchor="lm")
         y += 17
         # strongest evidence first, so the last row can refer back to it. the
         # color is about the tract, never about whether the ends are overlapped
@@ -984,12 +1001,12 @@ class Chart:
                  "spoke"),
                 (STRAY, "the tumor and unnamed tissue, where crossing tracts end",
                  "gone_mass"),
-                (STRAY, "a parcel and unnamed tissue, by tracts that miss the tumor",
+                (CLIP, "a parcel and unnamed tissue, by tracts that miss the tumor",
                  "gone_parcel")):
             pen.line([(x, y), (x + 14, y)], fill=color, width=2)
             y = line(y, text, count[key])
-        y = line(y, f"{self.strands} lines carrying {self.crossed} tracts")
-        y = line(y, "a thicker line carries more of them")
+        y = line(y, f"{self.strands} lines for {self.crossed} tracts, and a tract")
+        y = line(y, "counts on each line it runs along, so these overlap")
         y += 9
 
         pen.text((x, y), "regions, clockwise from the top" if circle else "regions",

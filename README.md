@@ -145,12 +145,18 @@ them, the way a picked parcel does. One line is
 one connection, never one per tract; a thicker line is more tracts along it,
 which is what a plan needs to know.
 
-The key counts lines and names them as lines, and its three rows sum to its own
-total: `824 lines carrying 1207 tracts` on subject 2. That tract count is the
-left panel's two tract rows added, 1034 through the tumor and 173 clipping a
-parcel, and it differs from the line count only because a line carries as many
-tracts as run along it. Toggle either layer and the 3d shows exactly what the
-chart is built from.
+The key names lines and counts the tracts on them, which are different things
+and are labeled as such. Its total, `824 lines for 1207 tracts` on subject 2,
+matches the left panel's two tract rows added, 1034 through the tumor and 173
+clipping a parcel. The rows overlap on purpose: a tract joining two parcels is
+one pair line and two spokes, so it is counted on all three. Toggle either
+layer and the 3d shows exactly what the chart is built from.
+
+Region colors take their hue from the lobe and their saturation from the
+hemisphere, at one lightness held equal in CIELAB. Encoding the hemisphere as
+brightness made the right hand regions read as a faded version of the left
+rather than as a different side; the same rgb value is a far lighter yellow
+than it is a blue, so the equalising has to happen in a perceptual space.
 
 Orange nodes are parcels the tumor overlaps, green ones are parcels it misses,
 and the yellow hub is the tumor. A node's **area** is how much of that parcel

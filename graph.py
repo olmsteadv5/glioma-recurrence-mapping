@@ -153,8 +153,8 @@ def build(subject, overlap, least=LEAST):
     # mass but run through the tissue it has taken
     clipped = sorted(inside & set(skirt))
     void = [(None, len(stray), [mm for _, mm in stray], [t for t, _ in stray])]
-    void += [(place[n], len(hits), [mm for _, mm in hits], [t for t, _ in hits])
-             for n in clipped if n in place]
+    void += [(place[n], len(skirt[n]), [mm for _, mm in skirt[n]],
+              [t for t, _ in skirt[n]]) for n in clipped if n in place]
     # a tract clipping two involved parcels is one tract on two lines, so the
     # total the chart accounts for counts it once
     clips = len({t for n in clipped for t, _ in skirt[n]})

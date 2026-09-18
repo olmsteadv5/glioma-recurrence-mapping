@@ -193,6 +193,11 @@ sitting in a column of its own. A grey scale in millimeters runs underneath the
 rows rather than over them. Both dots keep the size and color they have on the
 chart, and the mass is not named because it is the one yellow dot.
 
+The header gives three numbers rather than calling them all tracts: `L_CC_B`
+is on 57 connections, has 177 tracts, and fills 717 rows, one per tract per
+connection. Picking it also lights those 177 tracts in the 3d and drops the
+rest of the bundle back, so the same pick is the same object in both views.
+
 The left hand column is the point of it. For `L_SF8_C` on subject 36 the
 longest tracts, 111 to 129 mm, run to `R_SF8_C` and `R_M2_C`, across to the
 other hemisphere and into parcels the tumor missed; the middle band at 50 to 61

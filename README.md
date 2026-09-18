@@ -167,8 +167,10 @@ out from the middle, and neighbors on the rim are neighbors in the region
 order, nothing more.
 
 Picking a term in the `functions` list lights every parcel behind it at once,
-with all of their lines, and the inventory lists their tracts together under
-the term. A function is a weighted sum over many parcels, so lighting only its
+in all three viewers, with all of their lines, and the inventory lists their
+tracts together under the term. Every one of them, not a top few: a term on
+subject 36 runs to 50 parcels at the median and 84 at the most, and the score
+is the sum over all of them. A function is a weighted sum over many parcels, so lighting only its
 strongest driver would read as the function living in that one place. Past
 thirty parcels the names come off the chart, since fifty labels at once are
 worse than none.

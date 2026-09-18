@@ -742,7 +742,7 @@ class Console(App):
         return index - 1
 
     def selected_parcels(self):
-        # the parcels the current row is about: one, or the few that define it
+        # the parcels the current row is about: one, or every one behind it
         index = self.picked()
         if index < 0:
             return []
@@ -758,7 +758,8 @@ class Console(App):
         top = d.get("function", [])
         if index >= len(top):
             return []
-        return [n for n, _, _ in function.drivers(top[index]["term"], d["atlas"], 7)]
+        # a function is the sum of all its parcels, so all of them are shown
+        return [n for n, _, _ in function.drivers(top[index]["term"], d["atlas"])]
 
     def isolate_selected(self):
         names = self.selected_parcels()

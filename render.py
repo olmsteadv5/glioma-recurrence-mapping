@@ -579,10 +579,11 @@ class Chart:
         if self.guest is not None:
             for k, many, gap, lengths, ids in self.guest["link"]:
                 self._join(pen, circle, k, "guest", many, lengths, gap, THROUGH, True)
-        self._nodes(pen, near)
+        hot = self._hot()
+        self._nodes(pen, near, hot)
         if self.guest is not None:
             self._guest(pen)
-        self._hubs(pen)
+        self._hubs(pen, near, hot)
         self._labels(pen, near)
         self._key(canvas, pen, wide, high)
         self._shelf(pen, wide, high)
@@ -886,8 +887,7 @@ class Chart:
                     out.add(self.hub)
         return out
 
-    def _nodes(self, pen, near):
-        hot = self._hot()
+    def _nodes(self, pen, near, hot):
         for at, point in enumerate(self.screen):
             last = at >= len(self.nodes)
             if last:
@@ -897,8 +897,9 @@ class Chart:
                 # area says how much of that parcel the tumor took
                 wide = 3.0 + 7.0 * (self.lost[at] / self.most) ** 0.5
                 color = NODE_IN if self.nodes[at] in self.inside else NODE_OUT
-            # the two hubs are every parcel's other end, so a pick never dims them
-            color = color if last else self._shade(color, near is None or at in near)
+            # a hub is only part of the picture while the pick reaches it
+            color = self._shade(color, near is None or
+                                (at in hot if last else at in near))
             box = [point[0] - wide, point[1] - wide, point[0] + wide, point[1] + wide]
             hollow = at in self.loose
             ring = at == self.lit or at in hot
@@ -906,7 +907,7 @@ class Chart:
                         outline=LIT if ring else color if hollow else PANEL,
                         width=3 if ring else 1)
 
-    def _hubs(self, pen):
+    def _hubs(self, pen, near, hot):
         # the second one needs saying: it is not a place, it is the absence of
         # one, and both sit under every line in the chart so they need a plate
         font = _font(11)
@@ -915,7 +916,8 @@ class Chart:
             room = pen.textlength(text, font=font) / 2 + 5
             pen.rectangle([x - room, y + 14, x + room, y + 28], fill=PANEL)
             pen.text((x, y + 21), text, font=font, anchor="mm",
-                     fill=INK if at == self.hub else FAINT_INK)
+                     fill=self._shade(INK if at == self.hub else FAINT_INK,
+                                      near is None or at in hot))
 
     def _labels(self, pen, near):
         if self.zoom < 1.8 and near is None:

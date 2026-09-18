@@ -141,9 +141,8 @@ as wide as it is tall, so on an ultrawide the extra width goes to the margins
 and not into a flatter and flatter shape.
 
 Three kinds of line: **amber** joins two parcels a crossing tract ties together,
-**rose** joins a parcel and the tumor, **blue** goes to no parcel. Neither hub
-dims when something is picked, and both take a bright ring when the pick reaches
-them, the way a picked parcel does. One line is
+**rose** joins a parcel and the tumor, **blue** goes to no parcel. A hub dims like any other node
+when the pick does not reach it, and takes a bright ring when it does. One line is
 one connection, never one per tract; a thicker line is more tracts along it,
 which is what a plan needs to know.
 

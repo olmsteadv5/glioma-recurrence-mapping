@@ -858,7 +858,8 @@ class Chart:
                 # area says how much of that parcel the tumor took
                 wide = 3.0 + 7.0 * (self.lost[at] / self.most) ** 0.5
                 color = NODE_IN if self.nodes[at] in self.inside else NODE_OUT
-            color = self._shade(color, near is None or at in near)
+            # the two hubs are every parcel's other end, so a pick never dims them
+            color = color if last else self._shade(color, near is None or at in near)
             box = [point[0] - wide, point[1] - wide, point[0] + wide, point[1] + wide]
             hollow = at in self.loose
             pen.ellipse(box, fill=PANEL if hollow else color,

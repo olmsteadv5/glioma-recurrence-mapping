@@ -630,7 +630,7 @@ class Chart:
             pen.line([tuple(v) for v in q[:, 0]], fill=color, width=width)
 
     # how far the ellipse may run wider than it is tall, however wide the pane
-    STRETCH = 1.45
+    STRETCH = 2.2
     SHELF = 392
     GUEST = object()
     STEPS_MM = (10, 20, 25, 50, 100, 200, 500)

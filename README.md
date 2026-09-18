@@ -136,7 +136,9 @@ not a place but the absence of one: the far end the atlas has no name for. The
 the 173 that miss the tumor but pass through the parcels it has taken, which
 would otherwise be nowhere at all on the chart. Because two hubs want the width
 and the pane is wider than it is tall, the rim is an ellipse rather than a
-circle, with the hubs abreast in the middle.
+circle, with the hubs abreast in the middle. It stops stretching at half again
+as wide as it is tall, so on an ultrawide the extra width goes to the margins
+and not into a flatter and flatter shape.
 
 Three kinds of line: **amber** joins two parcels a crossing tract ties together,
 **rose** joins a parcel and the tumor, **blue** goes to no parcel. Neither hub

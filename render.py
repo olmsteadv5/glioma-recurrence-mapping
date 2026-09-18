@@ -488,8 +488,11 @@ class Chart:
         # an ellipse because the pane is wider than it is tall and two hubs want
         # the width. nothing here is a distance, so nothing pretends to be one
         self.middle = np.array([wide, high]) / 2 + self.pan
-        self.wide = max(wide / 2 - 104, 40) * self.zoom
+        # the pane can be as wide as the monitor is, but the ellipse only wants
+        # enough width for two hubs abreast. past that it stops stretching and
+        # the extra goes to the margins instead of to the shape
         self.tall = max(high / 2 - 74, 40) * self.zoom
+        self.wide = min(max(wide / 2 - 104, 40) * self.zoom, self.tall * self.STRETCH)
         self.scale = self.tall / 100.0
         step = 2 * np.pi / max(len(self.nodes), 1)
 
@@ -625,6 +628,8 @@ class Chart:
                 q = q[:, :-1] * (1 - self.THREAD) + q[:, 1:] * self.THREAD
             pen.line([tuple(v) for v in q[:, 0]], fill=color, width=width)
 
+    # how far the ellipse may run wider than it is tall, however wide the pane
+    STRETCH = 1.45
     SHELF = 392
     GUEST = object()
     STEPS_MM = (10, 20, 25, 50, 100, 200, 500)

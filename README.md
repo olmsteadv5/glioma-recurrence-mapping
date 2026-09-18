@@ -152,7 +152,7 @@ parcel, and it differs from the line count only because a line carries as many
 tracts as run along it. Toggle either layer and the 3d shows exactly what the
 chart is built from.
 
-Orange nodes are parcels the tumor overlaps, aqua ones are parcels it misses,
+Orange nodes are parcels the tumor overlaps, green ones are parcels it misses,
 and the yellow hub is the tumor. A node's **area** is how much of that parcel
 is inside the tumor. Clicking a node opens whichever list has a row for that
 parcel and selecting a row lights its node. Drag to pan, scroll to zoom, click

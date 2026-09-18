@@ -343,7 +343,7 @@ def bow_for(ratio):
 
 
 NODE_IN = (228, 87, 46)
-NODE_OUT = (131, 165, 152)
+NODE_OUT = (132, 186, 108)
 NODE_TUMOR = (250, 189, 47)
 # one hue per kind of link: cool where the mass is not in the path, warm where
 # it is. strength brightens a line without draining its hue
@@ -405,7 +405,9 @@ class Chart:
             "in": len(self.inside), "out": len(self.nodes) - len(self.inside),
             "mass": 1, "loose": len(self.loose),
             "pair": len(self.link), "spoke": len(self.spokes),
-            "void": len(self.void)}
+            "void": len(self.void),
+            "gone_mass": sum(1 for at, *_ in self.void if at is None),
+            "gone_parcel": sum(1 for at, *_ in self.void if at is not None)}
 
         # one wedge per region, so the ring order is anatomy and not the seed
         self.around = sorted(range(len(self.nodes)),
@@ -910,8 +912,8 @@ class Chart:
         font = _font(12)
         rows = sorted(self.where)
         # the circle adds a line about thickness that the spread does not
-        tall = (337 if self.plan == "circle" else 322) + 14 * len(rows)
-        if wide < 580 or high < tall + 40:
+        tall = (322 if self.plan == "circle" else 307) + 14 * len(rows)
+        if wide < 680 or high < tall + 40:
             if self.plan != "circle":
                 self._scale_bar(pen, wide, high, font)
             return
@@ -926,12 +928,12 @@ class Chart:
         # nothing in it moves while the chart is panned, so draw it once
         font, small = _font(12), _font(11)
         # the top edge is inset so the title sitting on it is not clipped
-        tile = Image.new("RGB", (440, tall + 9), PANEL)
+        tile = Image.new("RGB", (540, tall + 9), PANEL)
         pen = ImageDraw.Draw(tile)
-        pen.rounded_rectangle((0, 8, 439, tall + 8), radius=6, fill=PANEL, outline=KEY_EDGE)
+        pen.rounded_rectangle((0, 8, 539, tall + 8), radius=6, fill=PANEL, outline=KEY_EDGE)
         pen.rectangle((10, 3, 46, 13), fill=PANEL)
         pen.text((14, 8), "key", fill=BRIGHT_INK, font=font, anchor="lm")
-        x, y, edge = 14, 34, 426
+        x, y, edge = 14, 34, 526
         count = self.tally
         side = {name: sum(1 for lobe in self.lobes if lobe == name) for name in rows}
 
@@ -944,16 +946,16 @@ class Chart:
 
         pen.text((x, y), "parcels", fill=INK, font=small, anchor="lm")
         y += 17
-        for color, text, tally in ((NODE_IN, "overlapped by the tumor", count["in"]),
-                                   (NODE_OUT, "not overlapped, linked to an overlapped parcel",
-                                    count["out"]),
-                                   (NODE_TUMOR, "the tumor itself", count["mass"]),
-                                   (STRAY, "no parcel: an end the atlas cannot name",
-                                    count["mass"])):
+        # the two hubs are named on the chart itself, so they are not listed here
+        for color, text, tally in (
+                (NODE_IN, "the tumor overlaps it", count["in"]),
+                (NODE_OUT, "the tumor misses it, but a tract through the tumor "
+                           "reaches it", count["out"])):
             pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=color)
             y = line(y, text, tally)
         pen.ellipse([x + 1, y - 5, x + 11, y + 5], fill=PANEL, outline=NODE_IN)
-        y = line(y, "overlapped, with nothing linking to it", count["loose"]) + 6
+        y = line(y, "the tumor overlaps it, and no line reaches it",
+                 count["loose"]) + 6
 
 
         pen.text((x, y), "volume in the tumor", fill=INK, font=small, anchor="lm")
@@ -976,9 +978,14 @@ class Chart:
         # the column counts lines, so the rows have to be named as lines. they
         # used to say tracts, which is a different object and a different number
         for color, text, key in (
-                (THROUGH, "between two parcels", "pair"),
-                (SPOKE, "between a parcel and the tumor", "spoke"),
-                (STRAY, "to somewhere the atlas cannot name", "void")):
+                (THROUGH, "two parcels, joined by tracts that run through the tumor",
+                 "pair"),
+                (SPOKE, "a parcel and the tumor, by the tracts running through both",
+                 "spoke"),
+                (STRAY, "the tumor and unnamed tissue, where crossing tracts end",
+                 "gone_mass"),
+                (STRAY, "a parcel and unnamed tissue, by tracts that miss the tumor",
+                 "gone_parcel")):
             pen.line([(x, y), (x + 14, y)], fill=color, width=2)
             y = line(y, text, count[key])
         y = line(y, f"{self.strands} lines carrying {self.crossed} tracts")

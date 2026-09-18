@@ -159,27 +159,12 @@ brightness made the right hand regions read as a faded version of the left
 rather than as a different side; the same rgb value is a far lighter yellow
 than it is a blue, so the equalising has to happen in a perceptual space.
 
-Picking a term in the `functions` list lights every parcel behind it at once,
-with all of their lines, and the inventory lists their tracts together under
-the term. A function is a weighted sum over many parcels, so lighting only its
-strongest driver would read as the function living in that one place. Past
-thirty parcels the names come off the chart, since fifty labels at once are
-worse than none.
-
-Orange nodes are parcels the tumor overlaps, green ones are parcels it misses,
-and the yellow hub is the tumor. A node's **area** is how much of that parcel
-is inside the tumor. Clicking a node opens whichever list has a row for that
-parcel and selecting a row lights its node. Drag to pan, scroll to zoom, click
-the tumor to put it back.
-
 The parcels sit on a rim grouped by region with the two hubs abreast in the
 middle, and every line is routed through both its regions on the way across, so
 parallel tracts travel together and the picture reads as bundles. It says
 nothing about distance and does not pretend to: every parcel is the same way
-out from the middle, and neighbours on the rim are neighbours in the region
-order, nothing more. There was a second arrangement laid out so the gaps were
-the real distances between parcels; it is gone, along with the bowed arcs and
-the stress solver behind it.
+out from the middle, and neighbors on the rim are neighbors in the region
+order, nothing more.
 
 Picking a term in the `functions` list lights every parcel behind it at once,
 with all of their lines, and the inventory lists their tracts together under
@@ -193,13 +178,6 @@ and the yellow hub is the tumor. A node's **area** is how much of that parcel
 is inside the tumor. Clicking a node opens whichever list has a row for that
 parcel and selecting a row lights its node. Drag to pan, scroll to zoom, click
 the tumor to put it back.
-
-`s` swaps the arrangement, the way it swaps space in the slices. **Spread** is
-laid out so the gaps are the real distances between parcels, to a median of
-10%. **Circle** puts the parcels on a rim grouped by region and routes every
-line through both its regions on the way across, so parallel tracts travel
-together and the picture reads as bundles. Circle says nothing about distance
-and does not pretend to: no scale bar, no rings, no bow.
 
 Pick a parcel and an inventory of its tracts opens top right; with nothing
 picked there is no panel. It heads with what the parcel is, set out
@@ -229,50 +207,25 @@ chart cannot show any of this, because a line there is as long as the gap
 between the two dots it joins.
 
 Zoom past about twice and every node is labeled; below that only the picked
-node and what it connects to. The bar at the bottom is 50 mm, which means
-something because the gaps are real distances.
+node and what it connects to.
 
-Each region gets a soft ground under its parcels, and a region is a hemisphere
-and a lobe, not a lobe. Subject 36 has 55 left frontal parcels and 8 right
-frontal ones whose centers land 79 units apart, so one ground for both stretched
-across half the picture and named neither. They are `left frontal` and `right
-frontal` now, right dimmer than left, and they are named in the key rather than
-on the chart.
-
-They still overlap, because the layout is connectivity and not anatomy, and
-parcels from different regions genuinely interleave in it.
+A region is a hemisphere and a lobe, not a lobe: subject 36 has 55 left frontal
+parcels and 8 right frontal ones, and one band for both would say neither. Each
+gets a run of the rim, named in the key rather than on the chart.
 
 The key says what every channel means, including the one that is easiest to
 misread: three sized dots with the milliliters they stand for, so a bigger dot
 is a number rather than an impression. Every row carries its own count, so the
 key doubles as the tally for what is on screen.
 
-The nodes are placed by stress majorization, so **the gaps on screen are the
-real distances between the parcels**, to a median of 10%. That uses
-`SC_EuclDist`, the center to center distance: `SC_Length` would be the mean
-streamline length but it is clamped, with over half the edges sitting at
-exactly its maximum of 168.8 mm, so it cannot carry lengths.
-
 The tumor's own edges are real geometry: a spoke is drawn to every parcel that
 a tract centerline passes through **after passing through the tumor**. For
 subject 36 that is 803 centerlines through the mass, 676 of which go on to
 reach a parcel, 218 of them into `L_CC_B` alone.
 
-Edges are bundles of arcs, not lines. Where the tract geometry has the pair,
-each arc is one real centerline, bowed until the length it is drawn at is the
-length that tract actually runs: the piece of it between where it touches one
-parcel and where it touches the other. Those are not all the same. The median
-is 1.37 times the straight line between the two parcels, a tenth of them are
-over 3 times, and two tracts joining the same pair differ in length by about a
-fifth. Arcs past 1.8 times are drawn at 1.8, or a handful of long ones sweep
-across the whole chart.
-
-Where only the connectivity table has the pair, the edge is a single straight
-line: the table gives a strength with no path, and a strength has no shape.
-
-For subject 36 that is 99 parcels in the tumor and 46 tied to them, over 259
-connections and 101 spokes, laid out in a fifth of a second. Only connections
-at or above 15% of the strongest are drawn, or the chart is a solid mat.
+A tract's own length is not on the chart at all, because a line between two
+dots is as long as the gap between them. That is what the inventory panel is
+for.
 
 The modality strip sits in the viewer's bottom border, away from the other
 controls on the right. Press `1` to `4` or click it. The number of the one in

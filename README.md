@@ -172,6 +172,28 @@ is inside the tumor. Clicking a node opens whichever list has a row for that
 parcel and selecting a row lights its node. Drag to pan, scroll to zoom, click
 the tumor to put it back.
 
+The parcels sit on a rim grouped by region with the two hubs abreast in the
+middle, and every line is routed through both its regions on the way across, so
+parallel tracts travel together and the picture reads as bundles. It says
+nothing about distance and does not pretend to: every parcel is the same way
+out from the middle, and neighbours on the rim are neighbours in the region
+order, nothing more. There was a second arrangement laid out so the gaps were
+the real distances between parcels; it is gone, along with the bowed arcs and
+the stress solver behind it.
+
+Picking a term in the `functions` list lights every parcel behind it at once,
+with all of their lines, and the inventory lists their tracts together under
+the term. A function is a weighted sum over many parcels, so lighting only its
+strongest driver would read as the function living in that one place. Past
+thirty parcels the names come off the chart, since fifty labels at once are
+worse than none.
+
+Orange nodes are parcels the tumor overlaps, green ones are parcels it misses,
+and the yellow hub is the tumor. A node's **area** is how much of that parcel
+is inside the tumor. Clicking a node opens whichever list has a row for that
+parcel and selecting a row lights its node. Drag to pan, scroll to zoom, click
+the tumor to put it back.
+
 `s` swaps the arrangement, the way it swaps space in the slices. **Spread** is
 laid out so the gaps are the real distances between parcels, to a median of
 10%. **Circle** puts the parcels on a rim grouped by region and routes every

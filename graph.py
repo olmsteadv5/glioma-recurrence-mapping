@@ -5,8 +5,6 @@ import functools
 
 import nibabel as nib
 import numpy as np
-from scipy.sparse import csr_matrix
-from scipy.sparse.csgraph import shortest_path
 
 from atlas import ATLAS_DIR, ensure, label_volume, parcels
 from connect import FILE
@@ -161,32 +159,6 @@ def build(subject, overlap, least=LEAST):
     return nodes, link, to_tumor, inside, spokes, void, crossing + clips
 
 
-def layout(count_of_nodes, link, to_tumor, rounds=120):
-    # Stress majorization: put the nodes where the drawn gaps match the real ones.
-    total = count_of_nodes + 1
-    target = np.zeros((total, total), dtype=np.float32)
-    for a, b, _, far, _, _ in link:
-        target[a, b] = target[b, a] = far or 60.0
-    target[:count_of_nodes, -1] = target[-1, :count_of_nodes] = to_tumor
-
-    known = csr_matrix(np.where(target > 0, target, 0))
-    full = shortest_path(known, directed=False)
-    limit = np.nanmax(full[np.isfinite(full)]) if np.isfinite(full).any() else 100.0
-    full[~np.isfinite(full)] = limit * 1.4
-    np.fill_diagonal(full, 0.0)
-
-    rng = np.random.default_rng(0)
-    points = rng.normal(0, limit / 4, (total, 2))
-    weight = np.where(full > 0, 1.0 / np.maximum(full, 1e-6) ** 2, 0.0)
-    scale = weight.sum(1)
-    for _ in range(rounds):
-        gap = np.linalg.norm(points[:, None] - points[None], axis=2)
-        ratio = np.divide(full, np.maximum(gap, 1e-6), out=np.zeros_like(full), where=gap > 0)
-        step = (weight * ratio)[:, :, None] * (points[:, None] - points[None])
-        points = (weight @ points + step.sum(1)) / np.maximum(scale, 1e-9)[:, None]
-    return points
-
-
 def attach(subject, nodes, parcel, least=1):
     # One more parcel for a chart already built, for a connectivity row naming
     # something too lightly touched to have earned a node of its own.
@@ -210,17 +182,3 @@ def attach(subject, nodes, parcel, least=1):
     far = (float(np.linalg.norm(middle[n] - tumor))
            if not np.isnan(middle[n]).any() else 60.0)
     return n, link, far, [mm for _, mm in mine], [t for t, _ in mine]
-
-
-def settle(points, link, far, rounds=60):
-    # Where that one node goes among nodes already placed: the same stress rule
-    # as the layout, with everything but this one held still.
-    fixed = np.array([points[k] for k, *_ in link] + [points[-1]])
-    target = np.array([edge[2] for edge in link] + [far], dtype=float)
-    weight = 1.0 / np.maximum(target, 1e-6) ** 2
-    at = fixed.mean(0) + 1.0
-    for _ in range(rounds):
-        gap = np.maximum(np.linalg.norm(at - fixed, axis=1), 1e-6)
-        pull = fixed + (at - fixed) * (target / gap)[:, None]
-        at = (weight[:, None] * pull).sum(0) / weight.sum()
-    return at

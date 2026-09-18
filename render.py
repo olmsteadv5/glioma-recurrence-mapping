@@ -313,20 +313,6 @@ class Scene:
         return Image.fromarray(pixels.reshape(height, width, 3)[::-1])
 
 
-@functools.lru_cache(maxsize=1)
-def _bows():
-    # How far to bend an arc so that it comes out a given multiple of its chord.
-    steps = np.linspace(0, 1, 32)[:, None]
-    heights = np.linspace(0, 3.2, 129)
-    grown = []
-    for height in heights:
-        curve = ((1 - steps) ** 2 * np.array([0.0, 0.0])
-                 + 2 * (1 - steps) * steps * np.array([0.5, height])
-                 + steps ** 2 * np.array([1.0, 0.0]))
-        grown.append(float(np.linalg.norm(np.diff(curve, axis=0), axis=1).sum()))
-    return np.array(grown), heights
-
-
 @functools.lru_cache(maxsize=4)
 def _font(size):
     # the terminal's own face, so drawn text reads as part of the interface
@@ -340,11 +326,6 @@ def _font(size):
         except OSError:
             continue
     return ImageFont.load_default()
-
-
-def bow_for(ratio):
-    grown, heights = _bows()
-    return float(np.interp(min(max(ratio, 1.0), grown[-1]), grown, heights))
 
 
 NODE_IN = (228, 87, 46)
@@ -400,7 +381,6 @@ class Chart:
         self.subject = subject
         (self.nodes, self.link, self.far, self.inside, self.spokes,
          self.void, self.crossed) = graph.build(subject, overlap)
-        self.points = graph.layout(len(self.nodes), self.link, self.far)
         info = atlas.parcels()
         self.names = [p["name"] for p in info]
         self.lobes = [(info[n]["hemisphere"], info[n]["lobe"]) for n in self.nodes]
@@ -435,7 +415,6 @@ class Chart:
         self.around = sorted(range(len(self.nodes)),
                              key=lambda n: (self.lobes[n], self.names[self.nodes[n]]))
         self.slot = {n: k for k, n in enumerate(self.around)}
-        self.plan = "spread"
 
         self._runs_was, self._runs, self._rows_at = object(), [], None
         self.at, self.fits = 0, 1
@@ -444,7 +423,7 @@ class Chart:
         self.crowd, self.label = set(), None
         self._key_was, self._key_art = None, None
         self.where = {}
-        self.screen, self.scale = np.zeros((0, 2)), 1.0
+        self.screen = np.zeros((0, 2))
         self.middle, self.seat = np.zeros(2), {}
         self.wide, self.tall = 1.0, 1.0
         # the tumor, then the hub for every far end the atlas cannot name
@@ -489,8 +468,6 @@ class Chart:
         self.guest = {"name": parcel, "link": link, "far": far,
                       "lengths": lengths, "ids": ids,
                       "lobe": (info["hemisphere"], info["lobe"]),
-                      "point": graph.settle(self.points, link, far) if link
-                      else self.points[:-1].mean(0),
                       "screen": np.zeros(2)}
 
     def move(self, zoom=1.0, pan=(0.0, 0.0)):
@@ -500,12 +477,7 @@ class Chart:
     def home(self):
         self.zoom, self.pan = 1.0, np.zeros(2)
 
-    def swap(self):
-        self.plan = "spread" if self.plan == "circle" else "circle"
-        self.home()
-        return self.plan
-
-    def _place_circle(self, wide, high):
+    def _place(self, wide, high):
         # parcels on a rim grouped by region, the two hubs abreast in the middle.
         # an ellipse because the pane is wider than it is tall and two hubs want
         # the width. nothing here is a distance, so nothing pretends to be one
@@ -515,7 +487,6 @@ class Chart:
         # the extra goes to the margins instead of to the shape
         self.tall = max(high / 2 - 74, 40) * self.zoom
         self.wide = min(max(wide / 2 - 104, 40) * self.zoom, self.tall * self.STRETCH)
-        self.scale = self.tall / 100.0
         step = 2 * np.pi / max(len(self.nodes), 1)
 
         turn = np.array([self.slot[n] * step - np.pi / 2 for n in range(len(self.nodes))])
@@ -540,40 +511,15 @@ class Chart:
             self.guest["screen"] = self.middle + np.array(
                 [(self.wide + 26) * np.cos(mean), (self.tall + 26) * np.sin(mean)])
 
-    def _place(self, wide, high):
-        if self.plan == "circle":
-            return self._place_circle(wide, high)
-        pad = 30
-        low, span = self.points.min(0), np.ptp(self.points, axis=0)
-        span[span == 0] = 1
-        self.scale = float(min((wide - 2 * pad) / span[0], (high - 2 * pad) / span[1]) * self.zoom)
-        self._shift = -low - span / 2
-        self._origin = np.array([wide, high]) / 2 + self.pan
-        self.screen = (self.points + self._shift) * self.scale + self._origin
-        if self.guest is not None:
-            self.guest["screen"] = ((self.guest["point"] + self._shift) * self.scale
-                                    + self._origin)
-
     def image(self, size):
         wide, high = max(size[0], 64), max(size[1], 64)
         canvas = Image.new("RGB", (wide, high), PANEL)
-        if not len(self.points):
+        if not len(self.nodes):
             return canvas
         pen = ImageDraw.Draw(canvas)
         self._place(wide, high)
         near = self._neighbors()
-        if len(self.screen) == len(self.nodes) + 1:
-            # the spread layout solves for the parcels and the tumor only, so
-            # the hub for the unnamed ends is set beside it rather than solved
-            span = np.ptp(self.screen[:-1], axis=0).max() or 1.0
-            self.screen = np.vstack([self.screen,
-                                     self.screen[self.hub] + [span * 0.16, 0]])
-
-        circle = self.plan == "circle"
-        if circle:
-            self._bands(pen)
-        else:
-            self._blobs(canvas, wide, high)
+        self._bands(pen)
         # a line stays lit only if the picked node is one of its two ends. the
         # neighbors themselves stay lit, but the lines between them do not,
         # which used to read as the picked parcel reaching further than it does
@@ -586,22 +532,22 @@ class Chart:
             for at, many, lengths, ids in self.spokes:
                 own = at in picked or mine(ids)
                 if own == lit:
-                    self._join(pen, circle, at, self.hub, many, lengths, self.far[at],
+                    self._join(pen, at, self.hub, many, lengths, self.far[at],
                                self._shade(SPOKE, free or own), own)
             for at, many, lengths, ids in self.void:
                 own = at in picked or mine(ids)
                 if own == lit:
                     tone = STRAY if at is None else CLIP
-                    self._join(pen, circle, self.hub if at is None else at, self.gone,
+                    self._join(pen, self.hub if at is None else at, self.gone,
                                many, lengths, 60.0, self._shade(tone, free or own), own)
             for a, b, many, gap, lengths, ids in self.link:
                 own = a in picked or b in picked or mine(ids)
                 if own == lit:
-                    self._join(pen, circle, a, b, many, lengths, gap,
+                    self._join(pen, a, b, many, lengths, gap,
                                self._shade(THROUGH, free or own), own)
         if self.guest is not None:
             for k, many, gap, lengths, ids in self.guest["link"]:
-                self._join(pen, circle, k, "guest", many, lengths, gap, THROUGH, True)
+                self._join(pen, k, "guest", many, lengths, gap, THROUGH, True)
         hot = self._hot()
         self._nodes(pen, near, hot, picked)
         if self.guest is not None:
@@ -841,22 +787,17 @@ class Chart:
             pen.text((edge_x + reach + cap + 5, y), f"{mm:.0f}",
                      fill=FAINT_INK, font=small, anchor="lm")
 
-    def _join(self, pen, circle, a, b, many, lengths, gap, tone, own):
+    def _join(self, pen, a, b, many, lengths, gap, tone, own):
         # one line for one connection. its weight is how many tracts run along
         # it, which is what a plan needs: how much is riding on this link
         start = self.screen[a]
         stop = self.guest["screen"] if b == "guest" else self.screen[b]
         width = (1 if many < 2 else 2 if many < 5 else 3 if many < 12 else 4) + own
-        if circle:
-            seat_a = (self.screen[a] if a >= len(self.nodes)
-                      else self.seat[self.lobes[a]])
-            seat_b = (self.seat.get(self.guest["lobe"], self.middle) if b == "guest"
-                      else self.screen[b] if b >= len(self.nodes)
-                      else self.seat[self.lobes[b]])
-            self._ribbon(pen, start, seat_a, stop, seat_b, 1, tone, width)
-        else:
-            self._strands(pen, start, stop, [float(np.median(lengths)) / max(gap, 1e-6)],
-                          tone, width)
+        seat_a = (self.screen[a] if a >= len(self.nodes) else self.seat[self.lobes[a]])
+        seat_b = (self.seat.get(self.guest["lobe"], self.middle) if b == "guest"
+                  else self.screen[b] if b >= len(self.nodes)
+                  else self.seat[self.lobes[b]])
+        self._ribbon(pen, start, seat_a, stop, seat_b, 1, tone, width)
 
     def over_shelf(self, x, y):
         if self._rows_at is None:
@@ -897,34 +838,6 @@ class Chart:
     def _shade(color, lit):
         return (color if lit else
                 tuple(int(c * 0.35 + g * 0.65) for c, g in zip(color, PANEL)))
-
-    def _blobs(self, canvas, wide, high):
-        # a soft ground under each lobe's parcels, built small and blurred up
-        step = 4
-        small = (max(wide // step, 8), max(high // step, 8))
-        reach = float(max(self.scale * 7.5 / step, 2.5))
-        self.where = {}
-        for lobe in sorted(set(self.lobes)):
-            picked = [i for i, name in enumerate(self.lobes) if name == lobe]
-            if len(picked) < 3:
-                continue
-            mask = Image.new("L", small, 0)
-            brush = ImageDraw.Draw(mask)
-            for i in picked:
-                x, y = self.screen[i] / step
-                brush.ellipse([x - reach, y - reach, x + reach, y + reach], fill=255)
-            mask = mask.filter(ImageFilter.GaussianBlur(reach * 0.55))
-            mask = mask.point(lambda v: 255 if v > 110 else 0)
-            mask = mask.filter(ImageFilter.GaussianBlur(reach * 0.3))
-            # the word belongs on the blob, not at the middle of scattered nodes
-            grid = np.asarray(mask, dtype=np.float32)
-            if grid.sum() > 0:
-                ys, xs = np.nonzero(grid)
-                self.where[lobe] = (float(xs.mean()) * step, float(ys.mean()) * step)
-            mask = mask.resize((wide, high), Image.BILINEAR).point(lambda v: int(v * 0.78))
-            canvas.paste(Image.new("RGB", (wide, high), _ground(*lobe)), (0, 0), mask)
-
-
 
     def _hot(self):
         # which hubs the pick reaches, so they can show it the way a node does
@@ -996,18 +909,13 @@ class Chart:
         # a title cut into the top edge, headings over quieter rows
         font = _font(12)
         rows = sorted(self.where)
-        # the circle adds a line about thickness that the spread does not
-        tall = (322 if self.plan == "circle" else 307) + 14 * len(rows)
+        tall = 322 + 14 * len(rows)
         if wide < 760 or high < tall + 40:
-            if self.plan != "circle":
-                self._scale_bar(pen, wide, high, font)
             return
-        if self._key_was != (tuple(rows), tall, self.plan):
-            self._key_was = (tuple(rows), tall, self.plan)
+        if self._key_was != (tuple(rows), tall):
+            self._key_was = (tuple(rows), tall)
             self._key_art = self._key_tile(tuple(rows), tall)
         canvas.paste(self._key_art, (14, 6))
-        if self.plan != "circle":
-            self._scale_bar(pen, wide, high, font)
 
     def _key_tile(self, rows, tall):
         # nothing in it moves while the chart is panned, so draw it once
@@ -1057,7 +965,6 @@ class Chart:
         pen.text((step - 8, y + 16), "mL", fill=FAINT_INK, font=small, anchor="lm")
         y += 33
 
-        circle = self.plan == "circle"
         pen.text((x, y), "lines, one per connection", fill=INK, font=small, anchor="lm")
         pen.text((x + 512, y), "connections", fill=FAINT_INK, font=small, anchor="rm")
         pen.text((edge, y), "tracts", fill=FAINT_INK, font=small, anchor="rm")
@@ -1081,7 +988,7 @@ class Chart:
         y = line(y, "one is counted on each line it runs along")
         y += 9
 
-        pen.text((x, y), "regions, clockwise from the top" if circle else "regions",
+        pen.text((x, y), "regions, clockwise from the top",
                  fill=INK, font=small, anchor="lm")
         y += 17
         for lobe in rows:
@@ -1092,34 +999,6 @@ class Chart:
             pen.text((edge, y), str(side[lobe]), fill=INK, font=font, anchor="rm")
             y += 14
         return tile
-
-    def _scale_bar(self, pen, wide, high, font):
-        bar = 50.0 * self.scale
-        if not 20 < bar < wide - 60:
-            return
-        y = high - 18
-        pen.line([(20, y), (20 + bar, y)], fill=INK, width=1)
-        for end in (20, 20 + bar):
-            pen.line([(end, y - 3), (end, y + 3)], fill=INK)
-        pen.text((34 + bar, y), "50 mm between centers", fill=INK, font=font, anchor="lm")
-
-    def _strands(self, pen, start, stop, ratios, color, width=2):
-        # one arc per tract, bowed toward its real length. it only gets there
-        # for the 47% that run between one and 1.8 times the straight gap: a
-        # shorter tract cannot be drawn shorter than the line between two dots,
-        # and a longer one is capped before it sweeps across the whole picture
-        along = stop - start
-        span = float(np.linalg.norm(along))
-        if span < 1:
-            return
-        side = np.array([-along[1], along[0]]) / span
-        steps = np.linspace(0, 1, 16)[:, None]
-        for n, ratio in enumerate(ratios):
-            bow = span * bow_for(min(ratio, 1.8)) * (1 if n % 2 else -1)
-            middle = (start + stop) / 2 + side * bow
-            curve = ((1 - steps) ** 2 * start + 2 * (1 - steps) * steps * middle
-                     + steps ** 2 * stop)
-            pen.line([tuple(point) for point in curve], fill=color, width=width)
 
     def pick(self, x, y, reach=14):
         if not len(self.screen):

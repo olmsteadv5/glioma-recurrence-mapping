@@ -883,7 +883,7 @@ class Console(App):
         if self.chart is not None:
             self.chart.tract = None
         if self.scene:
-            self.scene.show_tract(None)
+            self.scene.show_tracts(None)
         self.focus_row(index)
         self.draw()
 
@@ -896,12 +896,36 @@ class Console(App):
             self.isolate_selected()
         elif self.mode == "slices":
             self.seek_parcel(index)
-        elif self.mode == "graph" and self.chart is not None:
+        if self.scene:
             self.light_node()
+            self.sync_tracts()
+
+    def sync_tracts(self):
+        # the same tracts the chart lights, lit in the 3d as well, whichever
+        # viewer is up, so a pick is the same object in both. one tract taken
+        # from a row of the panel is the narrower pick, so it wins
+        if not self.scene:
+            return
+        chart = self.ensure_chart()
+        if chart.tract is not None:
+            self.scene.show_tracts({chart.tract})
+        elif chart.picked():
+            self.scene.show_tracts({r[4] for r in chart.runs()})
+        else:
+            self.scene.show_tracts(None)
+
+    def ensure_chart(self):
+        # the 3d wants the chart's tract ids, so it is built on the first pick
+        # rather than only when the graph is opened
+        if self.chart is None:
+            self.chart = render.Chart(self.subject,
+                                      self.results[self.subject]["atlas"])
+        return self.chart
 
     def light_node(self):
         # a parcel row and a connectivity row are each about one parcel, so one
         # node lights. a function is a weighted sum over many, so all of them do
+        self.ensure_chart()
         if self.listing == "functions":
             d = self.results[self.subject]
             top = d.get("function", [])
@@ -960,6 +984,7 @@ class Console(App):
             listing.index = 0 if index is None else index
         cell = get_cell_size()
         viewer = self.query_one("#viewer")
+        self.sync_tracts()
         if self.mode == "3d":
             widget = self.query_one("#canvas", Canvas)
             size = widget.content_size
@@ -972,14 +997,13 @@ class Console(App):
             viewer.border_subtitle = keyed(f"v slices · p {other} colors")
         elif self.mode == "graph":
             if self.chart is None:
-                self.chart = render.Chart(self.subject,
-                                          self.results[self.subject]["atlas"])
+                self.ensure_chart()
                 self.light_node()
             widget = self.query_one("#board", Board)
             size = widget.content_size
             widget.image = self.chart.image(
                 (max(size.width * cell.width, 64), max(size.height * cell.height, 64)))
-            self.scene.show_tract(self.chart.tract)
+            self.sync_tracts()
             viewer.styles.border_subtitle_align = "right"
             viewer.border_title = "graph"
             other = "spread" if self.chart.plan == "circle" else "circle"
@@ -1115,7 +1139,7 @@ class Console(App):
             self.chart.home()
             self.chart.focus(None)
             self.chart.tract = None
-            self.scene.show_tract(None)
+            self.scene.show_tracts(None)
             self.draw()
             return
         name = self.chart.name(at)
@@ -1256,7 +1280,7 @@ class Console(App):
         self.query_one("#board").display = self.mode == "graph"
         # a tract picked in the chart stays picked in the 3d and the other way
         if self.scene and self.chart is not None:
-            self.scene.show_tract(self.chart.tract)
+            self.sync_tracts()
         if self.scene:
             self.focus_row()
         self.refresh_bindings()

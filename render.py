@@ -237,23 +237,28 @@ class Scene:
         for name, (points, faces) in compare.surfaces(first, second).items():
             self.actors["C:" + name] = self._mesh(points, faces, _hex(COMPARE[name]), 0.6)
 
-    def show_tract(self, at):
-        # one centerline picked out of the bundle, so a row in the chart's panel
-        # and a line in here are the same object
-        if at == getattr(self, "shown", None):
+    TRACT_DIM = 0.12
+
+    def show_tracts(self, ids):
+        # whatever is picked in the chart, picked out of the bundle here: one
+        # tract from a row of its panel, or every tract of a parcel
+        ids = frozenset(ids) if ids else None
+        if ids == self.shown:
             return
-        if getattr(self, "shown", None) is not None:
+        if self.shown is not None:
             self.plotter.remove_actor(self.actors.pop("tract"))
-            self.shown = None
-        if at is None:
+        self.shown = ids
+        # the rest of the bundle falls back so the picked ones are readable
+        for key in ("tracts", "tracts:near"):
+            self.set_opacity(key, self.TRACT_DIM if ids else 0.55)
+        if ids is None:
             return
-        line = tractography.centerlines()[at]
-        mesh = self._lines([line])
+        lines = tractography.centerlines()
+        mesh = self._lines([lines[n] for n in sorted(ids) if n < len(lines)])
         if mesh is None:
             return
         self.actors["tract"] = self.plotter.add_mesh(mesh, color=_hex(LIT),
-                                                     line_width=4)
-        self.shown = at
+                                                     line_width=3)
 
     def spotlight(self, name):
         # an untouched parcel is not in the scene, so add it only when asked for
@@ -419,10 +424,12 @@ class Chart:
         self.tally = {
             "in": len(self.inside), "out": len(self.nodes) - len(self.inside),
             "mass": 1, "loose": len(self.loose),
-            "pair": sum(e[2] for e in self.link),
-            "spoke": sum(e[1] for e in self.spokes),
-            "gone_mass": sum(many for at, many, *_ in self.void if at is None),
-            "gone_parcel": sum(many for at, many, *_ in self.void if at is not None)}
+            "pair": (len(self.link), sum(e[2] for e in self.link)),
+            "spoke": (len(self.spokes), sum(e[1] for e in self.spokes)),
+            "gone_mass": (sum(1 for at, *_ in self.void if at is None),
+                          sum(many for at, many, *_ in self.void if at is None)),
+            "gone_parcel": (sum(1 for at, *_ in self.void if at is not None),
+                            sum(many for at, many, *_ in self.void if at is not None))}
 
         # one wedge per region, so the ring order is anatomy and not the seed
         self.around = sorted(range(len(self.nodes)),
@@ -700,11 +707,16 @@ class Chart:
         about, detail = self.about.get(name), self.detail.get(name, {})
         ends = len({self.name(f) for _, _, _, f, _ in runs})
         rows = []
+        # a row is one tract on one connection, so the three numbers differ and
+        # each is named for what it is rather than all of them called tracts
+        seen, lines = len({t for _, _, _, _, t in runs}), len({(n, f) for _, _, n, f, _ in runs})
         if self.crowd:
             took = sum(self.lost[n] for n in self.crowd)
             rows.append(("parcels behind it", str(len(self.crowd))))
             rows.append(("in the tumor", f"{took:.2f} mL of them"))
-            rows.append(("tracts", str(len(runs))))
+            rows.append(("connections", str(lines)))
+            rows.append(("tracts", str(seen)))
+            rows.append(("rows", str(len(runs))))
             rows.append(("reaching", f"{ends} parcel" + ("s" if ends != 1 else "")))
             pen.text((x, y), name or "", fill=INK, font=font, anchor="lm")
             at = y + 15
@@ -721,7 +733,9 @@ class Chart:
         else:
             rows.append(("in the tumor", "none of it"))
         rows.append(("lobe", detail.get("lobe", "").lower()))
-        rows.append(("tracts", str(len(runs))))
+        rows.append(("connections", str(lines)))
+        rows.append(("tracts", str(seen)))
+        rows.append(("rows", str(len(runs))))
         rows.append(("reaching", f"{ends} parcel" + ("s" if ends != 1 else "")))
 
         pen.text((x, y), name, fill=INK, font=font, anchor="lm")
@@ -746,7 +760,7 @@ class Chart:
             return
         name = (self.label if self.crowd else
                 self.guest["name"] if self.guest else self.name(self.lit))
-        head = 58 + 14 * (5 if self.crowd else 6 if name in self.about else 4)
+        head = 58 + 14 * (7 if self.crowd else 8 if name in self.about else 6)
         # rows keep a readable height and the list scrolls, rather than 534 of
         # them being squeezed into the pane until none of them can be read
         pitch = 15.0
@@ -984,7 +998,7 @@ class Chart:
         rows = sorted(self.where)
         # the circle adds a line about thickness that the spread does not
         tall = (322 if self.plan == "circle" else 307) + 14 * len(rows)
-        if wide < 680 or high < tall + 40:
+        if wide < 760 or high < tall + 40:
             if self.plan != "circle":
                 self._scale_bar(pen, wide, high, font)
             return
@@ -999,18 +1013,20 @@ class Chart:
         # nothing in it moves while the chart is panned, so draw it once
         font, small = _font(12), _font(11)
         # the top edge is inset so the title sitting on it is not clipped
-        tile = Image.new("RGB", (540, tall + 9), PANEL)
+        tile = Image.new("RGB", (620, tall + 9), PANEL)
         pen = ImageDraw.Draw(tile)
-        pen.rounded_rectangle((0, 8, 539, tall + 8), radius=6, fill=PANEL, outline=KEY_EDGE)
+        pen.rounded_rectangle((0, 8, 619, tall + 8), radius=6, fill=PANEL, outline=KEY_EDGE)
         pen.rectangle((10, 3, 46, 13), fill=PANEL)
         pen.text((14, 8), "key", fill=BRIGHT_INK, font=font, anchor="lm")
-        x, y, edge = 14, 34, 526
+        x, y, edge = 14, 34, 606
         count = self.tally
         side = {name: sum(1 for lobe in self.lobes if lobe == name) for name in rows}
 
-        def line(y, text, tally=None):
-            # the count sits in its own column, the way the left panel sets them
+        def line(y, text, tally=None, join=None):
+            # counts sit in their own columns, the way the left panel sets them
             pen.text((x + 21, y), text, fill=FAINT_INK, font=font, anchor="lm")
+            if join is not None:
+                pen.text((x + 512, y), str(join), fill=INK, font=font, anchor="rm")
             if tally is not None:
                 pen.text((edge, y), str(tally), fill=INK, font=font, anchor="rm")
             return y + 15
@@ -1042,8 +1058,9 @@ class Chart:
         y += 33
 
         circle = self.plan == "circle"
-        pen.text((x, y), "lines, one per connection, counted in tracts",
-                 fill=INK, font=small, anchor="lm")
+        pen.text((x, y), "lines, one per connection", fill=INK, font=small, anchor="lm")
+        pen.text((x + 512, y), "connections", fill=FAINT_INK, font=small, anchor="rm")
+        pen.text((edge, y), "tracts", fill=FAINT_INK, font=small, anchor="rm")
         y += 17
         # strongest evidence first, so the last row can refer back to it. the
         # color is about the tract, never about whether the ends are overlapped
@@ -1059,9 +1076,9 @@ class Chart:
                 (CLIP, "a parcel and unnamed tissue, by tracts that miss the tumor",
                  "gone_parcel")):
             pen.line([(x, y), (x + 14, y)], fill=color, width=2)
-            y = line(y, text, count[key])
-        y = line(y, f"{self.strands} lines for {self.crossed} tracts, and a tract")
-        y = line(y, "counts on each line it runs along, so these overlap")
+            y = line(y, text, count[key][1], count[key][0])
+        y = line(y, f"{self.crossed} tracts run through or beside the tumor, and")
+        y = line(y, "one is counted on each line it runs along")
         y += 9
 
         pen.text((x, y), "regions, clockwise from the top" if circle else "regions",

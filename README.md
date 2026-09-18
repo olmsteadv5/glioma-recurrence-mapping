@@ -189,7 +189,7 @@ running right at its real length in millimeters, the picked parcel on the end
 of it, and that length printed alongside. Rows keep a readable height and the
 list scrolls on the wheel rather than squeezing; `L_CC_B` has 717 tracts and
 they are still one row each. The length is printed alongside, following its own bar rather than
-sitting in a column of its own. A grey scale in millimeters runs underneath the
+sitting in a column of its own. A gray scale in millimeters runs underneath the
 rows rather than over them. Both dots keep the size and color they have on the
 chart, and the mass is not named because it is the one yellow dot.
 
@@ -202,7 +202,7 @@ The left hand column is the point of it. For `L_SF8_C` on subject 36 the
 longest tracts, 111 to 129 mm, run to `R_SF8_C` and `R_M2_C`, across to the
 other hemisphere and into parcels the tumor missed; the middle band at 50 to 61
 mm all goes to `L_CC_B`, the corpus callosum, which the tumor overlaps; and the
-shortest, 4 to 32 mm, go to the mass itself and to its own neighbours. The
+shortest, 4 to 32 mm, go to the mass itself and to its own neighbors. The
 chart cannot show any of this, because a line there is as long as the gap
 between the two dots it joins.
 

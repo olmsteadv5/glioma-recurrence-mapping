@@ -168,6 +168,20 @@ search result and the primary source has not been checked. **Do not promote a
             https://pubmed.ncbi.nlm.nih.gov/23462418/
             -> second source for the same conditional effect
             NOTE only the PubMed ID is confirmed; figures not read out.
+
+[svzdef20]  [secondary]
+            Valiyaveettil D, Malik M, Akram KS, Ahmed SF, Joseph DM.
+            Prospective study to assess the survival outcomes of planned
+            irradiation of ipsilateral subventricular and periventricular zones
+            in glioblastoma. ecancermedicalscience. 2020;14:1021.
+            https://doi.org/10.3332/ecancer.2020.1021
+            -> sets SVZ_MM = 5.0 in plan/barriers.py
+            -> "The SVZ was contoured as a 5 mm lateral expansion of the
+               lateral ventricles as per published guidelines"
+            NOTE this entry fixes the GEOMETRY of the rind only, not the dose.
+            The 5 mm figure is the standard contouring convention across the SVZ
+            literature; the guidelines the sentence defers to were not chased
+            down, and the quote comes from the PMC HTML rather than the PDF.
 ```
 
 ## Functional sparing

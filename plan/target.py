@@ -14,7 +14,6 @@ from plan.speed import (CEILING_MM, FLOOR_MM, SATELLITE_ML, SIGMA_MM, field)
 
 
 def risk(subject, ceiling_mm=CEILING_MM, **params):
-    # Travel time from the tumor, marched only as far as the ceiling.
     tum = np.asarray(_seg(subject)[0]) > 0
     # no narrow band: it is measured in travel time, and the cap below is
     # measured in millimeters, so the two no longer mean the same thing

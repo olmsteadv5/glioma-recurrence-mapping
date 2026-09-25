@@ -64,17 +64,24 @@ def build(subject, budget_ml, tol=0.01, **params):
     sigma = params.get("sigma_mm", SIGMA_MM)
     travel_time = risk(subject, **params)
 
-    # closing and smoothing move the volume, so ask for less until it lands
-    ask, mask, satellites = budget_ml, None, []
+    # closing and smoothing move the volume, so ask for less until it lands.
+    # the ceiling can make the budget unreachable, and then asking for more
+    # changes nothing; stop rather than spending every iteration on it
+    ask, mask, satellites, was, capped = budget_ml, None, [], None, False
     for _ in range(12):
         mask, satellites = shape(subject, ask, travel_time,
                                  ceiling_mm=ceiling, sigma_mm=sigma, **take)
         got = volume(subject, mask)
         if abs(got - budget_ml) <= tol * budget_ml:
             break
+        if was is not None and abs(got - was) <= tol * max(got, 1.0):
+            capped = True
+            break
+        was = got
         ask = max(ask * budget_ml / max(got, 1.0), 1.0)
     return mask, {"volume_ml": volume(subject, mask),
                   "asked_ml": round(budget_ml, 2),
+                  "capped": capped,
                   "satellites_ml": satellites,
                   "reach_mm": round(float(travel_time[mask & np.isfinite(travel_time)].max()), 1)
                   if mask.any() else 0.0}

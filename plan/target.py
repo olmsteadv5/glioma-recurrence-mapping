@@ -1,11 +1,15 @@
 # A speed field becomes a target: solve, threshold to a budget, make it deliverable.
 
+import subprocess
+
+import nibabel as nib
 import numpy as np
 from scipy import ndimage
 
 from plan import barriers, march, speed
 from plan.baseline import expand, volume
 from plan.measure import _ml, _seg
+from paths import THREADS, modality, out_dir, stripped_dir
 from plan.speed import (CEILING_MM, FLOOR_MM, SATELLITE_ML, SIGMA_MM, field)
 
 
@@ -85,3 +89,31 @@ def build(subject, budget_ml, tol=0.01, **params):
                   "satellites_ml": satellites,
                   "reach_mm": round(float(travel_time[mask & np.isfinite(travel_time)].max()), 1)
                   if mask.any() else 0.0}
+
+
+def to_native(subject, mask, name="target"):
+    # The atlas inflates a lesion about 13% and a whole brain about 21%, so a
+    # volume only means something once it is back on the patient's own grid.
+    import compare
+
+    reference = modality(stripped_dir(subject), subject, "T1")
+    if not reference.exists():
+        raise RuntimeError(f"{subject}: no stripped T1 to resample onto")
+
+    source = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
+    held = out_dir(subject) / f"{name}_mni.nii.gz"
+    dest = out_dir(subject) / f"{name}_native.nii.gz"
+    nib.save(nib.Nifti1Image(mask.astype(np.uint8), source.affine), held)
+    subprocess.run(
+        ["greedy", "-d", "3", "-rf", str(reference), "-ri", "LABEL", "0.2vox",
+         "-rm", str(held), str(dest), "-r",
+         str(out_dir(subject) / "affine.mat") + ",-1", str(compare._inverse(subject)),
+         "-threads", THREADS], capture_output=True)
+    held.unlink(missing_ok=True)
+    if not dest.exists():
+        raise RuntimeError(f"{subject}: greedy wrote no native {name}")
+
+    image = nib.load(dest)
+    native = np.asarray(image.dataobj) > 0
+    ml = float(np.prod(image.header.get_zooms()[:3])) / 1000.0
+    return native, round(float(native.sum()) * ml, 2)

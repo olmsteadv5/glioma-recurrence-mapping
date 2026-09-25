@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from show import view
 from yale import atlas
 from yale import tracts as tractography
+from geometry import MARGIN_MM, grow, outline
 from paths import LABELS, MNI, MODALITIES, modality, out_dir, raw_dir, stripped_dir
 
 pv.OFF_SCREEN = True
@@ -62,24 +63,6 @@ def fit(image, size, background=PANEL):
     canvas = Image.new("RGB", (w, h), background)
     canvas.paste(scaled, ((w - scaled.width) // 2, (h - scaled.height) // 2))
     return canvas
-
-
-def grow(seg_image, brain, mm=MARGIN_MM):
-    # the planning margin, clipped to the brain because a fifth of a raw
-    # expansion lands in skull and air
-    far = ndimage.distance_transform_edt(np.asarray(seg_image.dataobj) == 0,
-                                         sampling=seg_image.header.get_zooms()[:3])
-    return (far <= mm) & brain
-
-
-def outline(mask):
-    # the boundary only, so a 2 cm envelope does not swamp the slice
-    inner = mask.copy()
-    inner[1:] &= mask[:-1]
-    inner[:-1] &= mask[1:]
-    inner[:, 1:] &= mask[:, :-1]
-    inner[:, :-1] &= mask[:, 1:]
-    return mask & ~inner
 
 
 class Scene:

@@ -102,7 +102,9 @@ def svz_contact(subject):
 def masks(subject):
     tissue = labels(subject)
     return {
-        "brain": tissue > 0,
+        # the template's own brain, not SynthSeg's. Every comparator has to run
+        # on the same ground or part of any difference is just a bigger field.
+        "brain": np.asarray(nib.load(MNI).dataobj) > 0,
         "wm": _group(tissue, WM),
         "cortex": _group(tissue, CORTEX),
         "csf": _group(tissue, CSF),

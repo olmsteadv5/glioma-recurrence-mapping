@@ -26,9 +26,10 @@ def field(subject, wm_gain=WM_GAIN, tract_gain=TRACT_GAIN, tube_mm=TUBE_MM,
           risk_gain=RISK_GAIN, sigma_mm=SIGMA_MM, eps_csf=EPS_CSF, svz=False,
           svz_gain=SVZ_GAIN, spare=()):
     # Everything the plan asks for is a multiplier on one field.
-    if tube_mm < 1.2 * sigma_mm:
-        raise ValueError(f"tube_mm {tube_mm} is erased by sigma {sigma_mm}; "
-                         f"needs at least {1.2 * sigma_mm}")
+    # tube_mm steers, it is not delivered. The 1.2 x sigma floor belongs to the
+    # final mask, where a lone corridor has to survive smoothing, and it was
+    # wrong here: at 6 mm the tubes cover 91% of the neighborhood and stop
+    # picking out any direction at all.
     m = barriers.masks(subject)
 
     base = np.zeros(m["brain"].shape, dtype=np.float32)

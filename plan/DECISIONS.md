@@ -218,6 +218,46 @@ mean "reachable within 20 mm of travel along the fastest path", that is a
 different and defensible quantity, but it needs its own citation and it must not
 be described as a distance.
 
+### The corridor null finally separates, and the streamlines win
+
+Four attempts. The first three were flat for three different reasons, none of
+them the method's:
+
+| attempt | why it could not detect anything |
+|---|---|
+| tube 6 mm | real and random corridors overlapped 81%, so both arms got the same field |
+| core-bound | tumor plus the 5 mm floor ate 60-90% of the budget |
+| budget above reach | the target took everything reachable, so nothing was chosen |
+
+The condition for this experiment to mean anything is that the target must
+**reject** volume: `reachable - budget > 0`, so the speed field is forced to
+choose. At the full 2 cm budget that quantity was negative on every subject.
+
+At a budget that rejects 45% of the reachable region, with a 2 mm tube:
+
+| subject | budget | rejects | real | random mean | sd | z | beat |
+|---|---|---|---|---|---|---|---|
+| 00055 | 180 mL | 147 mL | 0.9168 | 0.8980 | 0.0048 | 3.9 | 6/6 |
+| 00285 | 189 mL | 155 mL | 0.7430 | 0.7372 | 0.0024 | 2.4 | 6/6 |
+| 00352 | 196 mL | 160 mL | 0.5005 | 0.4842 | 0.0036 | 4.6 | 6/6 |
+
+The streamlines that actually run through the tumor beat every random draw on
+every subject, by 0.6 to 1.9 points of coverage.
+
+**What this licenses.** Six draws puts the rank-based p at 1/7 for one subject;
+three independent subjects each at that rank is about 0.003 combined. That is a
+real signal, not a proof. A publishable permutation test needs on the order of a
+hundred draws per subject, which is roughly an hour of compute and has not been
+run.
+
+**What it does not license.** Nothing about clinical benefit, and nothing at
+n=3. It says the tract geometry carries information about where recurrence
+lands, measured at one budget and one tube width.
+
+**What would change it.** A hundred draws that put the real value inside the
+null distribution rather than beyond it. Or the effect vanishing once the full
+cohort lands.
+
 ## Open questions with no owner
 
 - **What is the correct `wm_gain`, if the concept survives at all?** The sweep so
@@ -226,9 +266,12 @@ be described as a distance.
   it. That heterogeneity suggests a patient-dependent parameter rather than a
   global one, which nothing in the design currently supports.
 
-- **Does the connectome earn its place?** Undecided until the shuffled null runs.
-  If a degree-preserving rewiring scores the same, the whole connectome branch is
-  decoration and the honest paper is about barrier-aware expansion.
+- **Does the connectome earn its place?** Partly answered. The tract corridors
+  do: real streamlines beat random ones 6/6 on three subjects once the test was
+  built so it could detect a difference. The disruption term does not: permuting
+  the connectivity matrix changes nothing, because at `risk_gain = 1` it is a
+  3.5% speed nudge beside a 400% one. Either give it real weight and retest, or
+  drop it and say so.
 
 - **Which RTOG volume is the comparator, the 46 Gy or the 60 Gy one?** Settled
   in part above: we currently compute the 46 Gy one. ASTRO 2025 `[astro25]`,

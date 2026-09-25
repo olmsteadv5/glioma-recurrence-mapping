@@ -214,7 +214,37 @@ search result and the primary source has not been checked. **Do not promote a
             -> BraTS25_2 is the best CPU algorithm, and is what every result
                computed on this machine so far has used
 
-TODO        SynthSeg (Billot et al.)
+[billot23]  [verified]
+            Billot B, Greve DN, Puonti O, Thielscher A, Van Leemput K,
+            Fischl B, Dalca AV, Iglesias JE. SynthSeg: Segmentation of brain
+            MRI scans of any contrast and resolution without retraining.
+            Med Image Anal. 2023;86:102789. doi:10.1016/j.media.2023.102789
+            PMID 36857946. PMCID PMC10154424.
+            -> trained on synthetic data with a random subset of the usual
+               preprocessing applied per example, "such that SynthSeg can
+               segment scans with or without preprocessing", which is why
+               scan/tissue.py feeds it the raw T1 rather than the stripped one
+            -> white matter lesions are simulated during training, pasted with
+               50% probability, and the ablation in section 5.2 is offered as
+               "a first evidence of the robustness of SynthSeg to the presence
+               of lesions"
+            WARNING the paper does not license this use on glioma. Its own
+            limitation reads: "future work will seek to precisely quantify the
+            performance of SynthSeg when exposed to various types of lesions,
+            tumours, and pathologies." Nothing published supports the labels it
+            returns inside a tumor, and this collection's tumors are 35-170 mL.
+            Treat tumor-region labels as unvalidated; see scan/tissue.py.
+
+[billot23b] [secondary]
+            Billot B, Magdamo C, Cheng Y, Arnold SE, Das S, Iglesias JE.
+            Robust machine learning segmentation for large-scale analysis of
+            heterogeneous clinical brain MRI datasets. PNAS 2023;120(9).
+            doi:10.1073/pnas.2216399120
+            -> SynthSeg+, which is what mri_synthseg --robust runs
+            -> cited here only because the --robust flag exists; the pipeline
+               does not use it
+            NOTE author initials taken from the SynthSeg README, not the paper.
+
 TODO        SynthStrip (Hoopes et al.)
 TODO        greedy registration (Yushkevich et al.)
 TODO        Yale Brain Atlas

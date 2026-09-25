@@ -17,7 +17,8 @@ ESTRO_MM = 15
 def _reach(subject):
     # distance from the tumor, and the template brain, computed once per subject
     data, image = _seg(subject)
-    far = ndimage.distance_transform_edt(data == 0, sampling=image.header.get_zooms()[:3])
+    far = ndimage.distance_transform_edt(data == 0,
+                                         sampling=image.header.get_zooms()[:3])
     return far, np.asarray(nib.load(MNI).dataobj) > 0, image
 
 

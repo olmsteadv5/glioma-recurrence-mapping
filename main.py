@@ -7,7 +7,7 @@ import time
 
 import nibabel as nib
 
-from scan import evaluate, fetch, register, segment, skullstrip, verify
+from scan import evaluate, fetch, register, segment, skullstrip, tissue, verify
 from yale import atlas, function
 from paths import (MNI, OUTPUTS, RESULTS, STAGES, modality, out_dir, raw_dir,
                    stripped_dir, subject_id)
@@ -45,18 +45,26 @@ def process(number, first="fetch", timepoint=1, was=None):
         verify.run(subject, stripped)
         took("strip", clock)
 
-    seg = out_dir(subject) / "seg.nii.gz"
     if at <= 2:
+        mark("tissue")
+        clock = time.time()
+        tissue.run(subject)
+        took("tissue", clock)
+
+    seg = out_dir(subject) / "seg.nii.gz"
+    if at <= 3:
         mark("segment")
         clock = time.time()
         seg, run["algorithm"], run["device"] = segment.run(subject, stripped)
         took("segment", clock)
     scores = evaluate.run(subject, seg)
 
-    if at <= 3:
+    if at <= 4:
         mark("register")
         clock = time.time()
         _, run["kept"] = register.run(subject, stripped, seg)
+        # the reslice needs the warp, so it cannot happen back at the tissue stage
+        tissue.to_mni(subject)
         took("register", clock)
     run["times"] = times
     run["finished"], run["seconds"] = time.time(), round(time.time() - started)
@@ -80,9 +88,11 @@ def missing(number, first, timepoint=1):
         return f"{raw_dir(subject)} is missing, start from fetch"
     if at >= 2 and not modality(stripped_dir(subject), subject, "T1").exists():
         return f"{stripped_dir(subject)} has no T1, start from strip"
-    if at >= 3 and not (out_dir(subject) / "seg.nii.gz").exists():
+    # tissue is deliberately not required here; the 26 subjects segmented before
+    # it existed must still reach map
+    if at >= 4 and not (out_dir(subject) / "seg.nii.gz").exists():
         return f"{subject} has no segmentation, start from segment"
-    if at >= 4 and not (out_dir(subject) / "seg_in_mni.nii.gz").exists():
+    if at >= 5 and not (out_dir(subject) / "seg_in_mni.nii.gz").exists():
         return f"{subject} is not registered, start from register"
     return None
 

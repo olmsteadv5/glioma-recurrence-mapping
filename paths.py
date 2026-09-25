@@ -40,7 +40,7 @@ def modality(directory, subject, name):
     return directory / f"{subject}_{name}.nii.gz"
 
 
-STAGES = ("fetch", "strip", "segment", "register", "map")
+STAGES = ("fetch", "strip", "tissue", "segment", "register", "map")
 
 
 def stage_file(subject, stage):
@@ -48,6 +48,7 @@ def stage_file(subject, stage):
     return {
         "fetch": modality(raw_dir(subject), subject, "T1"),
         "strip": modality(stripped_dir(subject), subject, "T1"),
+        "tissue": out_dir(subject) / "tissue.nii.gz",
         "segment": out_dir(subject) / "seg.nii.gz",
         "register": out_dir(subject) / "seg_in_mni.nii.gz",
     }.get(stage)

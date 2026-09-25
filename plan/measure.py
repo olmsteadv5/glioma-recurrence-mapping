@@ -29,7 +29,8 @@ def _ml(image):
 def grown(subject, mm=MARGIN_MM):
     # the isotropic expansion of the first tumor, clipped to the template brain
     data, image = _seg(subject)
-    far = ndimage.distance_transform_edt(data == 0, sampling=image.header.get_zooms()[:3])
+    far = ndimage.distance_transform_edt(data == 0,
+                                         sampling=image.header.get_zooms()[:3])
     return (far <= mm) & (np.asarray(nib.load(MNI).dataobj) > 0)
 
 

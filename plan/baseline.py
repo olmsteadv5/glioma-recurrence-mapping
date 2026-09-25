@@ -38,7 +38,7 @@ def rtog(subject):
 
 
 def isotropic(subject, volume_ml, tol=0.01):
-    # the volume-matched comparator: the sphere that costs what our target costs
+    # the volume-matched comparator: the uniform expansion that costs what ours costs
     far, brain, image = _reach(subject)
     ml = _ml(image)
     lo, hi = 0.0, float(far[brain].max())

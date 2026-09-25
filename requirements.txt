@@ -3,6 +3,7 @@ brats>=0.1.11
 nibabel>=5.0.0
 numpy>=1.26.0
 scipy>=1.11.0
+scikit-fmm>=2025.6.23
 trimesh>=4.0.0
 pyvista>=0.44.0
 plotly==6.7.0  # matches the other YBA projects

@@ -16,7 +16,9 @@ from plan.speed import (CEILING_MM, FLOOR_MM, SATELLITE_ML, SIGMA_MM, field)
 def risk(subject, ceiling_mm=CEILING_MM, **params):
     # Travel time from the tumor, marched only as far as the ceiling.
     tum = np.asarray(_seg(subject)[0]) > 0
-    return march.travel(field(subject, **params), tum, narrow=ceiling_mm)
+    # no narrow band: it is measured in travel time, and the cap below is
+    # measured in millimeters, so the two no longer mean the same thing
+    return march.travel(field(subject, **params), tum)
 
 
 def shape(subject, budget_ml, travel_time, floor_mm=FLOOR_MM,
@@ -24,15 +26,18 @@ def shape(subject, budget_ml, travel_time, floor_mm=FLOOR_MM,
     # From a travel-time field to something a linac can actually deliver.
     data, image = _seg(subject)
     ml = _ml(image)
-    brain = barriers.masks(subject)["brain"]
     tum = data > 0
 
     # the floor is not negotiable, so it is spent first rather than added on top;
     # added afterwards it is un-steered Euclidean volume the budget never sees
     core = tum | expand(subject, floor_mm)
 
-    # the budget fills what is left, nearest first in travel order
-    allowed = brain & (travel_time <= ceiling_mm)
+    # The cap is a distance, not a travel time. Travel time rescales whenever a
+    # gain moves, so a cap measured in it silently changes how much territory is
+    # reachable; the recurrence literature the 20 mm comes from measures
+    # millimeters. Distance bounds the reach, a finite arrival time keeps
+    # barriers honest, and travel time still decides the order.
+    allowed = expand(subject, ceiling_mm) & np.isfinite(travel_time)
     want = max(int(budget_ml / ml) - int(core.sum()), 0)
     spare_room = allowed & ~core
     times = travel_time[spare_room]

@@ -179,6 +179,45 @@ has only 60 across the whole collection.
 This has to be settled before anything is written up. It is a framing decision,
 not a bug.
 
+### The reach cap is a distance, not a travel time
+
+`ceiling_mm` used to threshold the arrival-time field. That was wrong twice
+over.
+
+Travel time is distance over speed, and the field is normalized by its own peak,
+so **raising any gain lowered every ordinary speed relative to that peak** and
+quietly shrank how much territory the cap allowed. The two arms of every
+comparison therefore had different reach: barriers-only could get to 270 mL
+inside "20 mm" while the connectome configuration could get to 155 mL. And the
+recurrence literature the 20 mm comes from measures millimeters with a tape,
+not travel time, so the citation never licensed what the parameter did.
+
+It now caps on Euclidean distance and keeps travel time for the ordering:
+
+```
+allowed = within ceiling_mm of the tumor   AND   arrival time is finite
+ranked  = by arrival time
+```
+
+Distance bounds the reach and does not move when a parameter moves. A finite
+arrival time keeps the barriers honest, so nothing behind the falx is bought
+just for being close. Travel time still decides what gets bought first, which
+is the whole method.
+
+**What it fixed.** Reachable volume on subject 55 is now 327.5 mL for every
+parameter setting tested, from all gains at 1 to all at maximum — it was moving
+between 74 and 270 mL before. The share of the budget the speed field actually
+decides went from 9-39% to 65-70%. Every experiment before this was steering
+between a tenth and a third of the target and calling the result flat.
+
+**What it cost.** The narrow band had to go, since it was also measured in
+travel time. A solve is slower without it.
+
+**What would change it.** Nothing obvious. If a future version wants the cap to
+mean "reachable within 20 mm of travel along the fastest path", that is a
+different and defensible quantity, but it needs its own citation and it must not
+be described as a distance.
+
 ## Open questions with no owner
 
 - **What is the correct `wm_gain`, if the concept survives at all?** The sweep so
@@ -196,6 +235,23 @@ not a bug.
   which our own supervisor co-authored, gives the range as **10-20 mm** rather
   than a fixed 2 cm and calls both the one-phase and two-phase approaches
   acceptable, so "2 cm is the US standard" is too strong a claim to make.
+
+- **Settled: the margin.** Dr. Knisely confirmed 2 cm from the edge of the
+  entire segmented tumor, which is what `margin_ml` computes. The 46/60 Gy
+  distinction only ever named which starting volume a protocol meant; we are
+  measuring volumes, not prescribing dose, so it changes nothing in the code. In
+  writing, call the baseline "2 cm from the whole segmentation, per RTOG/NRG
+  CTV_4600" rather than naming a dose.
+
+- **Settled: pre-operative scans are fine.** The goal is to beat a uniform
+  expansion at covering recurrence for a given volume. Both arms grow from the
+  same seed, so the comparison holds on pre-operative anatomy. What it does not
+  support is calling the output a clinical CTV ready for planning. Note that the
+  earlier argument for this - "RC is 0 mL everywhere so these must be pre-op" -
+  was wrong: RC is 0 on the post-operative scans too, because the segmenter
+  never emits that label at all. The claim rests instead on the UPenn-GBM paper
+  reporting 611 pre-operative and 60 post-operative scans, and on a craniotomy
+  visible in subject 00130's second timepoint.
 
 - **Is ESTRO 15 mm or RTOG 2 cm the comparator a reviewer expects?** They are
   different protocols measured from different things — ESTRO from enhancement

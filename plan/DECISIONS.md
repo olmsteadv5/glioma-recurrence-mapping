@@ -137,6 +137,48 @@ noise. Revisit when the full cohort lands.
 
 ---
 
+## Two things the clinical research changed
+
+### Our baseline is the 46 Gy volume, not the 60 Gy volume
+
+`MARGIN_MM = 20` grown from the whole segmentation — necrosis, enhancement and
+FLAIR — is **RTOG/NRG CTV_4600**, which receives 46 Gy `[nrg007]`. The 60 Gy
+volume grows the same 2 cm from enhancement and cavity only, with edema left
+out, and is roughly **1.8x smaller** `[ibis25]`.
+
+So "2 cm" is right, and it is the margin for both phases. What it does not say
+is which GTV it is measured from, and we picked the larger one.
+
+**Why this matters.** A claim of the form "our target beats the standard 60 Gy
+plan" would be comparing against a volume nearly twice the size of the one named.
+That is large enough to invalidate a headline on its own.
+
+**What to do.** Compute both. `CTV_4600` = 2 cm from NETC + ET + SNFH, which is
+what we already have; `CTV_6000` = 2 cm from NETC + ET only. It is a one-line
+mask change and it makes the question moot.
+
+### Every target so far is built on a pre-operative scan
+
+Timepoint `_11` in UPenn-GBM is the **pre-operative** study. Confirmed from the
+data: `RC` is 0.0 mL on all thirteen subjects processed, because there is no
+resection cavity to segment.
+
+Every guideline above defines the GTV on the **post-operative** MRI, from the
+resection cavity plus residual enhancement, and each spends paragraphs on
+telling cavity change and post-surgical infarct apart from residual tumor.
+
+**Why this matters more than the margin question.** We are drawing a
+post-operative target on pre-operative anatomy. The tumor is intact and there is
+no cavity, so the seed is a different object from the one every protocol names.
+
+**What to do.** Either reframe the study as predicting spread from the
+pre-operative tumor, which is honest and is what the two untreated pairs
+actually support, or move to the post-operative timepoint — of which UPenn-GBM
+has only 60 across the whole collection.
+
+This has to be settled before anything is written up. It is a framing decision,
+not a bug.
+
 ## Open questions with no owner
 
 - **What is the correct `wm_gain`, if the concept survives at all?** The sweep so
@@ -148,6 +190,12 @@ noise. Revisit when the full cohort lands.
 - **Does the connectome earn its place?** Undecided until the shuffled null runs.
   If a degree-preserving rewiring scores the same, the whole connectome branch is
   decoration and the honest paper is about barrier-aware expansion.
+
+- **Which RTOG volume is the comparator, the 46 Gy or the 60 Gy one?** Settled
+  in part above: we currently compute the 46 Gy one. ASTRO 2025 `[astro25]`,
+  which our own supervisor co-authored, gives the range as **10-20 mm** rather
+  than a fixed 2 cm and calls both the one-phase and two-phase approaches
+  acceptable, so "2 cm is the US standard" is too strong a claim to make.
 
 - **Is ESTRO 15 mm or RTOG 2 cm the comparator a reviewer expects?** They are
   different protocols measured from different things — ESTRO from enhancement

@@ -29,6 +29,11 @@ search result and the primary source has not been checked. **Do not promote a
             -> all reductions apply "provided the tumour is distant from the
                white matter tracts extending to these regions"
             -> 82% Delphi consensus against routine SVZ inclusion
+            CORRECTION "edema excluded" is too strong. The guideline excludes
+            vasogenic edema but asks that FLAIR signal judged to be
+            non-enhancing TUMOR be considered for inclusion. BraTS label 2 is
+            "peritumoral edematous/infiltrated tissue" and deliberately does not
+            separate the two, so our segmentation cannot make that call.
             NOTE author list unconfirmed. Confirm before citing formally.
 
 [rct25]     [verified]
@@ -56,6 +61,71 @@ search result and the primary source has not been checked. **Do not promote a
                NEVER against recurrence
             -> listed "incorporate white matter fiber orientation" as future work
             NOTE author list unconfirmed.
+```
+
+## US practice — what the 2 cm actually is
+
+```
+[nrg007]    [verified verbatim]
+            NRG-BN007 protocol, section 5.2.4, 2023-01-17.
+            https://cdn.clinicaltrials.gov/large-docs/60/NCT04396860/Prot_SAP_001.pdf
+            -> TWO volumes, both with a 2 cm margin, differing in what they grow from
+            -> GTV_4600 = T2/FLAIR, inclusive of enhancing T1 and the surgical
+               cavity. CTV_4600 = that + 2 cm. Receives 46 Gy.
+            -> GTV_6000 = enhancing T1 and the surgical cavity only, no edema.
+               CTV_6000 = that + 2 cm. Receives 60 Gy.
+            -> barriers: 0 mm to bone and falx, 3-5 mm to brainstem and ventricles
+            -> PTV = CTV + 5 mm, or 4 mm with daily IGRT
+            NOTE this is what settles our baseline: MARGIN_MM 20 grown from the
+            whole segmentation is CTV_4600, the 46 Gy volume, not the 60 Gy one.
+
+[nrg001]    [verified verbatim]
+            NRG-BN001 protocol, section 6.3.2, 2025-05-13.
+            https://cdn.clinicaltrials.gov/large-docs/86/NCT02179086/Prot_SAP_001.pdf
+            -> same two-volume structure, still current
+            -> its dose-escalation arm uses CTV_7500 = enhancement + cavity + 5 mm
+
+[astro25]   [secondary on target volumes, author list verified]
+            Yeboa DN, ... Knisely JPS, ... Bovi JA. Radiation Therapy for WHO
+            Grade 4 Adult-Type Diffuse Glioma: An ASTRO Clinical Practice
+            Guideline. Pract Radiat Oncol 2025;15(5):451-471. PMID 40578479.
+            -> CTV = GTV + 10-20 mm, not a fixed 2 cm
+            -> both the two-phase and single-phase approaches are acceptable
+            -> notes wide variation between institutions in how the two-phase
+               approach is implemented
+            WARNING the target-volume text above comes from a guideline summary
+            and a search excerpt. The paper is paywalled. Pull the PDF through
+            Yale before building a methods section on it.
+            NOTE Knisely is on the task force; Moliterno of Yale neurosurgery is
+            the AANS/CNS representative. This is the closest thing to an
+            authority on what our own supervisor considers standard.
+
+[acrop16]   [verified verbatim]
+            Niyazi M, Brada M, Chalmers AJ, et al. ESTRO-ACROP guideline
+            "target delineation of glioblastomas". Radiother Oncol
+            2016;118(1):35-42. doi:10.1016/j.radonc.2015.12.003
+            -> Table 1 reproduces the RTOG 0525/0825/0913 and EORTC volumes
+            -> EORTC: single phase, cavity + enhancement, edema excluded, + 2 cm
+            -> superseded by estro23, which cuts the margin to 15 mm
+
+[kruser19]  [verified]
+            Kruser TJ, et al. NRG brain tumor specialists consensus guidelines
+            for glioblastoma contouring. J Neurooncol 2019;143(1):157-166.
+            https://pmc.ncbi.nlm.nih.gov/articles/PMC6483830/
+            -> ten US academic brain radiation oncologists, NRG expansions
+            -> trimming at anatomic barriers removes a mean 13.6% of the brain
+               tissue a raw isotropic expansion would have targeted, range
+               8.7-17.9%. That is the gap between our brain-clipped margin and
+               what a human at an NRG site actually contours.
+
+[ibis25]    [verified]
+            Ibis K, et al. A Comparative Study of Five Target Volume Definitions
+            for Radiotherapy in Glioblastoma Multiforme. Medicina 2025;61(10):1860.
+            https://pmc.ncbi.nlm.nih.gov/articles/PMC12566177/
+            -> median PTV, n=20: RTOG initial 519.7 cm3, RTOG boost 292 cm3,
+               EORTC 299 cm3, ESTRO-EANO 220.4 cm3
+            -> the RTOG 46 Gy volume is ~1.8x the 60 Gy volume and ~2.4x the
+               European one. Which baseline you pick is most of any result.
 ```
 
 ## Speed multipliers

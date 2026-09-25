@@ -30,7 +30,10 @@ def shape(subject, budget_ml, travel_time, floor_mm=FLOOR_MM,
 
     # the floor is not negotiable, so it is spent first rather than added on top;
     # added afterwards it is un-steered Euclidean volume the budget never sees
-    core = tum | expand(subject, floor_mm)
+    # the floor is Euclidean and knows nothing, so without this it buys tissue
+    # the speed field priced at zero. "Microscopic disease abuts the margin"
+    # does not extend to the far side of the falx.
+    core = (tum | expand(subject, floor_mm)) & (np.isfinite(travel_time) | tum)
 
     # The cap is a distance, not a travel time. Travel time rescales whenever a
     # gain moves, so a cap measured in it silently changes how much territory is

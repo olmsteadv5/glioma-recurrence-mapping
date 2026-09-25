@@ -258,6 +258,68 @@ lands, measured at one budget and one tube width.
 null distribution rather than beyond it. Or the effect vanishing once the full
 cohort lands.
 
+## Endpoints, declared before the numbers exist
+
+Written down now, deliberately, so that neither can be chosen later on the
+strength of how it came out.
+
+**Primary: coverage of the whole later tumor**, at matched volume, against a
+uniform expansion of the same volume. This is the conservative choice. Its
+denominator is dominated by the region inside `tumor + floor_mm`, which every
+method includes unconditionally and none of them chooses, so differences are
+compressed roughly threefold. That compression costs power; it cannot
+manufacture a difference, because the same region sits inside the comparator
+too.
+
+**Secondary: coverage of recurrence outside `tumor + floor_mm`.** Defined
+structurally, never by looking at where the arms happen to differ. This is the
+part any method actually predicts, and it is where the real effect size lives -
+31 to 72% of the recurrence sits inside the core depending on subject, so the
+secondary is measured over the remaining 28 to 69%.
+
+**Why not make the secondary primary.** It was identified after seeing that the
+interesting variance lives there. Promoting it now would be choosing the metric
+that flatters the method. Reporting both, with this note, is honest; swapping
+them is not.
+
+## What the structure-versus-optimizer argument settled
+
+Two advocates argued it out. They converged on four things, which are now done:
+
+- **`risk_gain` was on an incomparable scale.** The at_risk share never exceeds
+  about 0.25, so `risk_gain = 1` was a x1.035 nudge while `wm_gain = 5` was a
+  flat x5. The optimizer's box ran 0 to 4, so the term could not have mattered
+  at any point in the search. The earlier conclusion that disruption contributes
+  nothing was produced by the parameterization, not discovered. Now divided by a
+  **fixed** 0.25, so `risk_gain = 4` means x5 at the most disrupted parcel. Fixed
+  rather than per-subject on purpose: a cohort-derived scale would make the
+  parameter mean something different every time a subject is added.
+- **`sigma_mm` was twice the physics.** A gaussian's 80-20 edge is about 1.7
+  sigma, so 5.0 mm produced an 8.4 mm penumbra against a real linac's 3-5 mm.
+  Now 2.5, giving 4.2 mm. This is a machine constant and is not for fitting.
+- **The smoothing stays.** The corridor null separated at z 3.9 to 4.6 with it
+  applied, so it demonstrably did not erase the one real effect there is.
+- **The mandatory core now respects reachability.** It is Euclidean and knew
+  nothing, so it bought tissue the speed field had priced at zero, including up
+  to 5.7 mL across a barrier. Microscopic disease abutting the margin does not
+  extend to the far side of the falx.
+
+**And one thing they settled against changing.** `floor_mm` stays a hard 5 mm
+rather than becoming a fitted parameter, because it has **no interior optimum**:
+free budget always improves coverage, so an optimizer would drive it to zero and
+report that as a finding. The same argument forbids fitting `sigma_mm`, where
+zero is physically impossible. Parameters whose optimum sits on a boundary
+cannot be fitted; you only recover the boundary. The floor gets a **sensitivity
+sweep at 0 / 2 / 5 / 8 mm** instead, reported with everything else held.
+
+## Registration between timepoints is not a problem
+
+Checked, because a target and the recurrence it is scored against reach MNI
+through two separate warps. Brain dice 0.987 to 0.989 across five subjects, mean
+residual deformation 0.92 to 1.38 mm, 95th percentile 3.2 to 4.1 mm. The mean is
+well inside a voxel. The tail is comparable to the effects being measured, so it
+is worth stating as a limitation, but it is not corrupting anything.
+
 ## Open questions with no owner
 
 - **What is the correct `wm_gain`, if the concept survives at all?** The sweep so

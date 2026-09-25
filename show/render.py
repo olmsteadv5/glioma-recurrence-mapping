@@ -11,9 +11,9 @@ from vtkmodules.util.numpy_support import vtk_to_numpy
 from vtkmodules.vtkRenderingCore import vtkCellPicker, vtkWindowToImageFilter
 from PIL import Image, ImageDraw, ImageFilter
 
-import atlas
-import tracts as tractography
-import view
+from show import view
+from yale import atlas
+from yale import tracts as tractography
 from paths import LABELS, MNI, MODALITIES, modality, out_dir, raw_dir, stripped_dir
 
 pv.OFF_SCREEN = True
@@ -406,7 +406,7 @@ class Chart:
     # nodes are the real distances between the parcels.
 
     def __init__(self, subject, overlap):
-        import graph
+        from yale import graph
         self.subject = subject
         (self.nodes, self.link, self.far, self.inside, self.spokes,
          self.void, self.crossed) = graph.build(subject, overlap)
@@ -481,7 +481,7 @@ class Chart:
         # the node for the picked row: the one already drawn, or a guest placed
         # by its real distances, for a row naming a parcel too lightly touched
         # to have earned a node of its own
-        import graph
+        from yale import graph
         self.lit = self.guest = self.label = None
         self.crowd = set()
         if parcel is None:

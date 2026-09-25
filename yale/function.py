@@ -5,7 +5,7 @@ import functools
 
 import numpy as np
 
-from atlas import ensure, parcels
+from yale.atlas import ensure, parcels
 
 FILES = {"functional": "parcelsynth_activations_functionalterms.csv",
          "all": "parcelsynth_activations_allterms.csv"}

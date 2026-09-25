@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from atlas import ensure
+from yale.atlas import ensure
 from paths import ATLAS_DIR
 
 CACHE = ATLAS_DIR / "tract_centerlines_geodesic.npz"

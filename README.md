@@ -42,8 +42,8 @@ a stage rather than picking stages out of the middle:
 | `register` | greedy and the atlas work        | 40 s    |
 | `map`      | parcel overlap and function only | 3 s     |
 
-`--from map` is the one to reach for after changing anything in `atlas.py` or
-`function.py`, since it reuses the segmentation and the warp.
+`--from map` is the one to reach for after changing anything in `yale/atlas.py`
+or `yale/function.py`, since it reuses the segmentation and the warp.
 
 It says what is missing if you start too late, rather than failing part way
 through. `--no-view` skips the browser window at the end.
@@ -56,7 +56,7 @@ To look at a subject you have already done, don't rerun anything, just open the
 view:
 
 ```bash
-./view.py 36
+python -m show.view 36
 ```
 
 Every parcel the tumor touches gets drawn. The legend is the main control:
@@ -359,7 +359,7 @@ Those two are not the same question. Dice is low because the tumor shrank, not
 because it moved; containment says it came back in the same place.
 
 `checks` holds `stages` and `atlas`, a row each. The strip row also carries
-whatever `verify.py` objected to, which used to reach you only as a traceback. A tick is quiet and carries
+whatever `scan/verify.py` objected to, which used to reach you only as a traceback. A tick is quiet and carries
 how long the stage took and how long ago it ran. A cross is the only colored
 thing in the panel, and it opens a red line saying what is actually wrong:
 which modality never downloaded or never stripped, or that a partial rerun left
@@ -385,7 +385,7 @@ says "SRI24 grid" in native.
 
 ## Functions at risk
 
-`function.py` reads Parcelsynth, which scores all 696 parcels against 334
+`yale/function.py` reads Parcelsynth, which scores all 696 parcels against 334
 function terms. For a tumor it sums those profiles, weighting each involved
 parcel by how much of it the tumor occupies.
 
@@ -406,7 +406,7 @@ margin.
 
 ## Connectivity at risk
 
-`connect.py` reads the Yale structural connectivity table. It is an edge list,
+`yale/connect.py` reads the Yale structural connectivity table. It is an edge list,
 not a matrix: 241,860 rows, one per parcel pair, with sixteen metrics each. It
 folds `SC_Count` into a 696x696 array, cached, and then for each parcel the
 tumor has **not** touched, sums the connections it has into parcels the tumor
@@ -443,20 +443,31 @@ Both directories are gitignored. Everything in them can be regenerated.
 ## Files
 
 ```
-main.py        runs the whole thing
-fetch.py       download scans
-skullstrip.py  SynthStrip
-verify.py      input checks
-segment.py     BraTS in Docker
-evaluate.py    volumes and Dice
-register.py    SRI24 to MNI152
-atlas.py       atlas volume, meshes, parcel overlap
-tracts.py      tract centerlines
-view.py        3D view, also runnable on its own
-tui.py         terminal UI
-render.py      offscreen 3D and slice images for the TUI
-function.py    Parcelsynth terms
-paths.py       shared paths
+main.py             runs the whole pipeline
+tui.py              terminal UI
+paths.py            shared paths
+compare.py          two timepoints against each other
+
+scan/               per-subject image processing
+  fetch.py          download scans
+  skullstrip.py     SynthStrip
+  verify.py         input checks
+  segment.py        BraTS in Docker
+  evaluate.py       volumes and Dice
+  register.py       SRI24 to MNI152
+
+yale/               the atlas and everything built from it
+  atlas.py          atlas volume, meshes, parcel overlap
+  tracts.py         tract centerlines
+  connect.py        structural connectivity
+  graph.py          the tumor's connectome as a node chart
+  function.py       Parcelsynth terms
+
+show/               rendering
+  view.py           3D view, also runnable: python -m show.view 36
+  render.py         offscreen 3D and slice images for the TUI
+
+plan/               radiation target work
 ```
 
 ## Worth knowing

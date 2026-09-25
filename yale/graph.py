@@ -6,8 +6,8 @@ import functools
 import nibabel as nib
 import numpy as np
 
-from atlas import ATLAS_DIR, ensure, label_volume, parcels
-from connect import FILE
+from yale.atlas import ATLAS_DIR, ensure, label_volume, parcels
+from yale.connect import FILE
 from paths import MNI, out_dir
 
 # SC_Length is clamped: over half the edges sit at its maximum. SC_EuclDist is
@@ -71,7 +71,7 @@ def through(subject):
     # parcels it therefore joins. This is the whole of what the chart draws.
     import collections
     import itertools
-    import tracts as tractography
+    from yale import tracts as tractography
 
     labels, names = label_volume(nib.load(MNI))
     seg = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")

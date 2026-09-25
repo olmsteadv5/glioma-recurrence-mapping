@@ -43,7 +43,7 @@ def masks(first, second):
 
 @functools.lru_cache(maxsize=4)
 def surfaces(first, second):
-    import view
+    from show import view
     parts, _, _, image = _split(first, second)
     out = {}
     for name, mask in parts.items():
@@ -57,7 +57,7 @@ def surfaces(first, second):
 def parcels_in(first, second, which):
     # Which parcels each piece of the difference actually touches.
     import nibabel as nib
-    from atlas import label_volume
+    from yale.atlas import label_volume
     from paths import MNI
 
     labels, names = label_volume(nib.load(MNI))

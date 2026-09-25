@@ -5,7 +5,7 @@ import functools
 
 import numpy as np
 
-from atlas import ATLAS_DIR, ensure, parcels
+from yale.atlas import ATLAS_DIR, ensure, parcels
 
 FILE = "structuralconnectivity_metrics_mean.csv"
 METRIC = "SC_Count"

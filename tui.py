@@ -19,12 +19,10 @@ from textual_image._terminal import get_cell_size
 from textual_image.renderable import Image as Renderable
 from textual_image.widget import Image as ImageWidget
 
-import atlas
 import compare
-import connect
-import function
-import render
-import segment
+from scan import segment
+from show import render
+from yale import atlas, connect, function
 from paths import (ATLAS_INPUT, LABELS, MODALITIES, REGIONS, RESULTS, ROOT,
                    STAGES, out_dir, raw_dir, stage_file, stripped_dir, subject_id)
 
@@ -718,8 +716,7 @@ class Console(App):
         wanted = [k[2:] for k, *_ in LAYERS
                   if k.startswith("C:") and k not in self.hidden_layers]
         if pair and wanted:
-            # in mni the pieces are already on the grid; in native they are
-            # brought back through this subject's own inverse warp
+            # in mni the pieces are already on the grid; in native they are brought back through this subject's own inverse warp
             source = (compare.masks(*pair) if self.space == "mni"
                       else compare.native(self.subject, *pair))
             for name in wanted:
@@ -764,8 +761,7 @@ class Console(App):
     def isolate_selected(self):
         names = self.selected_parcels()
         self.scene.only(names)
-        # in the connectivity view the first one is not in the tumor, so it has
-        # no mesh in the scene until it is asked for
+        # in the connectivity view the first one is not in the tumor, so it has no mesh in the scene until it is asked for
         self.scene.spotlight(names[0] if self.listing == "connectivity" and names else None)
 
     def refresh_list(self):

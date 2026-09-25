@@ -1,4 +1,3 @@
-#!/home/vilem/Projects/brats-upenn-gbm/.venv/bin/python
 # Interactive 3D view: solid tumor inside the Yale Brain Atlas.
 
 import nibabel as nib
@@ -6,8 +5,8 @@ import numpy as np
 import plotly.graph_objects as go
 import pyvista as pv
 
-import tracts as tractography
-from atlas import brain, colors, label_volume, meshes, parcels
+from yale import tracts as tractography
+from yale.atlas import brain, colors, label_volume, meshes, parcels
 from paths import LABELS, MNI, out_dir
 
 TISSUE_COLOR = {1: "#f2c14e", 2: "#3fa7d6", 3: "#e4572e", 4: "#8e7dbe"}
@@ -181,7 +180,7 @@ if __name__ == "__main__":
     from paths import RESULTS, subject_id
 
     if len(sys.argv) != 2:
-        sys.exit("usage: ./view.py <subject>   e.g. ./view.py 36")
+        sys.exit("usage: python -m show.view <subject>   e.g. python -m show.view 36")
     results = json.load(open(RESULTS))
     wanted = sys.argv[1]
     if wanted.isdigit():

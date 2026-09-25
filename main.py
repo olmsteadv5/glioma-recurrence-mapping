@@ -7,14 +7,8 @@ import time
 
 import nibabel as nib
 
-import atlas
-import evaluate
-import function
-import fetch
-import register
-import segment
-import skullstrip
-import verify
+from scan import evaluate, fetch, register, segment, skullstrip, verify
+from yale import atlas, function
 from paths import (MNI, OUTPUTS, RESULTS, STAGES, modality, out_dir, raw_dir,
                    stripped_dir, subject_id)
 
@@ -155,6 +149,6 @@ if __name__ == "__main__":
     results = main([int(a) for a in args], first, int(timepoint))
 
     if show:
-        import view
+        from show import view
         for subject in results:
             view.run(subject, results[subject]["atlas"])

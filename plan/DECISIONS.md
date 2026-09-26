@@ -320,13 +320,56 @@ residual deformation 0.92 to 1.38 mm, 95th percentile 3.2 to 4.1 mm. The mean is
 well inside a voxel. The tail is comparable to the effects being measured, so it
 is worth stating as a limitation, but it is not corrupting anything.
 
+## The fit and the null do not use the same budget
+
+Noticed while explaining the fit, not yet measured.
+
+`fit.BUDGET` is **0.4 of the subject's RTOG plan**. The corridor null instead
+uses a budget that **rejects 45% of the reachable region**. Those denominators
+are not the same quantity, and the fraction the target is forced to reject is
+what decides whether the speed field gets to choose at all.
+
+The plan volume ranges 265 to 709 mL across the 43 subjects, median 455. The
+reachable region ran near 330 mL on the subjects measured. So 0.4 of a 709 mL
+plan is 284 mL against a ~330 mL reach — nearly binding — while 0.4 of a 265 mL
+plan rejects most of what it could take. **Every subject in the fit is being
+asked to reject a different fraction**, and the score is a median across them.
+
+**Why we accept it for now.** 0.4 is comfortably clear of the cap for the median
+subject, and `capped` subjects are dropped rather than scored wrongly, so the
+failure mode is lost power rather than a wrong answer.
+
+**What would change it.** One measurement: reachable volume against 0.4 x plan,
+per subject. If the rejected fraction swings as widely as the arithmetic above
+suggests, the fit should take a share of **reachable**, matching the null, so
+every subject is asked the same question.
+
 ## Open questions with no owner
 
 - **What is the correct `wm_gain`, if the concept survives at all?** The sweep so
   far says the median prefers 1.0, i.e. no tissue preference — but subject 00352,
   the one with heavy callosal involvement, prefers 5.0 and gains ten points by
-  it. That heterogeneity suggests a patient-dependent parameter rather than a
-  global one, which nothing in the design currently supports.
+  it.
+
+  An earlier draft of this entry called that heterogeneity and inferred a
+  patient-dependent parameter. **That was stated past the evidence.** One subject
+  in a handful preferring a different value is not distinguishable from noise,
+  and the sweep moves one parameter at a time, so it cannot see the interaction
+  either. The 40-subject cohort is what settles it.
+
+  The more economical reading, which costs no new parameter: `wm_gain` speeds up
+  **all** white matter identically, everywhere, in every subject. `tract_gain`
+  speeds up only the bundles that pass through *this* tumor. A tumor whose escape
+  route happens to be a white matter highway is helped by either; every other
+  subject is only inflated by the global one. So the median preferring 1.0 may be
+  the data saying *steer with the corridors, not with the tissue class* — which is
+  what the corridor null found from the other direction.
+
+  **This does not argue for more tissue multipliers.** A dial for a tissue type
+  only a few subjects' tumors touch is fitted on a few subjects. The test for any
+  new parameter is whether it improves the **held-out** score, never the fitted
+  one. The genuinely unmodelled thing is direction — white matter is anisotropic,
+  and we approximate that with thin corridors rather than tensors.
 
 - **Does the connectome earn its place?** Partly answered. The tract corridors
   do: real streamlines beat random ones 6/6 on three subjects once the test was

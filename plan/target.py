@@ -1,5 +1,6 @@
 # A speed field becomes a target: solve, threshold to a budget, make it deliverable.
 
+import functools
 import subprocess
 
 import nibabel as nib
@@ -18,6 +19,18 @@ def risk(subject, ceiling_mm=CEILING_MM, **params):
     # no narrow band: it is measured in travel time, and the cap below is
     # measured in millimeters, so the two no longer mean the same thing
     return march.travel(field(subject, **params), tum)
+
+
+@functools.lru_cache(maxsize=64)
+def reachable(subject, ceiling_mm=CEILING_MM):
+    # the most the target could ever take: inside the cap and not behind a
+    # barrier. Every gain scales a positive speed, so which voxels end up with a
+    # finite arrival time is fixed by the barriers alone and does not move when
+    # a parameter does. That makes this a property of the subject, and the only
+    # honest denominator for "how much is the target being asked to reject".
+    tum = np.asarray(_seg(subject)[0]) > 0
+    return volume(subject, (expand(subject, ceiling_mm)
+                            & np.isfinite(risk(subject))) | tum)
 
 
 def shape(subject, budget_ml, travel_time, floor_mm=FLOOR_MM,

@@ -320,29 +320,46 @@ residual deformation 0.92 to 1.38 mm, 95th percentile 3.2 to 4.1 mm. The mean is
 well inside a voxel. The tail is comparable to the effects being measured, so it
 is worth stating as a limitation, but it is not corrupting anything.
 
-## The fit and the null do not use the same budget
+## The fit's budget is a share of reachable, not of the clinical plan
 
-Noticed while explaining the fit, not yet measured.
+`fit.BUDGET` was **0.4 of the subject's RTOG plan**, while the corridor null used
+a budget **rejecting 45% of the reachable region**. Since the score is only
+sensitive to the parameters when the target has to reject volume, the fraction
+rejected is the thing that has to be held fixed, and two different denominators
+cannot both hold it fixed.
 
-`fit.BUDGET` is **0.4 of the subject's RTOG plan**. The corridor null instead
-uses a budget that **rejects 45% of the reachable region**. Those denominators
-are not the same quantity, and the fraction the target is forced to reject is
-what decides whether the speed field gets to choose at all.
+**The size of the problem was overestimated when it was first raised.** The claim
+was that plans running 265 to 926 mL against a roughly constant reach would make
+the rejected fraction swing wildly. That reasoning was wrong: the reach is not
+constant. `rtog` is a 20 mm shell around the segmentation clipped to the brain,
+and the reachable region is the same shell clipped to the brain *and* to what is
+not behind a barrier. They are the same object minus the dural block, so they
+track each other closely. Measured across a five-fold range of tumor size:
 
-The plan volume ranges 265 to 709 mL across the 43 subjects, median 455. The
-reachable region ran near 330 mL on the subjects measured. So 0.4 of a 709 mL
-plan is 284 mL against a ~330 mL reach — nearly binding — while 0.4 of a 265 mL
-plan rejects most of what it could take. **Every subject in the fit is being
-asked to reject a different fraction**, and the score is a median across them.
+| subject | reach | plan | reach/plan | rejected at 0.4 x plan |
+|---|---|---|---|---|
+| 00133_11 | 164.9 | 165.0 | 0.999 | 0.600 |
+| 00140_11 | 163.2 | 170.6 | 0.957 | 0.582 |
+| 00088_21 | 814.6 | 872.0 | 0.934 | 0.572 |
+| 00093_21 | 854.1 | 926.5 | 0.921 | 0.566 |
 
-**Why we accept it for now.** 0.4 is comfortably clear of the cap for the median
-subject, and `capped` subjects are dropped rather than scored wrongly, so the
-failure mode is lost power rather than a wrong answer.
+So the real spread was about three points, not the large one asserted. The only
+thing that varies is how much of each subject's shell sits behind the falx or
+tentorium.
 
-**What would change it.** One measurement: reachable volume against 0.4 x plan,
-per subject. If the rejected fraction swings as widely as the arithmetic above
-suggests, the fit should take a share of **reachable**, matching the null, so
-every subject is asked the same question.
+**Changed anyway**, to `0.55 * target.reachable`, because it costs nothing and
+removes the variation by construction rather than by luck: every subject now
+rejects exactly 45%, the same question the corridor null asks. What varies
+instead is the budget as a share of the clinical plan, which is a reporting
+quantity and belongs in the output. `fit.rejected(pairs)` prints both.
+
+`target.reachable` is cached per subject and is parameter-independent: every
+gain scales a strictly positive speed, so which voxels end up with a finite
+arrival time is fixed by the barriers alone.
+
+**What would change it.** Nothing about the denominator. The remaining question
+is whether 45% is the right amount to reject, which is an operating point rather
+than a definition, and the coverage-versus-volume curve is what answers it.
 
 ## Open questions with no owner
 

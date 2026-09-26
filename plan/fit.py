@@ -18,9 +18,13 @@ BOX = {"wm_gain": (1.0, 10.0), "tract_gain": (1.0, 6.0), "risk_gain": (0.0, 4.0)
 DEFAULTS = {"wm_gain": speed.WM_GAIN, "tract_gain": speed.TRACT_GAIN,
             "risk_gain": speed.RISK_GAIN}
 
-# a share of the RTOG 2 cm plan, not a volume: every subject gets its own scale.
-# past roughly half, the geodesic ceiling binds and subjects start dropping out
-BUDGET = 0.4
+# a share of what the target could reach, not of the clinical plan. Both give
+# every subject its own scale, but only this one holds the question fixed: the
+# score is only sensitive to the parameters when the target has to reject
+# volume, and a share of the plan rejects a different fraction on every subject
+# because plans run 265 to 709 mL against a reach that tracks the tumor instead.
+# 0.55 leaves 45% of the reachable region on the table, matching the corridor null.
+BUDGET = 0.55
 
 # a median over fewer than this many subjects says more about which ones
 # survived than about the parameters
@@ -43,7 +47,22 @@ def _named(vector):
 
 @functools.lru_cache(maxsize=64)
 def budget_ml(first, share=BUDGET):
-    return share * baseline.volume(first, baseline.rtog(first))
+    return share * target.reachable(first)
+
+
+def rejected(pairs, share=BUDGET):
+    # the diagnostic the budget change exists for: every subject should be
+    # asked to reject the same fraction, and the plan share should be the thing
+    # that varies rather than the question
+    rows = []
+    for first, _ in pairs:
+        reach, plan = target.reachable(first), baseline.volume(first, baseline.rtog(first))
+        want = share * reach
+        rows.append({"subject": first[-5:], "reach_ml": round(reach, 1),
+                     "plan_ml": round(plan, 1), "budget_ml": round(want, 1),
+                     "rejects": round(1.0 - want / reach, 3),
+                     "of_plan": round(want / plan, 3)})
+    return rows
 
 
 @functools.lru_cache(maxsize=256)

@@ -178,9 +178,13 @@ def interval(first):
     return (day(dates[1]) - day(dates[0])).days
 
 
-def pairs():
-    # every patient with both timepoints segmented and in MNI
-    have = {d.name for d in OUTPUTS.iterdir() if (d / "seg_in_mni.nii.gz").exists()}
+def pairs(tissue=False):
+    # every patient with both timepoints segmented and in MNI. Anything that
+    # builds a target needs the first scan's tissue map too, and asking for one
+    # that is missing quietly runs SynthSeg, so those callers pass tissue=True
+    have = {d.name for d in OUTPUTS.iterdir() if (d / "seg_in_mni.nii.gz").exists()
+            and (not tissue or not d.name.endswith("_11")
+                 or (d / "tissue_in_mni.nii.gz").exists())}
     return [(name, name[:-2] + "21") for name in sorted(have)
             if name.endswith("_11") and name[:-2] + "21" in have]
 

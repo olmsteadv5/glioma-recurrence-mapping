@@ -18,7 +18,18 @@ def risk(subject, ceiling_mm=CEILING_MM, **params):
     tum = np.asarray(_seg(subject)[0]) > 0
     # no narrow band: it is measured in travel time, and the cap below is
     # measured in millimeters, so the two no longer mean the same thing
-    return march.travel(field(subject, **params), tum)
+    time = march.travel(field(subject, **params), tum)
+
+    # a wall voxel is the end of a road, not a road: reachable from the side the
+    # front arrived on, never passed through. The sheets are two voxels thick and
+    # run along midline tumors, so without this a recurrence lying against the
+    # falx is unreachable, when a plan clipped at the falx would still dose it
+    m = barriers.masks(subject)
+    sheet = m["falx"] | m["tentorium"]
+    bank = ndimage.minimum_filter(np.where(sheet, np.inf, time), size=3)
+    edge = sheet & ~np.isfinite(time) & np.isfinite(bank)
+    time[edge] = bank[edge] + 1.0
+    return time
 
 
 @functools.lru_cache(maxsize=64)

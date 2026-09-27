@@ -8,6 +8,7 @@ import numpy as np
 
 from paths import MNI, REGIONS, out_dir
 from plan import baseline, conduits, target
+from plan.speed import FLOOR_MM
 from plan.measure import _ml, _seg
 from yale import atlas, connect
 from yale import tracts as tractography
@@ -80,11 +81,20 @@ def spared(first, later, region=None, **params):
     # the headline endpoint: cover what the standard 2 cm plan covers, and count
     # the brain each shape needs to do it. Shrinking the uniform margin alone
     # already spares a lot, so the method only earns what it saves past that
+    data, _ = _seg(later)
+    if not (data > 0 if region is None else np.isin(data, REGIONS[region])).any():
+        # nothing of this compartment came back, so there is nothing to cover
+        return {"region": region or "all", "skipped": "absent at the later scan"}
     plan = baseline.rtog(first)
     plan_ml = baseline.volume(first, plan)
     want = coverage(later, plan, region)["coverage"]
 
-    iso = smallest(first, later, lambda f, v: baseline.isotropic(f, v)[0],
+    # the uniform expansion gets the same 5 mm minimum our target is held to.
+    # Without it, a recurrence sitting inside the first outline is matched by a
+    # 0 mm margin no one would treat with, and ours loses by its floor alone
+    floor_ml = baseline.volume(first, baseline.expand(first, FLOOR_MM))
+    iso = smallest(first, later,
+                   lambda f, v: baseline.isotropic(f, max(v, floor_ml))[0],
                    want, plan_ml * 1.05, region)
     time = target.risk(first, **params)
     ours = smallest(first, later,

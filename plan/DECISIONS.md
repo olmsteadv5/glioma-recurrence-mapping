@@ -371,6 +371,52 @@ A useful side effect: this endpoint satisfies the precondition that sank the
 first three null runs automatically. It asks for the least volume, so the target
 is always forced to reject most of what it could reach.
 
+### Three faults the first run of the new endpoint exposed
+
+The first pass over 21 patients was discarded. Each fault below favored one arm
+or corrupted a patient, and all three were fixed before the rerun was looked at.
+
+**The uniform comparator had no floor.** Our target can never go below tumor
+plus 5 mm. The smallest uniform expansion could, all the way to 0 mm. Where the
+later enhancing tumor sits inside the first outline, which is common, a 0 mm
+"expansion" matched it and ours lost by exactly its floor: 00052 went 102 mL
+against 177. No one treats with a 0 mm margin, so the uniform expansion is now
+held to the same 5 mm minimum. Its floor ignores the walls and ours respects
+them, so it is a few voxels larger than ours; that leans slightly against us.
+
+**A patient with nothing to cover was scored.** 00160 has no enhancing tumor at
+the later scan. Coverage of an empty set is 0, so every shape "matched" at its
+minimum and ours was charged 70 mL. A compartment absent at the later scan is
+now skipped for that patient and reported as skipped.
+
+**The walls were unreachable even from their own side.** Four patients failed
+outright because the target could not reach the plan's coverage. For three of
+them, 89 to 100% of the unreachable recurrence lay on wall voxels themselves:
+the falx and tentorium are drawn about two voxels thick, they run along midline
+tumors, and in 00129 over 3,000 wall voxels fall inside the first tumor. Speed
+zero there means the front never arrives, so a recurrence lying against the
+falx could not be covered, when a plan clipped at the falx would still dose it.
+
+`target.risk` now gives a wall voxel an arrival time one step past its earliest
+open neighbor, after the march. That makes the near face of a wall reachable
+and nothing beyond it, because nothing is propagated through: the march is not
+rerun. Unreachable enhancing recurrence fell from 10.3% to 1.5% (00129), 6.3%
+to 0.3% (00352) and 4.2% to 2.2% (00122). Carving the wall out of the tumor was
+considered and rejected: it opens a hole in the falx exactly where the tumor
+touches it and lets the front into the other hemisphere.
+
+What remains unreachable is real: tissue sealed behind a wall, or recurrence
+on the far face of one. 00307's small shortfall is different in kind, about 1%
+lost to edge smoothing at the reach limit, which the unsmoothed plan does not
+pay. Every earlier result, the corridor nulls included, was computed under the
+old wall rule; the change touches every target equally, but those numbers are
+from before it.
+
+**Also:** an analysis that asked for a patient with no tissue map quietly ran
+SynthSeg to make one, and did so while the cohort job was running SynthSeg,
+which is how 00036 was killed once for memory. `measure.pairs(tissue=True)`
+now skips such patients instead.
+
 ## What the structure-versus-optimizer argument settled
 
 Two advocates argued it out. They converged on four things, which are now done:

@@ -324,6 +324,53 @@ interesting variance lives there. Promoting it now would be choosing the metric
 that flatters the method. Reporting both, with this note, is honest; swapping
 them is not.
 
+## The endpoint changed: less brain at the coverage the standard plan achieves
+
+**Supersedes the primary above, on 2026-09-27, at the project lead's direction.**
+
+The project's own goal was always stated as *at any given volume, favorably less,
+beat the isotropic version*, which is volume at equal coverage. The section above
+made coverage at equal volume primary instead, and that was the wrong way round
+for this data.
+
+What forced it into the open was not a method result. `measure.overlap` showed
+the 2 cm plan already contains essentially all of the later **enhancing** tumor
+in most patients (median 99% within 2 cm of the core). At the plan's volume,
+coverage of that compartment has nowhere to go, so a coverage-at-equal-volume
+test there cannot show anything either way. The question that remains open is
+how little brain it takes to keep that coverage.
+
+**The endpoint, per patient** (`planeval.spared`):
+
+1. The coverage to match is whatever the RTOG 2 cm plan catches of that
+   patient's later tumor.
+2. Find the smallest uniform expansion that still reaches it, and the smallest
+   connectome target that still reaches it, each to within half a percentage
+   point, by bisection on volume.
+3. **Headline: the target's volume minus the uniform expansion's**, in mL. The
+   saving against the plan itself is reported too, but most of it is earned by
+   shrinking the uniform margin, which needs no model at all; the method is only
+   credited with what it saves beyond that.
+4. A target that cannot reach the coverage at all, because a barrier or the
+   20 mm reach sits between the tumor and part of the recurrence, is reported as
+   a failure and counted as a loss in the sign test, never silently dropped.
+
+Across patients the test is paired and at the patient level, Wilcoxon on the
+per-patient savings, for the reason recorded under the hundred-draw null.
+
+**Which compartment is still undecided** (see the section on that); both the
+whole segmentation and enhancing tumor are computed.
+
+**Honesty about timing.** One patient, 00055, was computed as a smoke test before
+this was written (ET: uniform 165 mL, target 150 mL; whole: 305 vs 281 mL). No
+other result on this endpoint had been seen. The old primary is kept and
+reported as secondary; the corridor null remains valid for what it measured,
+coverage of the whole segmentation at matched volume.
+
+A useful side effect: this endpoint satisfies the precondition that sank the
+first three null runs automatically. It asks for the least volume, so the target
+is always forced to reject most of what it could reach.
+
 ## What the structure-versus-optimizer argument settled
 
 Two advocates argued it out. They converged on four things, which are now done:

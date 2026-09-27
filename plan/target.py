@@ -82,11 +82,12 @@ def shape(subject, budget_ml, travel_time, floor_mm=FLOOR_MM,
     return (blurred >= 0.5) | tum, satellites
 
 
-def build(subject, budget_ml, tol=0.01, **params):
+def build(subject, budget_ml, tol=0.01, travel_time=None, **params):
     take = {k: params.pop(k) for k in ("floor_mm", "satellite_ml") if k in params}
     ceiling = params.get("ceiling_mm", CEILING_MM)
     sigma = params.get("sigma_mm", SIGMA_MM)
-    travel_time = risk(subject, **params)
+    # a search over budgets reuses one solve; the field does not depend on them
+    travel_time = risk(subject, **params) if travel_time is None else travel_time
 
     # closing and smoothing move the volume, so ask for less until it lands.
     # the ceiling can make the budget unreachable, and then asking for more

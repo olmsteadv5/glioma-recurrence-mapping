@@ -6,7 +6,7 @@ import statistics
 import nibabel as nib
 import numpy as np
 
-from paths import MNI, out_dir
+from paths import MNI, REGIONS, out_dir
 from plan import baseline, conduits, target
 from plan.measure import _ml, _seg
 from yale import atlas, connect
@@ -25,10 +25,11 @@ MATCHED = ("isotropic", "flair", "barriers", "target", "null")
 METHODS = ("rtog", "estro") + MATCHED
 
 
-def coverage(later, mask):
-    # the share of the later tumor a target catches
+def coverage(later, mask, region=None):
+    # the share of the later tumor a target catches; region None is the whole
+    # segmentation, which every number before the endpoint change was scored on
     data, image = _seg(later)
-    hit = data > 0
+    hit = data > 0 if region is None else np.isin(data, REGIONS[region])
     caught = float((hit & mask).sum())
     return {"coverage": round(caught / max(float(hit.sum()), 1), 4),
             "caught_ml": round(caught * _ml(image), 2),
@@ -54,6 +55,48 @@ def volume_for(first, later, method, want, lo=10.0, hi=900.0, tol=0.005):
             break
         lo, hi = (mid, hi) if got < want else (lo, mid)
     return round(mid, 1), round(got, 4)
+
+
+def smallest(first, later, method, want, hi, region=None, tol=0.005, step_ml=1.0):
+    # the least volume a method needs to still reach a coverage. None when even
+    # its largest target falls short, which for ours means a barrier or the
+    # 20 mm reach sits between the tumor and part of the recurrence
+    best = method(first, hi)
+    if coverage(later, best, region)["coverage"] < want - tol:
+        return None
+    lo = 1.0
+    while hi - lo > step_ml:
+        mid = (lo + hi) / 2
+        mask = method(first, mid)
+        if coverage(later, mask, region)["coverage"] >= want - tol:
+            hi, best = mid, mask
+        else:
+            lo = mid
+    return {"volume_ml": baseline.volume(first, best),
+            "coverage": coverage(later, best, region)["coverage"]}
+
+
+def spared(first, later, region=None, **params):
+    # the headline endpoint: cover what the standard 2 cm plan covers, and count
+    # the brain each shape needs to do it. Shrinking the uniform margin alone
+    # already spares a lot, so the method only earns what it saves past that
+    plan = baseline.rtog(first)
+    plan_ml = baseline.volume(first, plan)
+    want = coverage(later, plan, region)["coverage"]
+
+    iso = smallest(first, later, lambda f, v: baseline.isotropic(f, v)[0],
+                   want, plan_ml * 1.05, region)
+    time = target.risk(first, **params)
+    ours = smallest(first, later,
+                    lambda f, v: target.build(f, v, travel_time=time, **params)[0],
+                    want, target.reachable(first), region)
+    out = {"region": region or "all", "plan_ml": plan_ml, "want": want,
+           "isotropic_ml": iso and iso["volume_ml"],
+           "target_ml": ours and ours["volume_ml"]}
+    if iso and ours:
+        out["vs_plan_ml"] = round(plan_ml - ours["volume_ml"], 1)
+        out["vs_isotropic_ml"] = round(iso["volume_ml"] - ours["volume_ml"], 1)
+    return out
 
 
 def sphere(first, volume_ml):

@@ -258,6 +258,48 @@ lands, measured at one budget and one tube width.
 null distribution rather than beyond it. Or the effect vanishing once the full
 cohort lands.
 
+### A hundred draws, five subjects: one of them goes the other way
+
+Same test, 100 draws per subject, tube 2 mm, budget rejecting 45% of reachable,
+all parameters at defaults.
+
+| subject | real | null mean | sd | gap | z | beat | p |
+|---|---|---|---|---|---|---|---|
+| 00055 | 0.9040 | 0.8857 | 0.0054 | +0.0183 | 3.4 | 100/100 | 0.010 |
+| 00285 | 0.7365 | 0.7287 | 0.0026 | +0.0078 | 3.0 | 100/100 | 0.010 |
+| 00352 | 0.5018 | 0.4860 | 0.0040 | +0.0158 | 4.0 | 100/100 | 0.010 |
+| 00129 | 0.5618 | 0.5713 | 0.0021 | -0.0095 | -4.5 | 0/100 | 1.000 |
+| 00307 | 0.8302 | 0.8165 | 0.0101 | +0.0137 | 1.4 | 90/100 | 0.109 |
+
+p = 0.010 is the floor for 100 draws, so three subjects are pinned at it.
+
+**00129 is a real reversal, not noise.** Its true corridors were beaten by every
+random draw. It is the subject already recorded above as recurring into cortex
+while the target spent its budget along white matter: the corridors describe
+where cells travel, and on this subject that is not where they settled.
+
+**The combined p depends entirely on which question is asked.**
+
+- Fisher's method gives chi2 = 32.1, df 10, **p = 3.8e-4**. It cannot register a
+  reversal: a subject at p = 1.000 contributes zero, so going significantly
+  backwards costs the statistic nothing. It answers "is at least one subject
+  non-null", which is not the claim.
+- The claim is about patients, so the patient is the unit. On the five gaps:
+  mean +0.0092, **t = 1.85, one-sided p = 0.069**; Wilcoxon **p = 0.094**; sign
+  test 4 of 5 positive, **p = 0.19**.
+
+**What it licenses.** Within most subjects the tract geometry carries
+information about where recurrence lands, overwhelmingly so. Across subjects,
+at n = 5, there is no population-level effect, and one subject shows the
+information can point the wrong way.
+
+**Declared now, before the cohort is run:** the patient-level test on the gaps is
+the primary statistic for this null. Fisher is reported, labeled for what it is.
+
+**What would change it.** The full cohort. If reversals like 00129 turn out to be
+the recurrence-into-cortex subjects specifically, that is a finding about routes
+versus destinations and argues for the disruption term, not against the corridors.
+
 ## Endpoints, declared before the numbers exist
 
 Written down now, deliberately, so that neither can be chosen later on the
@@ -389,8 +431,9 @@ than a definition, and the coverage-versus-volume curve is what answers it.
   and we approximate that with thin corridors rather than tensors.
 
 - **Does the connectome earn its place?** Partly answered. The tract corridors
-  do: real streamlines beat random ones 6/6 on three subjects once the test was
-  built so it could detect a difference. The disruption term does not: permuting
+  carry information within subjects: at 100 draws, four of five subjects beat
+  the null and three at the floor. But one reversed at z -4.5, and across
+  patients the effect is p = 0.069 at n = 5. See the hundred-draw section above. The disruption term does not: permuting
   the connectivity matrix changes nothing, because at `risk_gain = 1` it is a
   3.5% speed nudge beside a 400% one. Either give it real weight and retest, or
   drop it and say so.

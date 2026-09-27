@@ -417,6 +417,23 @@ SynthSeg to make one, and did so while the cohort job was running SynthSeg,
 which is how 00036 was killed once for memory. `measure.pairs(tissue=True)`
 now skips such patients instead.
 
+### First result on 27 patients: the best case, after the three fixes
+
+Default dials, nothing tuned. This is the best-case reading, which picks each
+volume from the later scan, so under the three-level plan it is supporting
+evidence only.
+
+| recurrence counted as | patients | ours smaller than the best uniform expansion | median saved | test |
+|---|---|---|---|---|
+| whole abnormality | 27 | 23 of 27 | 27 mL (8%) | Wilcoxon p = 0.001, sign p < 0.001 |
+| enhancing tumor | 25 matched, 1 unreachable (00122), 1 skipped (00160) | 16 of 25 | 3 mL (1%) | Wilcoxon p = 0.34, sign p = 0.16 |
+
+On the whole abnormality the shape clearly helps. On enhancing tumor it is a
+tie, with a few large losses (00307, 00353 and 00183 each need 160 to 200 mL
+more than the uniform expansion) that have not been examined yet. So which
+compartment counts as the recurrence is no longer only a definitional question:
+at the defaults, it decides whether there is a result.
+
 ## What the structure-versus-optimizer argument settled
 
 Two advocates argued it out. They converged on four things, which are now done:

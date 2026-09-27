@@ -1,8 +1,7 @@
 # Where the recurrence sits relative to the first tumor, in MNI, the frame both share.
 
-import datetime
+import csv
 import functools
-import json
 
 import nibabel as nib
 import numpy as np
@@ -164,18 +163,21 @@ def overlap(first, later, region="WT"):
 
 
 @functools.lru_cache(maxsize=1)
-def _dates():
-    # study dates from the TCIA query, one list per patient
-    path = OUTPUTS / "study_dates.json"
-    return json.loads(path.read_text()) if path.exists() else {}
+def _days():
+    # the dataset's own interval for each follow-up scan. Reconstructing it from
+    # TCIA study dates is wrong for 00130, which has an extra study 11 days before
+    # the one the release curated as its follow-up
+    path = OUTPUTS / "participants.tsv"
+    if not path.exists():
+        return {}
+    with open(path) as fh:
+        rows = csv.DictReader(fh, delimiter="\t")
+        return {r["ID"]: r["Time_since_baseline_preop"] for r in rows}
 
 
 def interval(first):
-    dates = _dates().get(first.rsplit("_", 1)[0], [])
-    if len(dates) < 2:
-        return None
-    day = datetime.date.fromisoformat
-    return (day(dates[1]) - day(dates[0])).days
+    days = _days().get(first[:-2] + "21")
+    return int(days) if days and days.isdigit() else None
 
 
 def pairs(tissue=False):

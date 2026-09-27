@@ -434,6 +434,54 @@ more than the uniform expansion) that have not been examined yet. So which
 compartment counts as the recurrence is no longer only a definitional question:
 at the defaults, it decides whether there is a result.
 
+## The cohort, and how we know it is complete
+
+**41 patient pairs.** Three independent sources agree on exactly the same 41:
+
+- the release's own participants table (`outputs/participants.tsv`): 671
+  scans, 611 baselines (`_11`), 60 follow-ups (`_21`), 41 patients with both
+- the public mirror's file list: 41 patients with a `sub-NNN_2` scan, all four
+  sequences present for both timepoints, no third timepoints
+- the TCIA API: 43 patients with two study dates, the 41 plus two below
+
+Excluded, with reasons:
+
+- **00156 and 00542.** Two TCIA study dates, 1 and 2 days apart: the same tumor
+  scanned twice, not a follow-up. The curated release does not include a
+  second timepoint for either.
+- **00612 to 00630, 19 patients.** Only a follow-up scan exists in the
+  collection; there is no baseline to compare against. The mirror names that
+  single scan `sub-NNN` with no `_2`, so the pipeline would label it `_11`;
+  none of them are ever fetched as a pair.
+
+**00042 and 00051 were missed at first and are included.** Both were processed
+early, first scan only, and the to-do list treated a patient with an output
+folder as done. Found by checking against the mirror rather than our own lists.
+
+**The interval comes from the release, not from TCIA dates.** 00130 has an
+extra single-series study 11 days before its curated follow-up, so taking the
+second TCIA date gave 433 days where the release says 444. `measure.interval`
+now reads `Time_since_baseline_preop` from the participants table.
+
+**One segmentation model for every scan.** All scans were segmented on CPU by
+the BraTS 2025 adult glioma **second-place** entry, `brainles/brats25_gli_ecnu`,
+image digest `sha256:c2a27297deab0638296e8b90569d19f7dfda1519ed116093cb2602fa8f1f1596`,
+built 2025-08-07 and never re-pulled. The winning entry needs CUDA. Checked
+against every scan's own segmentation log, not the summary file, since four
+early scans predate the pipeline recording which algorithm it used.
+
+**Download integrity.** Every input file's size matches the mirror's recorded
+asset size to the byte.
+
+**Registration between timepoints**, all pairs: brain Dice 0.978 to 0.990,
+median 0.988.
+
+**Found in passing, not yet used:** the mirror carries reconstructed diffusion
+imaging (DSI Studio GQI and QSDR) for 493 baselines and 38 follow-ups, and the
+participants table scores each follow-up on a 1 to 6 `PsP_TP_score`, which
+appears to grade pseudoprogression against true progression. Its exact meaning
+has to be confirmed from the release documentation before it is used.
+
 ## What the structure-versus-optimizer argument settled
 
 Two advocates argued it out. They converged on four things, which are now done:

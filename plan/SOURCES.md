@@ -163,6 +163,21 @@ search result and the primary source has not been checked. **Do not promote a
 ## Distances and caps
 
 ```
+[lee99]     [secondary]
+            Lee SW, Fraass BA, Marsh LH, et al. Patterns of failure following
+            high-dose 3-D conformal radiotherapy for high-grade astrocytomas: a
+            quantitative dosimetric study. Int J Radiat Oncol Biol Phys. 1999.
+            https://pubmed.ncbi.nlm.nih.gov/9989517/
+            -> the central / in-field / marginal / distant classification
+            -> cutoffs >95%, 80-95%, 20-80%, <20% of the recurrence volume
+               inside the high-dose volume, as later papers apply them:
+               https://pmc.ncbi.nlm.nih.gov/articles/PMC9872393/
+            -> secondary because the cutoffs were read from citing papers, not
+               the original; confirm against the 1999 text before publishing
+            -> we have no dose, so measure.overlap substitutes 2 cm from the
+               tumor core for the 60 Gy volume, which is smaller than a real 95%
+               isodose (no PTV margin) and so undercounts central and in-field
+
 [recur21]   [secondary]
             Limited recurrence distance of glioblastoma under modern
             radiotherapy era. BMC Cancer. 2021.

@@ -403,6 +403,38 @@ arrival time is fixed by the barriers alone.
 is whether 45% is the right amount to reject, which is an operating point rather
 than a definition, and the coverage-versus-volume curve is what answers it.
 
+## Which compartment counts as the recurrence
+
+**Open, and for the supervisor to settle before the model goes further.**
+
+`planeval.coverage` scores a target against the **whole** later segmentation,
+`data > 0`: enhancing tumor, necrosis, and FLAIR hyperintensity together. Every
+coverage number so far, the corridor null included, is therefore mostly a
+measure of catching edema.
+
+`measure.overlap` on the first 21 pairs shows the compartments behave very
+differently:
+
+| later compartment | median share on the first tumor | median share within 2 cm (60 Gy proxy) | margin covering 95% of it | pattern |
+|---|---|---|---|---|
+| whole (WT) | 0.40 | 0.72 | 20.3 mm | 3 central, 5 in-field, 13 marginal |
+| core (TC) | 0.36 | 0.99 | 4.9 mm | 14 central, 3 in-field, 3 marginal |
+| enhancing (ET) | 0.19 | 0.99 | 5.7 mm | 14 central, 2 in-field, 4 marginal |
+
+Clinical recurrence is conventionally read from new **enhancement**, and on that
+definition a 2 cm margin already contains essentially all of it in most
+patients. If the endpoint moves to ET, coverage has almost no room to improve
+and the claim becomes volume spared at equal coverage. If it stays on WT, the
+method is being scored on where FLAIR signal spreads, which is partly edema and
+partly infiltration, and the result has to be described that way.
+
+**Caveats on the table itself.** `_11` is pre-operative and `_21` is simply the
+next study, so a later scan is not always a recurrence: 00055 at 31 days is
+untreated growth. Treatment status is not recorded and can only be inferred
+from `kept`. Volumes are in MNI. The 60 Gy proxy is 2 cm from the core with no
+PTV margin, so it is smaller than a real 95% isodose and the pattern counts lean
+toward marginal.
+
 ## Open questions with no owner
 
 - **What is the correct `wm_gain`, if the concept survives at all?** The sweep so

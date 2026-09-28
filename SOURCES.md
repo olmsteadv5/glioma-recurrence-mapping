@@ -27,6 +27,12 @@ The reference behind each `# why: ... [tag]` comment in the code.
                outside less than 20%
             -> the paper calls the last class "outside"; later papers call it
                "distant", which is the word our overlap CSV uses
+            -> its 71 patients had "high-grade supratentorial astrocytomas",
+               which in 1999 meant grade III and grade IV, glioblastoma being
+               the grade IV astrocytoma. The abstract gives no split by grade.
+               We borrow only the classes, which are defined by geometry against
+               the high-dose region and are applied to glioblastoma routinely,
+               e.g. https://pmc.ncbi.nlm.nih.gov/articles/PMC9872393/
             -> we have no dose, so measure.overlap substitutes 2 cm from the
                tumor core for the 60 Gy volume, which is smaller than a real 95%
                isodose (no PTV margin) and so undercounts central and in-field

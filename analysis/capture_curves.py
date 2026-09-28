@@ -12,6 +12,7 @@ import numpy as np
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.ticker import PercentFormatter
+from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -110,8 +111,10 @@ def figure(reach, top, path):
     fig.text(0.075, 0.005, "Grey line = patient. Colored line = median. "
              "Shaded band = middle 50 percentile.", color=FAINT, fontsize=8.5)
     fig.subplots_adjust(hspace=0.42)
-    fig.savefig(path)
+    fig.savefig(path, facecolor="white", transparent=False)
     plt.close(fig)
+    # no alpha channel at all, since some viewers paint a checkerboard for one
+    Image.open(path).convert("RGB").save(path)
 
 
 def main():

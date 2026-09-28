@@ -6,15 +6,14 @@ import os
 import nibabel as nib
 import numpy as np
 import pyvista as pv
-from scipy import ndimage
 from vtkmodules.util.numpy_support import vtk_to_numpy
 from vtkmodules.vtkRenderingCore import vtkCellPicker, vtkWindowToImageFilter
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw
 
 from show import view
 from yale import atlas
 from yale import tracts as tractography
-from geometry import MARGIN_MM, grow, outline
+from geometry import grow, outline, template_brain
 from paths import LABELS, MNI, MODALITIES, modality, out_dir, raw_dir, stripped_dir
 
 pv.OFF_SCREEN = True
@@ -206,7 +205,7 @@ class Scene:
             points, faces = held["vertices"], held["faces"]
         else:
             image = nib.load(out_dir(self.subject) / "seg_in_mni.nii.gz")
-            grown = grow(image, np.asarray(nib.load(MNI).dataobj) > 0)
+            grown = grow(image, template_brain())
             points, faces = view._tumor_surface(grown.astype(np.int16), image.affine, 1)
             np.savez_compressed(cache, vertices=points, faces=faces)
         self.actors["T:margin"] = self._mesh(points, faces, _hex(MARGIN), 0.25)
@@ -930,7 +929,6 @@ class Chart:
     def _key(self, canvas, pen, wide, high):
         # the same box as every other panel: panel ground, dim round border,
         # a title cut into the top edge, headings over quieter rows
-        font = _font(12)
         rows = sorted(self.where)
         tall = 322 + 14 * len(rows)
         if wide < 760 or high < tall + 40:

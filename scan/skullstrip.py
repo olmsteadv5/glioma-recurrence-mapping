@@ -5,6 +5,7 @@ import subprocess
 import nibabel as nib
 import numpy as np
 
+from geometry import ml_per_voxel
 from paths import (MODALITIES, SYNTHSTRIP, THREADS, modality, out_dir, raw_dir,
                    stripped_dir)
 
@@ -13,7 +14,7 @@ MAX_BRAIN_ML = 2000.0
 
 def _volume_ml(path):
     image = nib.load(path)
-    voxel_ml = float(np.prod(image.header.get_zooms()[:3])) / 1000.0
+    voxel_ml = ml_per_voxel(image)
     return float((np.asarray(image.dataobj) > 0).sum()) * voxel_ml
 
 

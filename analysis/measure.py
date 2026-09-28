@@ -5,10 +5,9 @@ import functools
 
 import nibabel as nib
 import numpy as np
-from scipy import ndimage
 
-from geometry import MARGIN_MM
-from paths import MNI, OUTPUTS, REGIONS, out_dir
+from geometry import MARGIN_MM, distance, ml_per_voxel, template_brain
+from paths import OUTPUTS, REGIONS, out_dir
 
 # why: central >95%, in-field 80-95%, marginal 20-80%, distant <20% of the
 #      recurrence inside the high-dose volume [lee99]
@@ -21,10 +20,6 @@ def _seg(subject):
     return np.asarray(image.dataobj).astype(np.int16), image
 
 
-def _ml(image):
-    return float(np.prod(image.header.get_zooms()[:3])) / 1000.0
-
-
 def _in(data, region):
     return np.isin(data, REGIONS[region])
 
@@ -34,8 +29,7 @@ def _far(subject, region):
     # millimeters from the nearest voxel of the first tumor's region
     data, image = _seg(subject)
     seed = _in(data, region)
-    return ndimage.distance_transform_edt(~(seed if seed.any() else data > 0),
-                                          sampling=image.header.get_zooms()[:3])
+    return distance(seed if seed.any() else data > 0, image)
 
 
 def pattern(share):
@@ -46,7 +40,7 @@ def overlap(first, later, region="WT"):
     # the same compartment at both timepoints, and how far the later one reaches
     a, _ = _seg(first)
     b, image = _seg(later)
-    ml = _ml(image)
+    ml = ml_per_voxel(image)
     was, now = _in(a, region), _in(b, region)
     out = {"region": region, "first_ml": round(float(was.sum()) * ml, 2),
            "later_ml": round(float(now.sum()) * ml, 2)}
@@ -54,7 +48,7 @@ def overlap(first, later, region="WT"):
         return out
 
     shared = float((was & now).sum())
-    brain = np.asarray(nib.load(MNI).dataobj) > 0
+    brain = template_brain()
     # no dose is available, so the two NRG volumes stand in for it: 2 cm from the
     # whole tumor is the 46 Gy one, 2 cm from the core the 60 Gy one, and the
     # literature's pattern classes are defined against the 60 Gy volume

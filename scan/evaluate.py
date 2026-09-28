@@ -2,9 +2,8 @@
 
 import nibabel as nib
 import numpy as np
-from scipy import ndimage
 
-from geometry import MARGIN_MM, grow
+from geometry import MARGIN_MM, grow, ml_per_voxel
 from paths import LABELS, REFERENCE_SEG, REGIONS, out_dir
 
 # old BraTS used 4 for enhancing, 2025 uses 3
@@ -30,7 +29,7 @@ def run(subject, seg_path):
     # Volumes in mL, and Dice if this subject has reference labels.
     image = nib.load(seg_path)
     data = np.asarray(image.dataobj).astype(np.int16)
-    voxel_ml = float(np.prod(image.header.get_zooms()[:3])) / 1000.0
+    voxel_ml = ml_per_voxel(image)
 
     result = {
         "labels_ml": {name: round(float((data == value).sum()) * voxel_ml, 2)

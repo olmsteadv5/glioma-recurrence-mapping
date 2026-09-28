@@ -35,8 +35,8 @@ FG, DIM, FAINT = "#ebdbb2", "#a89984", "#7c6f64"
 OK, WARN, BAD, GONE = "#b8bb26", "#fabd2f", "#fb4934", "#504945"
 SHELL_OPACITY = 0.15
 
-TISSUE = {"NETC": "#f2c14e", "SNFH": "#3fa7d6", "ET": "#e4572e", "RC": "#8e7dbe",
-          "WT": "#d6c8af"}
+# the renderer's colors as hex for the text panels; 0 is the whole tumor
+TISSUE = {LABELS.get(k, "WT"): "#%02x%02x%02x" % rgb for k, rgb in render.TISSUE.items()}
 # the whole tumor as one shape, with its three parts under it
 PARTS = ("T:SNFH", "T:ET", "T:NETC", "T:RC")
 LAYERS = [("shell", "brain surface", "#a89984", 0),
@@ -74,8 +74,7 @@ ABOUT = {
                     "population mean, not this patient.",
 }
 IDLE = "esc leaves · t returns"
-STAGES = ("fetch", "strip", "segment", "register", "map")
-HELP = [("./main.py <n>...", "the whole pipeline, about 3 min a subject"),
+HELP = [("./main.py <n>...", "the whole pipeline, about 5 min a scan"),
         ("--timepoint 2", "on any of these, the follow-up scan"),
         ("fetch <n>...", "download the scans, then everything after"),
         ("strip <n>...", "skull strip and check, then everything after"),

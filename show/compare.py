@@ -7,6 +7,7 @@ import numpy as np
 
 import subprocess
 
+from geometry import ml_per_voxel
 from paths import THREADS, modality, out_dir, stripped_dir
 
 PARTS = ("both", "new", "gone")
@@ -28,7 +29,7 @@ def _split(first, second):
 def against(first, second):
     # first is the earlier scan, second the later one
     parts, a, b, image = _split(first, second)
-    ml = float(np.prod(image.header.get_zooms()[:3])) / 1000.0
+    ml = ml_per_voxel(image)
     shared = float(parts["both"].sum())
     out = {"dice": round(2 * shared / max(float(a.sum() + b.sum()), 1), 3),
            "inside": round(shared / max(float(b.sum()), 1), 3),

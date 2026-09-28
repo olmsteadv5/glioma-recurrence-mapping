@@ -8,6 +8,7 @@ import urllib.request
 import nibabel as nib
 import numpy as np
 
+from geometry import ml_per_voxel
 from paths import ATLAS_DIR, ATLAS_INPUT, LABELS, MNI
 
 BASE = "https://raw.githubusercontent.com/YaleBrainAtlas/YaleBrainAtlas/master/data"
@@ -144,7 +145,7 @@ def overlap(seg_mni, labels, names):
     meta = {p["name"]: p for p in parcels()}
     image = nib.load(seg_mni)
     tumor = np.asarray(image.dataobj).astype(np.int16)
-    voxel_ml = float(np.prod(image.header.get_zooms()[:3])) / 1000.0
+    voxel_ml = ml_per_voxel(image)
     hit = tumor > 0
 
     total = np.bincount(labels.ravel(), minlength=len(names) + 1)

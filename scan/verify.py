@@ -3,6 +3,7 @@
 import nibabel as nib
 import numpy as np
 
+from geometry import ml_per_voxel
 from paths import MODALITIES, modality, out_dir
 
 SHAPE = (240, 240, 155)
@@ -26,7 +27,7 @@ def run(subject, directory):
         if not np.isfinite(data).all():
             problems.append(f"{name}: NaN or Inf")
 
-        voxel_ml = float(np.prod(image.header.get_zooms()[:3])) / 1000.0
+        voxel_ml = ml_per_voxel(image)
         brain_ml = float((data > 0).sum()) * voxel_ml
         if not BRAIN_ML[0] <= brain_ml <= BRAIN_ML[1]:
             problems.append(f"{name}: {brain_ml:.0f} mL outside {BRAIN_ML} - skull left on?")

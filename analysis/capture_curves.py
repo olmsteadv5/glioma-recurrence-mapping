@@ -24,6 +24,10 @@ PARTS = (("ET", "enhancing", "Enhancing tumor", "#2a78d6"),
          ("TC", "core", "Tumor core", "#1baf7a"),
          ("WT", "whole", "Whole abnormality", "#eb6834"))
 TOP_MM = 70
+# why: Lee et al.'s classes by the share of the recurrence inside the high-dose
+#      region: central 95% or more, in-field 80-95, marginal 20-80, outside [lee99]
+LEE = ((0.95, 1.0, "central  ≥95%"), (0.80, 0.95, "in-field  80–95%"),
+       (0.20, 0.80, "marginal  20–80%"), (0.0, 0.20, "outside  <20%"))
 FINE = np.arange(0, TOP_MM + 0.25, 0.25)
 
 INK, SOFT, FAINT, RULE, PATIENT = "#1f2328", "#5c636b", "#8a9199", "#e3e6e9", "#c3c8cd"
@@ -58,8 +62,7 @@ def style():
         "font.family": ["Liberation Sans", "DejaVu Sans"], "font.size": 10,
         "text.color": INK, "axes.labelcolor": SOFT, "axes.edgecolor": FAINT,
         "xtick.color": SOFT, "ytick.color": SOFT, "axes.spines.top": False,
-        "axes.spines.right": False, "axes.grid": True, "axes.grid.axis": "y",
-        "grid.color": RULE, "grid.linewidth": 0.8, "axes.axisbelow": True,
+        "axes.spines.right": False, "axes.grid": False, "axes.axisbelow": True,
         "savefig.dpi": 200, "savefig.bbox": "tight", "figure.facecolor": "white"})
 
 
@@ -77,6 +80,12 @@ def figure(reach, path):
         ax.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
         ax.yaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
         ax.axvline(MARGIN_MM, color=SOFT, lw=0.9, ls=(0, (4, 3)), zorder=1)
+        # the Lee cutoffs stand in for gridlines, named at the right edge
+        for low_share, high_share, name in LEE:
+            if low_share:
+                ax.axhline(low_share, color=RULE, lw=1.0, zorder=1)
+            ax.text(TOP_MM + 1, (low_share + high_share) / 2, name, color=SOFT,
+                    fontsize=8.5, va="center")
         ax.text(MARGIN_MM + 0.6, 0.05, f"{MARGIN_MM} mm", color=SOFT, fontsize=8.5)
         # the median patient's capture where the median crosses the 20 mm line
         at = float(np.median([capture(far, MARGIN_MM) for far in reach[code].values()]))

@@ -14,17 +14,19 @@ The reference behind each `# why: ... [tag]` comment in the code.
             -> roughly a third of patients recur multifocally (31 of 97 in one
                series), some with 3-5 separate lesions
 
-[lee99]     [secondary]
-            Lee SW, Fraass BA, Marsh LH, et al. Patterns of failure following
+[lee99]     [verified]
+            Lee SW, Fraass BA, Marsh LH, Herbort K, Gebarski SS, Martel MK,
+            Radany EH, Lichter AS, Sandler HM. Patterns of failure following
             high-dose 3-D conformal radiotherapy for high-grade astrocytomas: a
-            quantitative dosimetric study. Int J Radiat Oncol Biol Phys. 1999.
+            quantitative dosimetric study. Int J Radiat Oncol Biol Phys.
+            1999;43(1):79-88. doi:10.1016/s0360-3016(98)00266-1
             https://pubmed.ncbi.nlm.nih.gov/9989517/
-            -> the central / in-field / marginal / distant classification
-            -> cutoffs >95%, 80-95%, 20-80%, <20% of the recurrence volume
-               inside the high-dose volume, as later papers apply them:
-               https://pmc.ncbi.nlm.nih.gov/articles/PMC9872393/
-            -> secondary because the cutoffs were read from citing papers, not
-               the original; confirm against the 1999 text before publishing
+            -> the abstract defines four classes by the share of the recurrence
+               volume inside D95, the region treated to 95% of the prescription:
+               central 95% or more, in-field 80% or more, marginal 20 to 80%,
+               outside less than 20%
+            -> the paper calls the last class "outside"; later papers call it
+               "distant", which is the word our overlap CSV uses
             -> we have no dose, so measure.overlap substitutes 2 cm from the
                tumor core for the 60 Gy volume, which is smaller than a real 95%
                isodose (no PTV margin) and so undercounts central and in-field

@@ -126,7 +126,7 @@ def build(subject, budget_ml, tol=0.01, travel_time=None, **params):
 def to_native(subject, mask, name="target"):
     # The atlas inflates a lesion about 13% and a whole brain about 21%, so a
     # volume only means something once it is back on the patient's own grid.
-    import compare
+    from show import compare
 
     reference = modality(stripped_dir(subject), subject, "T1")
     if not reference.exists():

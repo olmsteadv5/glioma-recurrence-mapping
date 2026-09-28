@@ -50,7 +50,6 @@ LIT = (251, 241, 199)
 WHOLE = "WT"
 MARGIN = (177, 98, 134)
 COMPARE = {"both": (235, 219, 178), "new": (251, 73, 52), "gone": (142, 192, 124)}
-MARGIN_MM = 20
 _hex = lambda t: "#%02x%02x%02x" % tuple(t)
 
 
@@ -216,7 +215,7 @@ class Scene:
         # the two timepoints against each other, built the first time it is asked for
         if "C:both" in self.actors:
             return
-        import compare
+        from show import compare
         for name, (points, faces) in compare.surfaces(first, second).items():
             self.actors["C:" + name] = self._mesh(points, faces, _hex(COMPARE[name]), 0.6)
 

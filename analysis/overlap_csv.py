@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/vilem/Projects/brats-upenn-gbm/.venv/bin/python
 # One row per patient: how much of the later tumor sits on, and near, the first.
 
 import csv

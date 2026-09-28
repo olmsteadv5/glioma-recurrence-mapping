@@ -19,7 +19,7 @@ from textual_image._terminal import get_cell_size
 from textual_image.renderable import Image as Renderable
 from textual_image.widget import Image as ImageWidget
 
-import compare
+from show import compare
 from scan import segment
 from show import render
 from yale import atlas, connect, function

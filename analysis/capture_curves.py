@@ -77,11 +77,16 @@ def figure(reach, path):
         ax.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
         ax.yaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
         ax.axvline(MARGIN_MM, color=SOFT, lw=0.9, ls=(0, (4, 3)), zorder=1)
-        ax.text(MARGIN_MM + 0.6, 0.05, "2 cm plan", color=SOFT, fontsize=8.5)
+        ax.text(MARGIN_MM + 0.6, 0.05, f"{MARGIN_MM} mm", color=SOFT, fontsize=8.5)
+        # the median patient's capture where the median crosses the 20 mm line
+        at = float(np.median([capture(far, MARGIN_MM) for far in reach[code].values()]))
+        ax.plot(MARGIN_MM, at, "o", ms=5.5, color=color, mec="white", mew=1.2, zorder=5)
+        ax.text(MARGIN_MM + 0.8, at - 0.1, f"{100 * at:.1f}%".replace(".0%", "%"), color=INK,
+                fontsize=9, zorder=6, bbox={"boxstyle": "round,pad=0.2", "fc": "white", "ec": "none", "alpha": 0.9})
         ax.set_title(f"{label} ({len(grid)})", loc="left", fontsize=11, color=INK, pad=6)
     axes[-1].set_xticks(range(0, TOP_MM + 1, 10))
-    axes[-1].set_xlabel("Uniform margin around the whole original tumor (mm)")
-    fig.supylabel("Later tumor inside the margin", color=SOFT, fontsize=10, x=0.04)
+    axes[-1].set_xlabel("Isotropic expansion (mm)")
+    fig.supylabel("Recurrence captured (% of volume)", color=SOFT, fontsize=10, x=0.04)
     fig.text(0.075, 0.005, "Grey line = patient. Colored line = median. "
              "Shaded band = middle 50 percentile.", color=FAINT, fontsize=8.5)
     fig.subplots_adjust(hspace=0.42)

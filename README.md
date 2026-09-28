@@ -40,6 +40,9 @@ slower because it downloads a 30 GB Docker image. Segmentation uses the BraTS
 ```
 
 This writes `outputs/overlap_review.csv`, one row per patient.
+`./analysis/capture_curves.py` draws how much of the later tumor a uniform
+margin catches from 0 to 70 mm, into `outputs/figures/`, with the numbers
+in `outputs/capture_curves.csv` and `outputs/capture_summary.csv`.
 `analysis/COHORT.md` explains how the 41 patients were chosen and checked.
 
 ## Looking at a patient

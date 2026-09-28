@@ -70,6 +70,17 @@ def overlap(first, later, region="WT"):
     return out
 
 
+def reach(first, later, region="WT"):
+    # how far each voxel of the later tumor sits from the whole first tumor,
+    # sorted. Outside the brain counts as never reached, since a plan stops
+    # at the brain edge. None when that part is absent at the later scan
+    b, _ = _seg(later)
+    now = _in(b, region)
+    if not now.any():
+        return None
+    return np.sort(np.where(template_brain()[now], _far(first, "WT")[now], np.inf))
+
+
 @functools.lru_cache(maxsize=1)
 def _days():
     # the dataset's own interval for each follow-up scan. Reconstructing it from

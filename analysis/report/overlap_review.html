@@ -1,0 +1,202 @@
+<title>Recurrence Overlap Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{--bg:#f7f8f9;--panel:#ffffff;--ink:#1b2127;--ink-2:#55606b;--ink-3:#7a848e;--rule:#dde2e7;--rule-2:#eef1f4;
+  --et:#2a78d6;--wt:#eb6834;--focus:#2a78d6;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15181c;--panel:#1c2025;--ink:#e8ecf0;--ink-2:#a7b0ba;
+  --ink-3:#7d8791;--rule:#2d333a;--rule-2:#23282e;--et:#3987e5;--wt:#d95926;--focus:#3987e5;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#15181c;--panel:#1c2025;--ink:#e8ecf0;--ink-2:#a7b0ba;--ink-3:#7d8791;--rule:#2d333a;
+  --rule-2:#23282e;--et:#3987e5;--wt:#d95926;--focus:#3987e5;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:15px;line-height:1.55;padding-inline:16px}
+main{max-width:900px;margin:0 auto;padding-block:36px 56px;display:grid;gap:40px}
+header{display:grid;gap:10px}
+.eyebrow{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12px;letter-spacing:.04em;color:var(--ink-2);text-transform:uppercase}
+h1{font-size:30px;line-height:1.15;margin:0;font-weight:600;letter-spacing:-.015em;text-wrap:balance}
+h2{font-size:18px;margin:0 0 4px;font-weight:600;text-wrap:balance}
+.lead{font-size:17px;max-width:68ch;margin:6px 0 0}
+section{display:grid;gap:12px}
+.note{color:var(--ink-2);font-size:13.5px;max-width:70ch;margin:0}
+.wrap{overflow-x:auto;border:1px solid var(--rule);border-radius:6px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:9px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--rule-2)}
+tr:last-child th,tr:last-child td{border-bottom:0}
+thead th{font-size:12px;font-weight:500;color:var(--ink-2);letter-spacing:.03em;border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody th{font-weight:400;color:var(--ink);min-width:220px}
+td{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:13.5px;white-space:nowrap}
+.iqr{color:var(--ink-3);font-size:12px;margin-left:6px}
+.def{color:var(--ink-3);font-size:12.5px;margin-left:6px}
+.sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:0}
+#chart{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:14px 10px 6px;position:relative}
+#chart svg{display:block;width:100%;height:auto}
+#chart text{font-family:"IBM Plex Sans",system-ui,sans-serif;fill:var(--ink-2);font-size:12px}
+#chart .lab{fill:var(--ink);font-size:13px;font-weight:500}
+#chart .axis{stroke:var(--rule)} #chart .grid{stroke:var(--rule-2)}
+#chart .ref{stroke:var(--ink-2);stroke-dasharray:4 4}
+#chart .med{stroke:var(--ink);stroke-width:2}
+#chart circle.dot{stroke:var(--panel);stroke-width:1.5}
+#chart circle.hit{fill:transparent;cursor:pointer}
+#chart circle.hit:focus-visible{outline:none;stroke:var(--focus);stroke-width:2}
+#tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);font-size:12.5px;padding:6px 9px;border-radius:4px;
+  white-space:nowrap;transform:translate(-50%,-120%);font-family:"IBM Plex Mono",ui-monospace,monospace}
+.pt td,.pt th{font-size:12.5px;padding:6px 10px}
+.pt tbody th{font-family:"IBM Plex Mono",ui-monospace,monospace;min-width:0}
+.pt .grp{text-align:center;border-bottom:1px solid var(--rule)}
+.pt .gap{border-left:1px solid var(--rule)}
+.pt .muted{color:var(--ink-3)}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+button{font:inherit;font-size:13px;color:var(--ink);background:var(--panel);border:1px solid var(--rule);border-radius:4px;
+  padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--ink-3)} button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+ul{margin:0;padding-left:20px;display:grid;gap:6px;max-width:72ch} li{color:var(--ink-2)} li b{color:var(--ink);font-weight:500}
+dl{margin:0;display:grid;grid-template-columns:minmax(150px,max-content) 1fr;gap:6px 18px;max-width:78ch}
+dt{font-weight:500} dd{margin:0;color:var(--ink-2)}
+@media (max-width:560px){h1{font-size:25px}.lead{font-size:16px}dl{grid-template-columns:1fr}dd{margin-bottom:8px}}
+footer{color:var(--ink-3);font-size:12.5px;font-family:"IBM Plex Mono",ui-monospace,monospace}
+</style>
+
+<main>
+<header>
+  <div class="eyebrow">UPenn-GBM · 41 patients · pre-operative scan against the next scan</div>
+  <h1>How much of the later tumor overlaps the original?</h1>
+  <p class="lead">Recurrent enhancing tumor seldom lands on the original enhancing tumor: in the median patient only 18% of it does. But it almost always lands close. In 26 of 40 patients all of it was inside the standard 2 cm plan, and a margin of 5.7 mm would have caught 95% of it in the median patient. The whole abnormality, which includes the FLAIR signal around the tumor, spreads much farther: catching 95% of it took a median margin of 21.1 mm, more than 2 cm in 22 of 41 patients.</p>
+</header>
+
+<section aria-labelledby="h-sum">
+  <h2 id="h-sum">By part of the tumor</h2>
+  <p class="note">Medians, with the middle half of patients in grey. The standard plan is a 2 cm expansion of the whole original tumor (the RTOG/NRG 46 Gy volume).</p>
+  <div class="wrap"><table>
+    <thead><tr><th></th><th>Enhancing tumor</th><th>Tumor core</th><th>Whole abnormality</th></tr></thead>
+    <tbody><tr><th scope="row">Patients scored</th><td>40</td><td>40</td><td>41</td></tr><tr><th scope="row">Share of the later tumor sitting on the original tumor</th><td>18% <span class="iqr">9%–32%</span></td><td>36% <span class="iqr">12%–67%</span></td><td>40% <span class="iqr">23%–66%</span></td></tr><tr><th scope="row">Share inside the standard 2 cm plan</th><td>100% <span class="iqr">99%–100%</span></td><td>100% <span class="iqr">99%–100%</span></td><td>94% <span class="iqr">84%–100%</span></td></tr><tr><th scope="row">Patients with all of it inside the 2 cm plan</th><td>26 of 40</td><td>26 of 40</td><td>14 of 41</td></tr><tr><th scope="row">Margin that would have caught 95% of it</th><td>5.7 mm <span class="iqr">1.9 mm–11.7 mm</span></td><td>4.8 mm <span class="iqr">1.9 mm–10.8 mm</span></td><td>21.1 mm <span class="iqr">6.4 mm–27.9 mm</span></td></tr><tr><th scope="row">Patients needing more than 2 cm for 95%</th><td>6 of 40</td><td>5 of 40</td><td>22 of 41</td></tr><tr><th scope="row">Farthest point from the original tumor</th><td>12.3 mm</td><td>12.3 mm</td><td>34.7 mm</td></tr><tr><th scope="row">Volume at the first scan, then the later scan</th><td>15 → 20 mL</td><td>22 → 24 mL</td><td>85 → 118 mL</td></tr></tbody>
+  </table></div>
+</section>
+
+<section aria-labelledby="h-chart">
+  <h2 id="h-chart">How far out it came back, patient by patient</h2>
+  <p class="note">Each dot is one patient: the uniform margin around the original tumor that would have caught 95% of the later tumor. The dashed line is the standard 2 cm. The short black bar marks the median.</p>
+  <div id="chart" role="img" aria-label="Dot plot of the margin needed to catch 95 percent of the later tumor, per patient, for enhancing tumor and the whole abnormality"><div id="tip" hidden></div></div>
+</section>
+
+<section aria-labelledby="h-pat">
+  <h2 id="h-pat">Recurrence pattern</h2>
+  <p class="note">The usual central / in-field / marginal / distant classes (Lee et al., 1999): the share of the later tumor inside the 60 Gy region. No dose data exist here, so a 2 cm expansion of the original tumor core stands in for that region.</p>
+  <div class="wrap"><table>
+    <thead><tr><th>Patients</th><th>Enhancing tumor</th><th>Tumor core</th><th>Whole abnormality</th></tr></thead>
+    <tbody><tr><th scope="row">Central <span class="def">over 95% inside</span></th><td>25</td><td>25</td><td>6</td></tr><tr><th scope="row">In-field <span class="def">80–95%</span></th><td>6</td><td>7</td><td>7</td></tr><tr><th scope="row">Marginal <span class="def">20–80%</span></th><td>8</td><td>7</td><td>28</td></tr><tr><th scope="row">Distant <span class="def">under 20%</span></th><td>1</td><td>1</td><td>0</td></tr></tbody>
+  </table></div>
+</section>
+
+<section aria-labelledby="h-each">
+  <div class="bar"><h2 id="h-each">Every patient</h2><button id="copy" type="button">Copy table as CSV</button></div>
+  <p class="note" id="copied" aria-live="polite">Patient 00160 had no enhancing tumor on the later scan. Days are from the dataset's own table.</p>
+  <div class="wrap"><table class="pt" id="pt"></table></div>
+</section>
+
+<section aria-labelledby="h-read">
+  <h2 id="h-read">How to read it</h2>
+  <dl>
+    <dt>Enhancing tumor</dt><dd>Bright on post-contrast T1: the active tumor. New enhancement is how recurrence is usually called.</dd>
+    <dt>Tumor core</dt><dd>Enhancing tumor plus the necrotic center.</dd>
+    <dt>Whole abnormality</dt><dd>Everything abnormal, including the FLAIR signal around the tumor, which mixes swelling with infiltrating cells.</dd>
+    <dt>On the original</dt><dd>Share of the later tumor sitting on the same part of the original tumor.</dd>
+    <dt>Inside the 2 cm plan</dt><dd>Share of the later tumor inside a 2 cm expansion of the whole original tumor, kept inside the brain.</dd>
+    <dt>Margin for 95%</dt><dd>The smallest uniform margin around the whole original tumor that contains 95% of the later tumor.</dd>
+  </dl>
+</section>
+
+<section aria-labelledby="h-care">
+  <h2 id="h-care">Keep in mind</h2>
+  <ul>
+    <li><b>The later scan is not always a recurrence.</b> The first scan is before surgery and the second is simply the next one on file, 31 to 1010 days later (median 263). Patient 00055, at 31 days, is untreated growth. Treatment details are not in the dataset.</li>
+    <li><b>The pattern classes are approximate.</b> They are defined against the 60 Gy isodose, which we do not have. The stand-in leaves out the planning margin, so real plans would put more patients in the central and in-field classes.</li>
+    <li><b>The one distant enhancing case, 00302,</b> sits 84% inside the standard 2 cm plan; it only counts as distant against the smaller 60 Gy stand-in.</li>
+    <li><b>Volumes are measured on the common template brain,</b> where they run up to 18% larger or smaller than in the patient's own scan. Shares and distances are the numbers to read.</li>
+  </ul>
+</section>
+
+<footer>41 pairs · segmentation: BraTS 2025 adult glioma, second-place entry · registered to MNI152 1 mm · generated 27 Sep 2026</footer>
+</main>
+
+<script>
+const DATA = {"summary": {"ET": {"n": 40, "on": [0.1775, 0.0858, 0.31805], "plan": [1.0, 0.993025, 1.0], "all_in": 26, "m95": [5.7, 1.925, 11.65], "over20": 6, "far": 12.3, "v0": 14.705, "v1": 20.310000000000002, "pat": [25, 6, 8, 1]}, "TC": {"n": 40, "on": [0.35995, 0.121775, 0.671925], "plan": [1.0, 0.993425, 1.0], "all_in": 26, "m95": [4.85, 1.85, 10.775], "over20": 5, "far": 12.3, "v0": 22.305, "v1": 23.975, "pat": [25, 7, 7, 1]}, "WT": {"n": 41, "on": [0.4012, 0.226, 0.6629], "plan": [0.9363, 0.835, 1.0], "all_in": 14, "m95": [21.1, 6.4, 27.9], "over20": 22, "far": 34.7, "v0": 85.16, "v1": 118.14, "pat": [6, 7, 28, 0]}}, "patients": [{"id": "00036", "days": 521, "ET": [8.7, 100.0, 1.7, "central"], "WT": [90.9, 100.0, 1.4, "central"]}, {"id": "00042", "days": 282, "ET": [16.1, 100.0, 9.2, "central"], "WT": [24.2, 75.0, 34.5, "marginal"]}, {"id": "00045", "days": 113, "ET": [35.4, 100.0, 5.4, "central"], "WT": [50.5, 98.6, 14.5, "central"]}, {"id": "00051", "days": 385, "ET": [26.2, 100.0, 2.0, "central"], "WT": [22.6, 85.8, 26.7, "marginal"]}, {"id": "00052", "days": 362, "ET": [43.8, 100.0, 0.0, "central"], "WT": [80.1, 100.0, 8.2, "in-field"]}, {"id": "00055", "days": 31, "ET": [9.6, 100.0, 6.4, "central"], "WT": [40.1, 99.6, 12.1, "in-field"]}, {"id": "00084", "days": 151, "ET": [31.2, 100.0, 0.0, "central"], "WT": [86.2, 100.0, 2.2, "in-field"]}, {"id": "00086", "days": 116, "ET": [40.8, 100.0, 6.4, "in-field"], "WT": [66.3, 100.0, 6.4, "marginal"]}, {"id": "00088", "days": 221, "ET": [11.8, 100.0, 6.0, "central"], "WT": [28.7, 79.3, 34.8, "marginal"]}, {"id": "00093", "days": 332, "ET": [20.3, 97.6, 16.3, "in-field"], "WT": [25.9, 81.7, 30.7, "marginal"]}, {"id": "00122", "days": 229, "ET": [33.5, 99.5, 3.7, "central"], "WT": [64.9, 99.8, 6.2, "marginal"]}, {"id": "00128", "days": 92, "ET": [45.2, 100.0, 3.7, "central"], "WT": [76.0, 100.0, 4.1, "central"]}, {"id": "00129", "days": 98, "ET": [20.4, 100.0, 5.4, "central"], "WT": [33.1, 85.3, 24.4, "marginal"]}, {"id": "00130", "days": 444, "ET": [16.1, 100.0, 1.4, "central"], "WT": [82.4, 100.0, 6.4, "central"]}, {"id": "00133", "days": 190, "ET": [0.0, 100.0, 3.0, "central"], "WT": [40.4, 100.0, 12.4, "marginal"]}, {"id": "00134", "days": 112, "ET": [17.9, 98.9, 8.2, "central"], "WT": [24.4, 93.6, 21.1, "marginal"]}, {"id": "00140", "days": 420, "ET": [5.7, 100.0, 12.7, "marginal"], "WT": [18.2, 90.5, 23.5, "marginal"]}, {"id": "00141", "days": 196, "ET": [9.1, 100.0, 7.1, "in-field"], "WT": [30.9, 83.5, 27.0, "marginal"]}, {"id": "00145", "days": 263, "ET": [24.0, 100.0, 3.7, "central"], "WT": [57.9, 91.4, 26.0, "in-field"]}, {"id": "00148", "days": 295, "ET": [21.5, 100.0, 0.0, "central"], "WT": [42.1, 88.4, 28.1, "marginal"]}, {"id": "00150", "days": 165, "ET": [8.1, 93.3, 21.0, "marginal"], "WT": [9.6, 55.9, 52.7, "marginal"]}, {"id": "00160", "days": 788, "ET": null, "WT": [18.0, 86.2, 26.1, "marginal"]}, {"id": "00183", "days": 648, "ET": [55.5, 100.0, 3.3, "central"], "WT": [79.4, 100.0, 3.3, "central"]}, {"id": "00197", "days": 1010, "ET": [0.5, 100.0, 11.3, "marginal"], "WT": [46.1, 92.8, 22.4, "marginal"]}, {"id": "00219", "days": 355, "ET": [28.3, 91.6, 23.3, "in-field"], "WT": [93.5, 99.3, 1.0, "in-field"]}, {"id": "00267", "days": 176, "ET": [55.1, 100.0, 0.0, "central"], "WT": [91.0, 100.0, 1.4, "central"]}, {"id": "00280", "days": 472, "ET": [38.2, 99.9, 1.7, "central"], "WT": [65.2, 100.0, 8.2, "marginal"]}, {"id": "00285", "days": 103, "ET": [17.5, 96.8, 18.7, "marginal"], "WT": [18.9, 92.1, 21.8, "marginal"]}, {"id": "00295", "days": 178, "ET": [5.9, 100.0, 1.4, "central"], "WT": [76.3, 100.0, 3.0, "marginal"]}, {"id": "00301", "days": 370, "ET": [36.6, 100.0, 1.0, "central"], "WT": [86.0, 100.0, 2.0, "marginal"]}, {"id": "00302", "days": 657, "ET": [0.1, 84.1, 22.0, "distant"], "WT": [12.6, 49.1, 45.7, "marginal"]}, {"id": "00307", "days": 91, "ET": [18.4, 99.5, 6.6, "central"], "WT": [14.1, 94.4, 20.3, "marginal"]}, {"id": "00312", "days": 266, "ET": [16.7, 99.9, 10.8, "central"], "WT": [29.4, 86.5, 27.8, "in-field"]}, {"id": "00314", "days": 912, "ET": [0.0, 97.3, 18.8, "marginal"], "WT": [16.7, 78.5, 27.9, "marginal"]}, {"id": "00320", "days": 202, "ET": [54.9, 100.0, 1.4, "in-field"], "WT": [40.1, 100.0, 11.5, "marginal"]}, {"id": "00332", "days": 450, "ET": [7.4, 80.0, 27.0, "marginal"], "WT": [13.1, 63.9, 34.7, "marginal"]}, {"id": "00344", "days": 505, "ET": [0.4, 100.0, 2.2, "marginal"], "WT": [65.5, 100.0, 8.9, "marginal"]}, {"id": "00352", "days": 91, "ET": [30.1, 80.6, 31.5, "marginal"], "WT": [19.7, 63.1, 34.0, "marginal"]}, {"id": "00353", "days": 120, "ET": [17.1, 100.0, 3.7, "central"], "WT": [53.6, 99.9, 12.1, "in-field"]}, {"id": "00354", "days": 323, "ET": [0.0, 89.9, 22.2, "in-field"], "WT": [2.9, 28.2, 68.6, "marginal"]}, {"id": "00355", "days": 221, "ET": [9.0, 100.0, 10.2, "central"], "WT": [22.8, 77.7, 28.8, "marginal"]}], "meta": {"n": 41, "dmin": 31, "dmax": 1010, "dmed": 263, "short": ["00055"]}};
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent){ const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+
+function chart(){
+  const box = document.getElementById("chart"), tip = document.getElementById("tip");
+  const W = 860, H = 230, L = 150, R = 24, T = 16, B = 44, max = 70;
+  const x = v => L + (W - L - R) * v / max;
+  const svg = el("svg", {viewBox: `0 0 ${W} ${H}`});
+  const rows = [["ET", "Enhancing tumor", "var(--et)", 62], ["WT", "Whole abnormality", "var(--wt)", 142]];
+  for (let t = 0; t <= max; t += 10) {
+    el("line", {x1: x(t), x2: x(t), y1: T, y2: H - B, class: "grid"}, svg);
+    el("text", {x: x(t), y: H - B + 18, "text-anchor": "middle"}, svg).textContent = t;
+  }
+  el("text", {x: (L + W - R) / 2, y: H - 6, "text-anchor": "middle"}, svg).textContent = "millimeters beyond the original tumor";
+  el("line", {x1: x(20), x2: x(20), y1: T, y2: H - B, class: "ref"}, svg);
+  el("text", {x: x(20) + 6, y: T + 10}, svg).textContent = "standard 2 cm";
+  rows.forEach(([key, name, color, cy]) => {
+    const vals = DATA.patients.filter(p => p[key]).map(p => ({id: p.id, v: p[key][2], plan: p[key][1]}));
+    vals.sort((a, b) => a.v - b.v);
+    el("circle", {cx: 12, cy: cy, r: 5, fill: color}, svg);
+    el("text", {x: 24, y: cy + 4, class: "lab"}, svg).textContent = name;
+    // spread dots that would overlap into a small vertical stack
+    const placed = [];
+    vals.forEach(d => {
+      let off = 0, step = 0;
+      while (placed.some(p => Math.abs(p.x - x(d.v)) < 9 && Math.abs(p.y - (cy + off)) < 9)) {
+        step++; off = (step % 2 ? 1 : -1) * Math.ceil(step / 2) * 9;
+      }
+      placed.push({x: x(d.v), y: cy + off});
+      el("circle", {cx: x(d.v), cy: cy + off, r: 4.5, fill: color, class: "dot"}, svg);
+      const hit = el("circle", {cx: x(d.v), cy: cy + off, r: 9, class: "hit", tabindex: 0,
+        "aria-label": `${d.id}: ${d.v} millimeters; ${d.plan} percent inside the 2 cm plan`}, svg);
+      const show = () => { tip.hidden = false;
+        tip.textContent = `${d.id} · ${d.v.toFixed(1)} mm · ${d.plan}% inside 2 cm plan`;
+        const r = svg.getBoundingClientRect(), s = r.width / W;
+        tip.style.left = (x(d.v) * s + 10) + "px"; tip.style.top = ((cy + off) * s + 14) + "px"; };
+      hit.addEventListener("mouseenter", show); hit.addEventListener("focus", show);
+      hit.addEventListener("mouseleave", () => tip.hidden = true); hit.addEventListener("blur", () => tip.hidden = true);
+    });
+    const med = DATA.summary[key].m95[0];
+    el("line", {x1: x(med), x2: x(med), y1: cy - 26, y2: cy - 16, class: "med"}, svg);
+    el("text", {x: x(med) + 6, y: cy - 17}, svg).textContent = "median " + med.toFixed(1) + " mm";
+  });
+  box.insertBefore(svg, tip);
+}
+
+function table(){
+  const t = document.getElementById("pt");
+  const cells = p => p ? [p[0] + "%", p[1] + "%", p[2].toFixed(1), p[3]] : ["—", "—", "—", "none"];
+  let h = '<thead><tr><th rowspan="2">Patient</th><th rowspan="2">Days</th>' +
+    '<th colspan="4" class="grp gap"><span class="sw" style="background:var(--et)"></span>Enhancing tumor</th>' +
+    '<th colspan="4" class="grp gap"><span class="sw" style="background:var(--wt)"></span>Whole abnormality</th></tr><tr>';
+  const sub = ["On original", "In 2 cm plan", "95% margin, mm", "Pattern"];
+  h += sub.map((s, i) => `<th${i ? "" : ' class="gap"'}>${s}</th>`).join("") + sub.map((s, i) => `<th${i ? "" : ' class="gap"'}>${s}</th>`).join("") + "</tr></thead><tbody>";
+  DATA.patients.forEach(p => {
+    const e = cells(p.ET), w = cells(p.WT);
+    h += `<tr><th scope="row">${p.id}</th><td>${p.days}</td>` +
+      e.map((c, i) => `<td class="${i ? "" : "gap"}${p.ET ? "" : " muted"}">${c}</td>`).join("") +
+      w.map((c, i) => `<td class="${i ? "" : "gap"}">${c}</td>`).join("") + "</tr>";
+  });
+  t.innerHTML = h + "</tbody>";
+}
+
+function csv(){
+  const head = ["patient","days","enhancing_pct_on_original","enhancing_pct_in_2cm_plan","enhancing_margin_95_mm","enhancing_pattern",
+    "whole_pct_on_original","whole_pct_in_2cm_plan","whole_margin_95_mm","whole_pattern"];
+  const part = p => p ? [p[0], p[1], p[2], p[3]] : ["", "", "", "none at follow-up"];
+  return [head.join(",")].concat(DATA.patients.map(p => [p.id, p.days].concat(part(p.ET), part(p.WT)).join(","))).join("\n");
+}
+document.getElementById("copy").addEventListener("click", () => {
+  const note = document.getElementById("copied"), text = csv();
+  const done = () => { note.textContent = "Copied " + DATA.patients.length + " rows. Paste into Excel or Sheets."; };
+  const fallback = () => { const a = document.createElement("textarea"); a.value = text; document.body.appendChild(a);
+    a.select(); try { document.execCommand("copy"); done(); } catch (e) { note.textContent = "Copy was blocked; select the table instead."; } a.remove(); };
+  try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+});
+chart(); table();
+</script>

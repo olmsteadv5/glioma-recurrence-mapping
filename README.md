@@ -455,6 +455,7 @@ scan/               per-subject image processing
   segment.py        BraTS in Docker
   evaluate.py       volumes and Dice
   register.py       SRI24 to MNI152
+  tissue.py         SynthSeg tissue labels
 
 yale/               the atlas and everything built from it
   atlas.py          atlas volume, meshes, parcel overlap
@@ -467,7 +468,13 @@ show/               rendering
   view.py           3D view, also runnable: python -m show.view 36
   render.py         offscreen 3D and slice images for the TUI
 
-plan/               radiation target work
+analysis/           the baselines: cohort and recurrence overlap
+  measure.py        how much of the later tumor sits on the first
+  overlap_csv.py    writes outputs/overlap_review.csv
+  COHORT.md         the 41 pairs and how the list was checked
+
+archive/            put away, not maintained
+  target-planning/  the connectome-guided target, see its README
 ```
 
 ## Worth knowing

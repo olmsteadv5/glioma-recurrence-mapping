@@ -11,3 +11,6 @@ outputs/
 
 # scratch mockup for the published artifact
 mockup.html
+
+# derived images kept beside the archive, never committed
+archive/**/*.nii.gz

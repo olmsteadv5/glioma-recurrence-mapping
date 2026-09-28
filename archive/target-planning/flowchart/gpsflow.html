@@ -1,0 +1,669 @@
+<title>Geodesic Planning System</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{--ground:#0f1216;--panel:#151a20;--ink:#e7ebf0;--ink-2:#98a2ae;--ink-3:#6c7682;--rule:#262d36;
+  --scan:#3fa7d6;--yale:#6fbf8b;--plan:#e4572e;--eval:#c77aa0;--show:#a98ede;--src:#8a93a0;
+  --hot:#ff7a45;--fit:#f0b429;--loop:#dde3ea}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--ground);color:var(--ink);
+  font-family:"IBM Plex Sans",Helvetica,Arial,sans-serif;font-size:14px}
+.top{padding:18px 16px 12px;display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center}
+h1{font-size:19px;margin:0;font-weight:600;letter-spacing:-.01em}
+.sub{color:var(--ink-2);font-size:13px;margin:0;flex:1 1 240px;min-width:0}
+.toggle{display:inline-flex;border:1px solid var(--rule);border-radius:3px;overflow:hidden;flex:none}
+.toggle button,.nav button{appearance:none;background:transparent;border:0;color:var(--ink-2);
+  font:inherit;font-size:12.5px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+.toggle button[aria-pressed="true"]{background:#212832;color:var(--ink);font-weight:500}
+button:focus-visible,g.go:focus-visible{outline:2px solid var(--scan);outline-offset:2px}
+.nav{display:flex;flex-wrap:wrap;gap:4px;padding:0 16px 12px;border-bottom:1px solid var(--rule)}
+.nav button{border:1px solid var(--rule);border-radius:3px;font-size:12px;padding:5px 10px}
+.nav button[aria-current="page"]{background:#212832;color:var(--ink);border-color:#3a4450;font-weight:500}
+.nav button span{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:6px;vertical-align:1px}
+.intro{padding:14px 16px 4px;max-width:78ch}
+.intro h2{font-size:16px;margin:0 0 6px;font-weight:600}
+.intro p{margin:0;color:var(--ink-2);line-height:1.5;font-size:13.5px}
+.stage{overflow:auto;padding:10px 16px 18px;-webkit-overflow-scrolling:touch}
+.stage svg{max-width:none;height:auto;display:block;margin:0 auto}
+.stage svg text{font-family:"IBM Plex Sans",Helvetica,Arial,sans-serif}
+.stage svg g.go{cursor:pointer}
+.stage svg g.go:hover path,.stage svg g.go:hover polygon{stroke-width:2.4}
+.key{display:flex;flex-wrap:wrap;gap:8px 18px;padding:12px 16px 30px;border-top:1px solid var(--rule);
+  color:var(--ink-2);font-size:12px;font-family:"IBM Plex Mono",monospace}
+.key i{font-style:normal;display:inline-flex;align-items:center;gap:6px}
+.key b{font-weight:500;color:var(--ink)}
+.sw{display:inline-block;width:18px;height:11px;border-radius:3px;border:1.5px solid}
+.loading{color:var(--ink-2);padding:40px 16px;font-family:"IBM Plex Mono",monospace;font-size:13px}
+table{border-collapse:collapse;margin:4px auto 0;font-size:13px;min-width:640px}
+th,td{text-align:left;padding:7px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{color:var(--ink-2);font-weight:500;font-size:12px;letter-spacing:.02em;text-transform:uppercase}
+td.v{font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-variant-numeric:tabular-nums}
+td.k{color:var(--ink-2)} td.k.fit{color:var(--fit);font-weight:500}
+tr.grp td{color:var(--ink-3);font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;padding-top:16px}
+</style>
+
+<div class="top">
+  <h1>Geodesic Planning System</h1>
+  <p class="sub">A connectome-guided radiation target for glioblastoma, stage by stage. Start at the overview and click into any stage.</p>
+  <span class="toggle" role="group" aria-label="label set">
+    <button id="plain" aria-pressed="true">Method</button>
+    <button id="tech" aria-pressed="false">Implementation</button>
+  </span>
+</div>
+<nav class="nav" id="nav" aria-label="stages"></nav>
+<div class="intro"><h2 id="vname"></h2><p id="vblurb"></p></div>
+<div class="stage" id="stage"><p class="loading">rendering…</p></div>
+<div class="key" id="key">
+  <i><span class="sw" style="border-color:#3fa7d6"></span>box color = the code package it lives in</i>
+  <i><span class="sw" style="border-color:#ff7a45;border-width:2.5px"></span><b>thick orange</b> = breaks the method silently if wrong</i>
+  <i><span class="sw" style="border-color:#c77aa0;border-style:dashed"></span><b>dashed outline</b> = planned, not built</i>
+  <i><span style="color:var(--loop)">&#8635;</span><b>white line</b> = a loop, labeled with how many times or until what</i>
+  <i><span class="sw" style="border-color:#8a93a0;background:transparent"></span><b>hollow box</b> = a link to another stage; click it</i>
+  <i><span style="color:var(--fit)">&#9632;</span><b>amber tag</b> = a number we fit</i>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@viz-js/viz@3.11.0/lib/viz-standalone.js"></script>
+<script>
+const PLAIN = {
+ T1S:["TCIA public archive","UPenn-GBM, one release per subject"],
+ YBAS:["Yale Brain Atlas","parcellation, tractography, structural connectivity, Parcelsynth"],
+ MNIS:["MNI152 template, 1 mm","the common space every subject is normalized into"],
+ FSS:["FreeSurfer","SynthStrip and SynthSeg"],
+
+ FETCH:["Fetch the multiparametric MRI","T1, T1 post-contrast, T2, FLAIR"],
+ STRIP:["Skull-strip","one brain mask from the T1, applied to all four","FreeSurfer SynthStrip"],
+ VER:["Validate the inputs","dimensions, voxel spacing, plausible brain volume"],
+ TIS:["Segment normal tissue","white matter, cortex, ventricles, CSF, lateralized","FreeSurfer SynthSeg, on the unstripped T1"],
+ SEG:["Segment the tumor","the challenge-winning entry where CUDA is available","BraTS adult glioma, pre and post treatment, in Docker"],
+ REG:["Register to the atlas","affine on mutual information, then deformable on","cross-correlation with the lesion out of the metric","greedy"],
+ TMNI:["Resample tissue labels into atlas space","nearest-label interpolation, never linear","greedy"],
+ EVAL:["Quantify volumes","per compartment, plus the isotropic 2 cm expansion"],
+
+ D1:["Brain mask and skull-stripped sequences"],
+ D2:["Tumor segmentation","necrotic core, FLAIR hyperintensity,","enhancing tumor, resection cavity"],
+ D3:["Tissue segmentation","white matter, cortex, ventricles, CSF,","cerebellum, brainstem, hippocampus"],
+ D4:["Transforms, and every volume resampled into atlas space"],
+ D5:["Per-subject results"],
+
+ ATL:["696-parcel parcellation","labels roughly a third of the brain","Yale Brain Atlas"],
+ OVL:["Parcel-wise tumor overlap","volume and destroyed fraction per parcel"],
+ TRC:["Tractography streamlines","geodesically ordered, resampled at 1 mm","Yale Brain Atlas, top-5k decimated surface"],
+ CON:["Structural connectivity","streamline counts per parcel pair, and each","intact parcel's share of disconnection"],
+ FUN:["Functional associations per parcel","Parcelsynth"],
+ GRP:["Streamlines traversing the tumor","and the arc length from the mass to each parcel"],
+
+ HEM:["Separate the hemispheres","the tissue labels are already lateralized"],
+ DIST:["Distance to each side","one distance transform per hemisphere"],
+ WS:["Watershed between them","the surface where the nearer side flips;","lands mid-gap, where the dura physically is"],
+ CLIP:["Clip the sheet","or the surface runs off across the whole volume"],
+ FALX:["Falx cerebri","minus the corpus callosum,","the one route tumor crosses the midline by"],
+ TENT:["Tentorium cerebelli","same construction, cerebrum against cerebellum"],
+ SVZ:["Subventricular zone","periventricular rind, and ipsilateral contact"],
+ MSK:["Anatomical masks the speed field consumes"],
+
+ CRS:["Streamlines intersecting the tumor"],
+ RAST:["Rasterize them to voxels","polyline points through the inverse affine"],
+ CEDT:["Distance from the nearest streamline","one distance transform, cached per subject"],
+ DIS:["Predicted disconnection per parcel","painted from the connectivity table onto voxels"],
+
+ M0:["Start every voxel in the brain at 1","one millimeter of travel costs one unit of time"],
+ M1:["White matter runs about five times faster","a migration rate, not a destination"],
+ M2:["Boost near a streamline","from here on each step multiplies the ground:","full strength on the line, fading with distance"],
+ M3:["Faster where connectivity is already lost","scaled so this dial means what the white matter dial means"],
+ M4:["Faster along the ventricle lining","only when the tumor touches it"],
+ M5:["Slower through parcels flagged for sparing","a penalty, never an exclusion"],
+ M6:["Near zero in CSF and the ventricles","nothing to infiltrate. It is not exactly zero","only because the solver divides by speed"],
+ M7:["Zero at the dura and outside the head","set before any boost, so nothing can revive it"],
+ NRM:["Rescale so the fastest tissue is 1","arrival time returns to millimeters"],
+
+ LS:["Mark where the front starts","negative inside the tumor, positive outside;","the start line is where it crosses zero"],
+ PQ:["Freeze the earliest, relax its neighbors","nothing can beat the smallest pending time,","so it is final and never revisited"],
+ UPW:["Solve one quadratic per voxel","arrival time from whichever neighbors","the front already passed"],
+ NB:["Let the front run out","stopping it early would stop it in travel time,","and the cap that matters is a distance"],
+
+ RISK:["Arrival time at every voxel","a wall's near face is reachable,","nothing beyond it is"],
+ BUD:["How much to take","level 2: each volume on a fixed ladder. Level 3:","everything arriving before a cutoff learned on","other patients, so the volume comes out, not in"],
+ P1:["Lay the floor","tumor plus a fixed isotropic shell, charged against","the budget, and only where the front can actually reach"],
+ P2:["Spend the budget","earliest-arriving first, inside a 20 mm cap;","under a cutoff, everything arriving before T*"],
+ P4:["Split into connected pieces","BEFORE any blurring, while a thin corridor","still joins a distant region to the mass"],
+ P5:["Fill small notches"],
+ P6:["Blur to the beam edge, then re-cut","features finer than the beam are not delivered"],
+ P7:["Repeat until the size is right","closing and blurring both move it"],
+ CAP:["Stop if the cap blocks the budget","asking for more would change nothing"],
+ BLD:["Clinical target volume"],
+ LEDG:["Every number in the method, by what fixes it","fitted, and only these three: white matter 1-10,","corridor 1-6, disruption 0-4","from a paper: reach 20 mm, floor 5 mm, satellite 2 mL","from the linac: blur 2.5 mm, a 4.2 mm dose edge","a regularizer: CSF 0.05, which should be zero","from the clinician: what to spare, SVZ on or off","learned on other patients: the cutoff T* and","the best uniform margin","from the supervisor: which part counts, and how","much coverage a plan may give up","an output, never an input: the volume itself"],
+ NAT:["Warp back to native space","report volumes here; the atlas distorts them","by -18% to +18% depending on the subject"],
+
+ BASE:["One brain mask for everyone","the template's own, not each subject's segmentation.","Otherwise part of any difference is just a bigger field"],
+ MEA:["How much of the later tumor sits on the first","by compartment, with the Lee pattern:","central, in-field, marginal, distant"],
+ CPT:["Which part counts as the recurrence?","the whole abnormality, or only enhancing tumor.","Open: the answers differ, and it is the","supervisor's call, so both are computed"],
+ PEV:["Best case per shape, supporting only","the least brain each needs to catch what the 2 cm","plan catches. It reads the later scan to pick the","volume, which no real plan could"],
+ CMP:["Does the shape help, without being told the answer?","primary: level 3, on patients it never saw.","Secondary: the level 2 curve. Mechanism: level 1.","Supporting: the best case and the two nulls"],
+ NIM:["How much coverage may a plan give up?","the non-inferiority margin: 2 points? 5?","A clinical judgment, for the supervisor"],
+ L1:["Level 1: does arrival time rank the recurrence first?","within 20 mm and outside the 5 mm shell, do voxels that","later became tumor arrive earlier than those that did not?","Scored against plain distance. No volume is ever chosen"],
+ L2:["Level 2: the whole trade-off curve","coverage at ten volumes fixed in advance, from the","5 mm floor up to the 2 cm plan, for every shape.","Above everywhere means both claims hold at once"],
+ CV:["Split the patients into five folds","learn on four, test on the one left out"],
+ FIT:["Tune the three dials on the training folds","Bayesian optimization, 40 settings, scored by level 1.","fit.py exists; the folds and the level 1 score are new"],
+ LRN:["Learn the cutoff T* on the training folds","the earliest arrival time whose coverage stays","within the margin of the 2 cm plan's"],
+ UNI:["Learn the best uniform margin the same way","the smallest even margin that stays within it.","The fair control: beating 2 cm alone is easy"],
+ APPLY:["Plan the held-out patients","the learned dials, and everything arriving","before T*. Only pre-treatment scans are read"],
+ OUT:["Score the held-out patients","coverage and volume against the 2 cm plan and the","learned uniform margin: dominates, trade-off, or dominated"],
+ B1:["RTOG 2 cm from the whole segmentation","what Knisely described; NRG calls it CTV_4600.","The plan every committed plan is held against"],
+ B2:["Uniform expansion","the control for just shrinking the margin:","same 5 mm floor, same ladder, same tuning as ours"],
+ B3:["barriers-only geodesic","controls for the dural constraint alone"],
+ B4:["FLAIR-guided expansion","expand along the existing swelling instead"],
+ B5:["Shuffled connectome","rebuild the target with the connectivity matrix","rewired, each parcel keeping its number of connections"],
+ B6:["Redrawn streamlines","rebuild it with the same number of corridors","drawn somewhere else in the brain. Only says anything","if the budget forces the target to reject volume"],
+
+ RND:["Offscreen renderer","3D scene, orthogonal slices, connectome chart","pyvista and VTK; kitty graphics protocol"],
+ VW:["Browser viewer","interactive scene, toggleable per parcel","Plotly"],
+ TUI:["Terminal application","three viewers, three inspection lists","Textual"],
+ O_SRC:["Sources, downloaded once","UPenn-GBM scans, the Yale Brain Atlas,","the MNI template, FreeSurfer"],
+ O_SCAN:["1 · Clean every scan","skull-strip, label the tissue, outline the","tumor, and warp it onto the shared template"],
+ O_ATLAS:["2 · Read the atlas","regions, the highways through the tumor,","and which regions lose their connections"],
+ O_WALLS:["3 · Build the walls","falx and tentorium, with the corpus","callosum left open as the one bridge"],
+ O_ROADS:["4 · Put the highways on voxels","distance to each highway through the tumor,","and connection loss for each region"],
+ O_SPEED:["5 · Set a speed on every voxel","ground rules first, then boosts on top.","Three dials are free, the rest are fixed"],
+ O_MARCH:["6 · Spread out from the tumor","arrival time at every voxel, by fast marching"],
+ O_TARGET:["7 · Turn arrival times into a target","floor, budget, separate pieces, and the","edge blur a linac can actually deliver"],
+ O_EVAL:["8 · Evaluate","three levels, each against the 2 cm plan","and an even expansion, plus two nulls"],
+ O_L3:["9 · Commit a plan, test it on unseen patients","five folds: tune the dials and learn the cutoff","on four, then plan and score the fifth"],
+ O_CLAIM:["The claims, in the order declared","primary: level 3. Secondary: the level 2 curve.","Mechanism: level 1. Supporting: best case, nulls"],
+ O_SHOW:["Viewers","3D scene, slices and connectome chart","in the terminal, plus a browser view"],
+};
+const TECH = {
+ T1S:["TCIA mirror","scan/fetch.BASE"],
+ YBAS:["Yale Brain Atlas","parcels - tracts - connectivity - terms"],
+ MNIS:["MNI152 1 mm","182 x 218 x 182"],
+ FSS:["FreeSurfer","mri_synthstrip - mri_synthseg"],
+
+ FETCH:["fetch.get number, timepoint","ASSETS to T1 - T1GD - T2 - FLAIR"],
+ STRIP:["skullstrip.run","mri_synthstrip -t THREADS","MAX_BRAIN_ML 2000"],
+ VER:["verify.run","SHAPE - ZOOMS - BRAIN_ML 900-2000"],
+ TIS:["tissue.run","mri_synthseg --keepgeom --cpu","raw T1, not the stripped one"],
+ SEG:["segment.run","BraTS25_1 if cuda else BraTS25_2"],
+ REG:["register.run","greedy affine NMI then deform NCC","DILATE_MM 5 metric mask"],
+ TMNI:["tissue.to_mni","-ri LABEL 0.2vox"],
+ EVAL:["evaluate.run","MARGIN_MM 20"],
+
+ D1:["brainmask.nii.gz","stripped/ x4"],
+ D2:["seg.nii.gz","NETC 1 - SNFH 2 - ET 3 - RC 4"],
+ D3:["tissue.nii.gz","WM 2,41 - CTX 3,42 - VENT 4,5,43,44","CSF 24 - CBLM 7,8,46,47 - STEM 16 - HIPP 17,53"],
+ D4:["affine.mat - warp - warp_inverse","seg_in_mni - t1_in_mni - tissue_in_mni"],
+ D5:["results.json","labels_ml - regions_ml - margin_ml - dice"],
+
+ ATL:["atlas.parcels 696 - label_volume","cache ignores its reference argument"],
+ OVL:["atlas.overlap seg_in_mni","parcel_ml - in_tumor_ml - fraction"],
+ TRC:["tracts.centerlines","STEP_MM 1.0 - MIN_VERTICES 12"],
+ CON:["connect.matrix METRIC SC_Count","connect.at_risk floor 0.01"],
+ FUN:["function.terms","parcel x term activation"],
+ GRP:["graph.through subject","reach - joins - skirt - crossing - stray"],
+
+ HEM:["barriers.hemispheres tissue","LEFT and RIGHT label tuples from scan.tissue"],
+ DIST:["distance_transform_edt on each group","d_near and d_far"],
+ WS:["_interface near, far","voxels adjacent to the other territory,","taken from both sides, 26-neighborhood"],
+ CLIP:["GAP_MM 12.0","at 8 both sheets leak the front"],
+ FALX:["barriers.falx","_interface LEFT, RIGHT and ~_callosum","CALLOSUM L_CC_A/B/C R_CC_A/B/C"],
+ TENT:["barriers.tentorium","cerebrum vs CEREBELLUM + BRAINSTEM"],
+ SVZ:["barriers.svz SVZ_MM 5.0 per side","svz_contact to left, right"],
+ MSK:["barriers.masks","brain wm cortex csf ventricle cerebellum","brainstem hippocampus falx tentorium"],
+
+ CRS:["conduits.crossing subject","union reach ids | stray ids"],
+ RAST:["apply_affine inv seg.affine, rint","polyline mm to voxel index"],
+ CEDT:["distance_transform_edt ~lines","lru_cached on subject, tube_mm"],
+ DIS:["conduits.disruption","connect.at_risk share per parcel voxel","float32 in 0 .. 0.25"],
+
+ M0:["base[brain] = 1.0"],
+ M1:["base[wm] = wm_gain","an assignment; the boosts come after"],
+ M2:["*= 1 + tract_gain-1 . exp -(d/tube_mm)^2","tube_mm 6.0 is the 1/e width, not an edge"],
+ M3:["*= 1 + risk_gain . disruption / RISK_SCALE","RISK_SCALE 0.25 fixed, not per-subject;","risk_gain 4 now means x5 like wm_gain 5"],
+ M4:["*= svz_gain on the contacting rind only"],
+ M5:["/= 1 + weight for each spare entry"],
+ M6:["base[csf | ventricle] = eps_csf"],
+ M7:["base[falx | tentorium] = 0 ; base[~brain] = 0"],
+ NRM:["base /= base.max","order unchanged, ceiling_mm back in mm"],
+
+ LS:["march._level_set seed, dx","zero contour on the seed rind;","signed distance overshoots 2%"],
+ PQ:["skfmm.travel_time","accepted values are never relaxed again"],
+ UPW:["sum_i max T - T_min,i , 0 ^2 / h^2 = 1/S^2","Godunov upwind, one quadratic per voxel"],
+ NB:["no narrow band","travel time rescales with every gain,","so a band in it is not a fixed reach"],
+
+ RISK:["target.risk - march.travel, then the wall-face rule","float32 T, inf behind every wall"],
+ BUD:["ladder volume_ml | cutoff T* | bisection","fit.BUDGET 0.55 x reachable for the nulls"],
+ P1:["core = (tum | expand floor_mm 5.0)","        & (isfinite T | tum)"],
+ P2:["allowed = expand ceiling_mm & isfinite T","np.partition on T[room], or T <= T*","cap is Euclidean; T only orders"],
+ P4:["ndimage.label then keep","GTV component + pieces >= satellite_ml 2.0"],
+ P5:["ndimage.binary_closing iterations=2"],
+ P6:["gaussian_filter sigma_mm 2.5 then >= 0.5","80-20 edge is ~1.7 sigma = 4.2 mm"],
+ P7:["ask *= budget / got, tol 0.01, 12 rounds"],
+ CAP:["break when two rounds deliver the same volume","reported as capped=True"],
+ BLD:["target.build subject, budget_ml","mask + volume_ml satellites reach_mm capped"],
+ LEDG:["fit.NAMES wm_gain tract_gain risk_gain","fit.BOX 1-10 . 1-6 . 0-4 ; RISK_SCALE 0.25 fixed","cited CEILING_MM 20 FLOOR_MM 5 SATELLITE_ML 2","machine SIGMA_MM 2.5 ; steering TUBE_MM 6","regularizer EPS_CSF 0.05","per patient spare svz","cv-learned T* uniform_mm ; supervisor region margin_pts","volume is an output ; fit.BUDGET 0.55 of reach for nulls"],
+ NAT:["target.to_native - greedy affine,-1 + warp_inverse","atlas/native ratio runs 0.82 to 1.18 by subject"],
+
+ BASE:["barriers.masks brain = MNI template > 0","geometry.grow shared by scan/ and show/","2075 mL, identical for every subject"],
+ MEA:["measure.overlap first, later, region","inside - kept - dice - in_4600 - in_6000","margin_95_mm - pattern - interval days"],
+ CPT:["planeval.coverage region=None | ET","None scores data > 0, edema included"],
+ PEV:["planeval.spared - smallest by bisection","oracle: the volume is chosen from the recurrence"],
+ CMP:["primary OUT ; secondary area between curves","mechanism AUC gap ; supporting spared","hierarchy declared in DECISIONS.md first"],
+ NIM:["margin_pts, declared before any run"],
+ L1:["planeval.auc first, later, region","Mann-Whitney, T against Euclidean distance","candidates: expand 20 mm and not the core"],
+ L2:["planeval.ladder - 10 volumes, floor_ml to plan_ml","one march per patient, then 10 builds","area between the curves"],
+ CV:["planeval.folds k=5, fixed seed"],
+ FIT:["fit.optimize on the training folds only","objective planeval.auc, not the old delta","12 patients in parallel"],
+ LRN:["T* = min t with coverage >= plan - margin_pts","training patients only"],
+ UNI:["uniform_mm = min mm, same criterion","same training patients"],
+ APPLY:["target.build with T <= T* in place of a budget","dials from FIT"],
+ OUT:["coverage and volume_ml against rtog and uniform_mm","Wilcoxon, plus the non-inferiority test"],
+ B1:["baseline.rtog MARGIN_MM 20","NRG CTV_4600, grown from the whole seg"],
+ B2:["baseline.isotropic with a 5 mm floor","ladder - smallest - learned uniform_mm"],
+ B3:["barriers-only geodesic","the one that matters"],
+ B4:["baseline.flair - SNFH-weighted"],
+ B5:["planeval.null - Maslov-Sneppen edge swaps"],
+ B6:["planeval.tract_null - planeval.elsewhere","precondition: reachable - budget > 0"],
+
+ RND:["render.Scene - Chart - Slices","offscreen pyvista to PIL to kitty"],
+ VW:["view.run - python -m show.view 36"],
+ TUI:["tui.Console","VIEWERS 3d - slices - graph"],
+ O_SRC:["sources","TCIA - YBA - MNI152 1 mm - FreeSurfer"],
+ O_SCAN:["scan/","fetch - skullstrip - tissue - segment - register"],
+ O_ATLAS:["yale/","atlas - tracts - connect - graph - function"],
+ O_WALLS:["plan/barriers.py","masks - falx - tentorium - svz"],
+ O_ROADS:["plan/conduits.py","crossing - corridors - disruption"],
+ O_SPEED:["plan/speed.py","field(**params), float32, peak 1"],
+ O_MARCH:["plan/march.py","travel, which calls skfmm.travel_time"],
+ O_TARGET:["plan/target.py","risk - shape - build - reachable - to_native"],
+ O_EVAL:["planeval.py - measure.py - baseline.py","auc - ladder - spared - null - tract_null"],
+ O_L3:["fit.py + planeval.folds","planned: nested five-fold cross-validation"],
+ O_CLAIM:["hierarchy in DECISIONS.md","declared before any run"],
+ O_SHOW:["show/ - tui.py","render - view - Console"],
+};
+const STYLE = {
+ src:  ["#171c22","#5c6672","#c8d0da"],
+ scan: ["#12222b","#3fa7d6","#d7ecf7"],
+ yale: ["#14241a","#6fbf8b","#d8f0e2"],
+ plan: ["#2a1810","#e4572e","#fbdfd3"],
+ ev:   ["#26161f","#c77aa0","#f6dde8"],
+ show: ["#1d1730","#a98ede","#e6ddf7"],
+ file: ["#101419","#39424d","#aeb8c4"],
+ hot:  ["#3a1c10","#ff7a45","#ffe2d5"],
+};
+const CLS = {
+ T1S:"src",YBAS:"src",MNIS:"src",FSS:"src",
+ FETCH:"scan",STRIP:"scan",VER:"scan",TIS:"scan",SEG:"scan",REG:"scan",TMNI:"scan",EVAL:"scan",
+ D1:"file",D2:"file",D3:"file",D4:"file",D5:"file",
+ ATL:"yale",OVL:"yale",TRC:"yale",CON:"yale",FUN:"yale",GRP:"yale",
+ HEM:"plan",DIST:"plan",WS:"plan",CLIP:"plan",FALX:"plan",TENT:"plan",SVZ:"plan",MSK:"plan",
+ CRS:"plan",RAST:"plan",CEDT:"plan",DIS:"plan",
+ M0:"plan",M1:"plan",M2:"plan",M3:"plan",M4:"plan",M5:"plan",M6:"plan",M7:"plan",NRM:"hot",
+ LS:"hot",PQ:"plan",UPW:"plan",NB:"plan",
+ RISK:"plan",P1:"plan",P2:"plan",P4:"hot",P5:"plan",P6:"hot",P7:"plan",CAP:"plan",BUD:"src",
+ BLD:"plan",NAT:"plan",LEDG:"file",
+ BASE:"ev",MEA:"ev",PEV:"ev",CMP:"ev",CPT:"hot",NIM:"hot",
+ L1:"ev",L2:"ev",CV:"ev",FIT:"plan",LRN:"ev",UNI:"ev",APPLY:"ev",OUT:"ev",B1:"ev",B2:"ev",B3:"ev",B4:"ev",B5:"ev",B6:"hot",
+ RND:"show",VW:"show",TUI:"show",
+ O_SRC:"src",O_SCAN:"scan",O_ATLAS:"yale",O_WALLS:"plan",O_ROADS:"plan",O_SPEED:"plan",
+ O_MARCH:"plan",O_TARGET:"plan",O_EVAL:"ev",O_L3:"ev",O_CLAIM:"ev",O_SHOW:"show",
+};
+const KIND = {
+ M1:["fit","white matter, 1 to 10. A paper says 5, our own sweep disagrees"],
+ M2:["fit","corridor, 1 to 6"],
+ M3:["fit","disruption, 0 to 4, against a fixed 0.25 scale"],
+ M4:["pt","on only when the tumor touches the lining"],
+ M5:["pt","the sparing list, and what each entry is worth"],
+ M6:["reg","should be zero; nonzero only so the solver can divide"],
+ M7:["hard","a barrier, not a setting"],
+ NRM:["hard","arithmetic, so the cap can stay in millimeters"],
+ BUD:["hard","set by the evaluation; only the best case reads the later scan"],
+ NIM:["sup","declared before any run"],
+ CPT:["sup","both are computed until it is made"],
+ LRN:["fit","T*, from the training folds only"],
+ UNI:["fit","learned the same way, on the same patients"],
+ P1:["lit","5 mm. Not fitted: free budget always helps, so a fit","returns zero and calls it a finding"],
+ P2:["lit","20 mm, where 90-95% of recurrences fall"],
+ P4:["lit","2 mL, below which the atlas invents satellites"],
+ P6:["mach","2.5 mm, from the beam. Fitting it would return zero"],
+};
+const KINDNAME = {
+ plain:{fit:"we fit this", lit:"a paper sets this", mach:"the linac sets this",
+        reg:"a regularizer, not a model", pt:"set per patient", hard:"no number to choose",
+        sup:"the supervisor sets this"},
+ tech: {fit:"FITTED", lit:"CITED", mach:"MACHINE", reg:"REGULARIZER",
+        pt:"PER PATIENT", hard:"FIXED", sup:"CLINICAL CHOICE"},
+};
+const FITCOLOR = "#f0b429", TAGCOLOR = "#79838f", LOOPCOLOR = "#dde3ea", GROUND = "#0f1216";
+const EDGECOLOR = {src:"#4a525c",scan:"#2b6f91",yale:"#47825f",plan:"#9e4c2d",
+  ev:"#8c5876",show:"#705ba0",file:"#444e5b",hot:"#9e4c2d"};
+
+// drawn with a dashed outline: designed, not built yet
+const PLANNED = new Set(["NIM","L1","L2","CV","FIT","LRN","UNI","APPLY","OUT","O_L3"]);
+
+// a stage's links out of its own page are hollow boxes, never lines across the canvas.
+// dir: in, out, loopin, loopout.  at: the box it attaches to (one or several)
+const VIEWS = {
+ overview:{name:"Overview", color:"#98a2ae",
+  blurb:{plain:"The whole method on one page. Each box is a stage; click one to open it. White lines marked with a loop arrow are loops that go back and repeat.",
+         tech:"Package-level map. Click a stage for its functions. The loop arrows are labeled with their count or stopping rule."},
+  rank:"TB",
+  nodes:["O_SRC","O_SCAN","O_ATLAS","O_WALLS","O_ROADS","O_SPEED","O_MARCH","O_TARGET","O_EVAL","O_L3","O_CLAIM","O_SHOW"],
+  open:{O_SCAN:"scan",O_ATLAS:"atlas",O_WALLS:"walls",O_ROADS:"roads",O_SPEED:"speed",O_MARCH:"march",
+        O_TARGET:"target",O_EVAL:"eval",O_L3:"level3",O_SHOW:"show",O_SRC:"scan",O_CLAIM:"eval"},
+  edges:[["O_SRC","O_SCAN"],["O_SRC","O_ATLAS"],["O_SCAN","O_ATLAS","the tumor, on the template"],
+    ["O_SCAN","O_WALLS","tissue labels"],["O_ATLAS","O_WALLS","callosum"],["O_ATLAS","O_ROADS"],
+    ["O_WALLS","O_SPEED"],["O_ROADS","O_SPEED"],["O_SPEED","O_MARCH"],["O_MARCH","O_TARGET"],
+    ["O_MARCH","O_EVAL","level 1 reads arrival times"],["O_TARGET","O_EVAL"],
+    ["O_EVAL","O_L3","level 1 score, comparators"],["O_TARGET","O_L3","held-out plans"],
+    ["O_EVAL","O_CLAIM"],["O_L3","O_CLAIM","primary"],
+    ["O_TARGET","O_SHOW","not wired yet","dashed"],
+    ["O_SCAN","O_SCAN","each of 82 scans","loop"],
+    ["O_L3","O_SPEED","next setting of the three dials, 40 in all","loop"],
+    ["O_EVAL","O_TARGET","next volume on the ladder, 10 in all","loop"],
+    ["O_L3","O_L3","5 folds","loop"]]},
+
+ scan:{name:"1 · Scans", color:"#3fa7d6",
+  blurb:{plain:"Runs once per scan, 82 scans, about five minutes each, most of it the tumor segmentation. Everything after this works on the shared MNI template, where the atlas lives.",
+         tech:"main.process per subject-timepoint over STAGES fetch strip tissue segment register map. Median 200 s in segment, 39 s each in tissue and register."},
+  nodes:["T1S","FSS","MNIS","FETCH","STRIP","VER","TIS","SEG","REG","TMNI","EVAL","D1","D2","D3","D4","D5"],
+  clusters:[["c_src","sources, downloaded once","#5c6672",["T1S","FSS","MNIS"]],
+    ["c_one","one scan at a time, native 240 x 240 x 155","#3fa7d6",["FETCH","STRIP","VER","TIS","SEG","REG","TMNI","EVAL"]],
+    ["c_files","what it writes, per scan","#39424d",["D1","D2","D3","D4","D5"]]],
+  edges:[["T1S","FETCH"],["FSS","STRIP"],["FSS","TIS",null,"soft"],["MNIS","REG",null,"soft"],
+    ["FETCH","STRIP"],["STRIP","VER"],["VER","TIS"],["TIS","SEG"],["SEG","REG"],
+    ["STRIP","D1"],["SEG","D2"],["TIS","D3"],["REG","TMNI"],["TMNI","D4"],["REG","D4"],["REG","EVAL"],["EVAL","D5"],
+    ["EVAL","FETCH","next scan, 82 in all","loop"]],
+  stubs:[{id:"s1",dir:"out",view:"atlas",at:"D4",plain:"the tumor and tissue, on the template",tech:"seg_in_mni, tissue_in_mni"},
+    {id:"s2",dir:"out",view:"walls",at:"D3",plain:"tissue labels",tech:"tissue_in_mni.nii.gz"},
+    {id:"s3",dir:"out",view:"march",at:"D2",plain:"the tumor outline: where the spread starts",tech:"seg_in_mni > 0"},
+    {id:"s4",dir:"out",view:"eval",at:"D2",plain:"the later scan: the answer key",tech:"_21 seg_in_mni"}]},
+
+ atlas:{name:"2 · Atlas", color:"#6fbf8b",
+  blurb:{plain:"The Yale Brain Atlas is the road map: 696 regions, about 3,000 highways (streamlines), and how strongly each region is wired to every other. Here it meets this patient's tumor.",
+         tech:"yale/: parcels, top-5k tract centerlines, SC_Count connectivity, Parcelsynth terms. graph.through gives each tract's reach from the mass."},
+  nodes:["YBAS","ATL","TRC","CON","FUN","OVL","GRP"],
+  edges:[["YBAS","ATL"],["YBAS","TRC"],["YBAS","CON"],["YBAS","FUN"],["ATL","OVL"],["TRC","GRP"],["CON","GRP"]],
+  stubs:[{id:"a0",dir:"in",view:"scan",at:["OVL","GRP"],plain:"the tumor, on the template",tech:"seg_in_mni"},
+    {id:"a1",dir:"out",view:"walls",at:"ATL",plain:"the six corpus callosum regions",tech:"CALLOSUM L_CC_A/B/C R_CC_A/B/C"},
+    {id:"a2",dir:"out",view:"roads",at:["GRP","CON"],plain:"highways through the tumor, and the wiring table",tech:"graph.through, connect.at_risk"},
+    {id:"a3",dir:"out",view:"speed",at:"FUN",plain:"regions to spare, if the doctor asks",tech:"function.terms"},
+    {id:"a4",dir:"out",view:"show",at:"OVL",plain:"overlap and highways, for display",tech:"render.Scene"}]},
+
+ walls:{name:"3 · Walls", color:"#e4572e",
+  blurb:{plain:"No tool labels the dura, so the falx and tentorium are built from the tissue labels: each wall goes halfway between the two sides it separates. The corpus callosum is cut out as the one bridge across the midline.",
+         tech:"barriers.masks: brain is the MNI template's own mask; falx = interface(LEFT, RIGHT) minus the six CC parcels; GAP_MM 12; SVZ_MM 5."},
+  nodes:["HEM","DIST","WS","CLIP","FALX","TENT","SVZ","MSK"],
+  edges:[["HEM","DIST"],["DIST","WS"],["WS","CLIP"],["CLIP","FALX"],["CLIP","TENT"],["FALX","MSK"],["TENT","MSK"]],
+  stubs:[{id:"w0",dir:"in",view:"scan",at:["HEM","SVZ"],plain:"tissue labels",tech:"tissue_in_mni"},
+    {id:"w1",dir:"in",view:"atlas",at:"FALX",plain:"the callosum regions: the bridge",tech:"CALLOSUM parcels"},
+    {id:"w2",dir:"in",view:"scan",at:"SVZ",plain:"the tumor: does it touch the lining?",tech:"svz_contact"},
+    {id:"w3",dir:"out",view:"speed",at:["MSK","SVZ"],plain:"brain, tissue and wall masks; the lining",tech:"masks dict, svz rinds"}]},
+
+ roads:{name:"4 · Highways", color:"#e4572e",
+  blurb:{plain:"The highways that pass through this tumor are laid onto the voxel grid, so the speed map can boost tissue near them. Each region's connection loss is painted onto its voxels.",
+         tech:"conduits.crossing (cached), corridors(tube_mm) (not cached), disruption: at_risk share per parcel voxel, 0 to about 0.25."},
+  nodes:["CRS","RAST","CEDT","DIS"],
+  edges:[["CRS","RAST"],["RAST","CEDT"]],
+  stubs:[{id:"r0",dir:"in",view:"atlas",at:"CRS",plain:"highways through the tumor",tech:"graph.through"},
+    {id:"r1",dir:"in",view:"atlas",at:"DIS",plain:"the wiring table",tech:"connect.at_risk"},
+    {id:"r2",dir:"out",view:"speed",at:["CEDT","DIS"],plain:"distance to a highway; loss per region",tech:"corridors, disruption"}]},
+
+ speed:{name:"5 · Speed map", color:"#e4572e",
+  blurb:{plain:"One speed per voxel. The ground rules go down first, each overwriting the last, so a wall's zero can never be undone. The boosts are then multiplied on top, in any order. Only the three amber dials are free.",
+         tech:"speed.field: four assignments, then four multipliers, then base /= base.max(). Fitted: wm_gain, tract_gain, risk_gain."},
+  nodes:["M0","M1","M6","M7","M2","M3","M4","M5","NRM"],
+  clusters:[["c_ground","ground rules, each one overwriting the last","#e4572e",["M0","M1","M6","M7"]],
+    ["c_boost","boosts, multiplied on top in any order","#e4572e",["M2","M3","M4","M5"]]],
+  edges:[["M0","M1"],["M1","M6"],["M6","M7"],["M7","M2"],["M7","M3"],["M7","M4"],["M7","M5"],
+    ["M2","NRM"],["M3","NRM"],["M4","NRM"],["M5","NRM"]],
+  stubs:[{id:"p0",dir:"in",view:"walls",at:"M0",plain:"brain, tissue and wall masks",tech:"barriers.masks"},
+    {id:"p1",dir:"in",view:"roads",at:["M2","M3"],plain:"distance to a highway; loss per region",tech:"corridors, disruption"},
+    {id:"p2",dir:"in",view:"walls",at:"M4",plain:"the ventricle lining, on contact",tech:"svz rinds"},
+    {id:"p3",dir:"in",view:"atlas",at:"M5",plain:"regions to spare",tech:"spare=[(mask, weight)]"},
+    {id:"p4",dir:"loopin",view:"level3",at:["M1","M2","M3"],plain:"next setting of the three dials, 40 in all",tech:"fit.suggest"},
+    {id:"p5",dir:"out",view:"march",at:"NRM",plain:"the finished speed map",tech:"float32 S, peak 1"}]},
+
+ march:{name:"6 · Spread", color:"#e4572e",
+  blurb:{plain:"Picture ink spreading from the tumor: fast on highways, slow on side streets, stopped at walls. Fast marching finds when it reaches every voxel by always finalizing the soonest one next; once final, a voxel never changes.",
+         tech:"march.travel calls skfmm.travel_time, about 9 to 11 s on the full grid. target.risk then applies the wall-face rule."},
+  nodes:["LS","PQ","UPW","RISK","NB"],
+  edges:[["LS","PQ"],["PQ","UPW"],["UPW","RISK"],["NB","RISK",null,"soft"],
+    ["UPW","PQ","until every voxel is frozen","loop"]],
+  stubs:[{id:"m0",dir:"in",view:"speed",at:"LS",plain:"the speed map",tech:"field()"},
+    {id:"m1",dir:"in",view:"scan",at:"LS",plain:"the tumor outline",tech:"seg > 0"},
+    {id:"m2",dir:"out",view:"target",at:"RISK",plain:"arrival times",tech:"T"},
+    {id:"m3",dir:"out",view:"eval",at:"RISK",plain:"arrival times, straight to level 1",tech:"T, for planeval.auc"}]},
+
+ target:{name:"7 · Target", color:"#e4572e",
+  blurb:{plain:"Arrival times become a shape a linac can deliver. The inner loop repeats until the volume is right, since smoothing changes the size a little each time. How much to take is set by the evaluation, never read from the recurrence, except in the best case.",
+         tech:"target.build calls shape() up to 12 times, tol 1%, and reports capped when two rounds deliver the same volume."},
+  nodes:["BUD","P1","P2","P4","P5","P6","P7","CAP","BLD","NAT"],
+  edges:[["P1","P2"],["BUD","P2"],["P2","P4"],["P4","P5"],["P5","P6"],["P6","P7"],["P7","CAP"],["CAP","BLD"],["BLD","NAT"],
+    ["P7","P1","rescale the ask until the volume lands within 1%","loop"]],
+  stubs:[{id:"t0",dir:"in",view:"march",at:"P1",plain:"arrival times",tech:"T"},
+    {id:"t1",dir:"loopin",view:"eval",at:"BUD",plain:"next ladder volume (10), or halve the interval (best case)",tech:"ladder, smallest"},
+    {id:"t2",dir:"in",view:"level3",at:"BUD",plain:"the learned cutoff T*",tech:"T <= T*"},
+    {id:"t3",dir:"out",view:"eval",at:"BLD",plain:"targets, scored on the template",tech:"mask in MNI"},
+    {id:"t4",dir:"out",view:"level3",at:"BLD",plain:"plans for the held-out patients",tech:"mask"}]},
+
+ eval:{name:"8 · Evaluation", color:"#c77aa0",
+  blurb:{plain:"Every shape stands on the same brain mask and faces the same comparators. Level 1 needs no volume at all, level 2 draws the whole trade-off curve, and the best case is kept only as support, because it reads the later scan to choose its volume.",
+         tech:"planeval.auc and ladder are planned; spared is built; null and tract_null at 100 draws; measure.overlap feeds the compartment question."},
+  nodes:["BASE","MEA","CPT","B1","B2","B3","B4","L1","L2","PEV","B5","B6","CMP"],
+  clusters:[["c_cmp","comparators","#c77aa0",["B1","B2","B3","B4"]],
+    ["c_l1","level 1: a ranking, no volume chosen","#c77aa0",["L1"]],
+    ["c_l2","level 2: the trade-off curve","#c77aa0",["L2"]],
+    ["c_ora","supporting: the best case","#c77aa0",["PEV"]],
+    ["c_nul","nulls: is it better than chance","#c77aa0",["B5","B6"]]],
+  edges:[["BASE","B1"],["BASE","B2"],["BASE","B3"],["BASE","B4"],["MEA","CPT"],
+    ["CPT","L1","scored on"],["CPT","L2"],["CPT","PEV"],
+    ["B1","PEV","coverage to match"],["B2","PEV"],["B2","L2"],["B3","L2"],["B4","L2"],
+    ["L1","CMP","mechanism"],["L2","CMP","secondary"],["PEV","CMP","supporting"],["B5","CMP"],["B6","CMP"],
+    ["B5","B5","100 rewirings","loop"],["B6","B6","100 redraws","loop"]],
+  stubs:[{id:"e0",dir:"in",view:"march",at:"L1",plain:"arrival times",tech:"T"},
+    {id:"e1",dir:"in",view:"target",at:["L2","PEV"],plain:"targets",tech:"build masks"},
+    {id:"e2",dir:"in",view:"scan",at:"MEA",plain:"the later scan",tech:"_21"},
+    {id:"e3",dir:"loopout",view:"target",at:["L2","PEV"],plain:"next ladder volume, or halve the interval",tech:"budget_ml"},
+    {id:"e4",dir:"out",view:"level3",at:["L1","B1","B2"],plain:"level 1 score, the 2 cm plan, the even expansion, which part counts",tech:"auc, rtog, isotropic, region"},
+    {id:"e5",dir:"in",view:"level3",at:"CMP",plain:"the primary result",tech:"OUT"}]},
+
+ level3:{name:"9 · Level 3", color:"#c77aa0",
+  blurb:{plain:"The claim a clinic could use: a plan fixed in advance and tested on patients it never saw. Five folds; inside each, the dials are tuned and the cutoff learned on the other four. Planned, not built.",
+         tech:"Nested CV: outer k=5; inner fit.optimize on planeval.auc, then T* and uniform_mm by the non-inferiority rule. About 4 to 5 h with 12 patients in parallel."},
+  nodes:["CV","FIT","UNI","NIM","LRN","APPLY","OUT"],
+  edges:[["CV","FIT"],["CV","UNI"],["FIT","LRN"],["NIM","LRN"],["NIM","UNI"],["LRN","APPLY"],
+    ["UNI","OUT"],["APPLY","OUT",null,"invis"],["OUT","CV","next fold, 5 in all","loop"]],
+  stubs:[{id:"l0",dir:"in",view:"eval",at:["FIT","UNI","OUT"],plain:"level 1 score, the 2 cm plan, the even expansion, which part counts",tech:"auc, rtog, isotropic, region"},
+    {id:"l1",dir:"loopout",view:"speed",at:"FIT",plain:"next setting of the three dials, 40 in all",tech:"fit.suggest"},
+    {id:"l2",dir:"out",view:"target",at:"APPLY",plain:"the learned dials and cutoff T*",tech:"build(T <= T*)"},
+    {id:"l3",dir:"in",view:"target",at:"OUT",plain:"plans for the held-out patients",tech:"mask"},
+    {id:"l4",dir:"out",view:"eval",at:"OUT",plain:"the primary result",tech:"dominates / trade-off / dominated"}]},
+
+ show:{name:"Viewers", color:"#a98ede",
+  blurb:{plain:"For looking, not for results: a 3D scene, slices and the connectome chart in the terminal, and an interactive browser view. The target is not drawn in them yet.",
+         tech:"show/render (pyvista to PIL to kitty), show/view (Plotly), tui.Console."},
+  nodes:["RND","VW","TUI"],
+  edges:[["RND","TUI"]],
+  stubs:[{id:"v0",dir:"in",view:"scan",at:["RND","VW"],plain:"volumes on the template",tech:"D4"},
+    {id:"v1",dir:"in",view:"atlas",at:"RND",plain:"overlap and highways",tech:"OVL, GRP"},
+    {id:"v2",dir:"in",view:"target",at:"RND",plain:"the target: not wired yet",tech:"not wired",dashed:true}]},
+
+ numbers:{name:"Every number", color:"#f0b429",
+  blurb:{plain:"Every number in the method, and who is allowed to move it. Only the amber ones are fitted; everything else comes from a paper, the machine, the clinic, or a stated judgment call.",
+         tech:"Constants and search boxes as they stand in the code today, plus the two planned level 3 settings."}},
+};
+const ORDER = ["overview","scan","atlas","walls","roads","speed","march","target","eval","level3","show","numbers"];
+
+// [plain name, code name, value, who sets it, fitted?, where]
+const NUMBERS = [
+ ["fitted, and only these"],
+ ["White-matter speed","wm_gain","5 by default, searched 1 to 10","fitted; a paper says 5 [swanson00], our sweep disagrees",1,"5 · Speed map"],
+ ["Highway boost","tract_gain","3 by default, searched 1 to 6","fitted",1,"5 · Speed map"],
+ ["Connection-loss boost","risk_gain","1 by default, searched 0 to 4","fitted",1,"5 · Speed map"],
+ ["Arrival-time cutoff","T*","learned per fold","fitted, planned",1,"9 · Level 3"],
+ ["Best even margin","uniform_mm","learned per fold","fitted the same way, planned",1,"9 · Level 3"],
+ ["set by a paper or the machine"],
+ ["Reach cap","CEILING_MM","20 mm","a paper: 90 to 95% of recurrences fall within 2 cm [recur21]",0,"7 · Target"],
+ ["Floor","FLOOR_MM","5 mm","a paper; never fitted, since a fit would drive it to 0",0,"7 · Target"],
+ ["Edge blur","SIGMA_MM","2.5 mm, a 4.2 mm edge","the linac's penumbra [penumbra]",0,"7 · Target"],
+ ["fixed choices, stated as such"],
+ ["Smallest satellite","SATELLITE_ML","2 mL","a judgment call: below it, atlas noise invents pieces",0,"7 · Target"],
+ ["Highway width","TUBE_MM","6 mm, 2 mm in the null test","a steering choice",0,"4 · Highways"],
+ ["Loss scale","RISK_SCALE","0.25","fixed so the dial means the same on any cohort",0,"5 · Speed map"],
+ ["Fluid speed","EPS_CSF","0.05","a regularizer; it should be 0",0,"5 · Speed map"],
+ ["Wall clip","GAP_MM","12 mm","fixed; at 8 mm the walls leak",0,"3 · Walls"],
+ ["Lining thickness","SVZ_MM","5 mm","fixed",0,"3 · Walls"],
+ ["Budget for tuning and nulls","fit.BUDGET","55% of reachable","an operating point, matched to the null",0,"8 · Evaluation"],
+ ["Null draws","draws","100 per patient","the fewest that can reach p below 0.01",0,"8 · Evaluation"],
+ ["Folds and tuning tries","k, calls","5 folds, 40 tries","a compute trade-off",0,"9 · Level 3"],
+ ["set per patient or by the supervisor"],
+ ["Ventricle-lining boost","SVZ_GAIN","3, only on contact; off by default","per patient",0,"5 · Speed map"],
+ ["Regions to spare","spare","none by default","the clinician",0,"5 · Speed map"],
+ ["How much to take","budget_ml","a ladder volume, a cutoff, or a search","the evaluation; never an input",0,"7 · Target"],
+ ["Which part counts","region","whole abnormality or enhancing only","the supervisor; still open",0,"8 · Evaluation"],
+ ["Coverage a plan may give up","margin_pts","not set yet","the supervisor; still open",0,"9 · Level 3"],
+];
+
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+
+function nodeLine(id, labels, mode){
+  const [fill,edge,text] = STYLE[CLS[id]];
+  const lines = labels[id] || ["?"];
+  const big = id.startsWith("O_");
+  const head = "<b>" + esc(lines[0]) + "</b>";
+  const rest = lines.slice(1).map(l => '<font point-size="' + (big ? 10.5 : 9.5) + '" color="' + edge + '">' + esc(l) + "</font>");
+  const k = KIND[id];
+  if (k) {
+    const c = k[0] === "fit" ? FITCOLOR : TAGCOLOR;
+    rest.push('<font point-size="8.5" color="' + c + '"><b>' + esc(KINDNAME[mode][k[0]]) + "</b>" +
+      k.slice(1).map(x => "<br/>" + esc(x)).join("") + "</font>");
+  }
+  const w = CLS[id] === "hot" ? 2.2 : (big ? 1.4 : 1.0);
+  const shape = CLS[id] === "file" ? "note" : "box";
+  const style = PLANNED.has(id) ? ' style="rounded,filled,dashed"' : "";
+  const size = big ? ' fontsize=13 margin="0.26,0.16"' : "";
+  return '  ' + id + ' [shape=' + shape + style + size + ' label=<' + [head].concat(rest).join("<br/>") +
+         '> fillcolor="' + fill + '" color="' + edge + '" fontcolor="' + text + '" penwidth=' + w + '];\n';
+}
+
+function stubLine(st, mode){
+  const v = VIEWS[st.view], loop = st.dir.startsWith("loop");
+  const c = loop ? LOOPCOLOR : v.color;
+  const verb = {in:"from ", out:"to ", loopin:"↻ from ", loopout:"↻ back to "}[st.dir];
+  const style = st.dashed ? "rounded,filled,dashed" : "rounded,filled";
+  return '  ' + st.id + ' [shape=box style="' + style + '" fillcolor="' + GROUND + '" color="' + c +
+    '" fontcolor="' + c + '" penwidth=1.2 fontsize=10 margin="0.14,0.07" label=<<b>' + esc(verb + v.name) +
+    '</b><br/><font point-size="9">' + esc(mode === "plain" ? st.plain : st.tech) + '</font>>];\n';
+}
+
+function edgeLine(a, b, label, kind, from){
+  const tint = EDGECOLOR[CLS[from]] || "#6c7682";
+  if (kind === "loop") {
+    return "  " + a + " -> " + b + ' [color="' + LOOPCOLOR + '" fontcolor="' + LOOPCOLOR +
+      '" label="↻ ' + (label || "") + '" style=bold penwidth=1.5 arrowsize=0.8 constraint=false];\n';
+  }
+  const at = ['color="' + tint + '"'];
+  if (label) at.push('label="' + label + '" fontcolor="' + tint + '"');
+  if (kind === "dashed") at.push("style=dashed");
+  if (kind === "invis") at.push("style=invis weight=8");
+  at.push(kind === "soft" ? "constraint=false penwidth=0.8 arrowsize=0.55" : "penwidth=1.3");
+  return "  " + a + " -> " + b + " [" + at.join(" ") + "];\n";
+}
+
+function dot(key, mode){
+  const v = VIEWS[key], labels = mode === "plain" ? PLAIN : TECH;
+  let s = 'digraph G {\n  bgcolor="' + GROUND + '"; rankdir=' + (v.rank || "TB") + '; compound=true;\n';
+  s += '  graph [fontname="Helvetica" fontsize=11 nodesep=0.42 ranksep=0.55 pad=0.3 splines=true];\n';
+  s += '  node [shape=box style="rounded,filled" fontname="Helvetica" fontsize=11 margin="0.20,0.12"];\n';
+  s += '  edge [arrowsize=0.65 fontname="Helvetica" fontsize=9];\n';
+  const inCluster = new Set();
+  (v.clusters || []).forEach(([id, label, color, nodes]) => {
+    s += "  subgraph " + id + ' {\n    label=<<b>' + esc(label) + '</b>>; fontcolor="' + color + '"; color="' + color +
+         '"; style="rounded"; penwidth=1.0; fontsize=11; margin=12;\n';
+    nodes.forEach(n => { inCluster.add(n); s += "  " + nodeLine(n, labels, mode); });
+    s += "  }\n";
+  });
+  v.nodes.filter(n => !inCluster.has(n)).forEach(n => { s += nodeLine(n, labels, mode); });
+  // inputs sit at the top of the page and outputs at the bottom, whatever they attach to
+  const stubs = v.stubs || [];
+  const ins = stubs.filter(t => t.dir.endsWith("in")), outs = stubs.filter(t => t.dir.endsWith("out"));
+  if (ins.length) s += "  { rank=min; " + ins.map(t => t.id).join("; ") + "; }\n";
+  if (outs.length) s += "  { rank=max; " + outs.map(t => t.id).join("; ") + "; }\n";
+  stubs.forEach(t => { s += stubLine(t, mode); });
+  (v.edges || []).forEach(e => { s += edgeLine(e[0], e[1], e[2], e[3], e[0]); });
+  stubs.forEach(t => {
+    const loop = t.dir.startsWith("loop"), at = [].concat(t.at);
+    at.forEach(n => {
+      const kind = loop ? "loop" : (t.dashed ? "dashed" : null);
+      if (t.dir.endsWith("in")) s += stubEdge(t.id, n, kind, VIEWS[t.view].color);
+      else s += stubEdge(n, t.id, kind, EDGECOLOR[CLS[n]] || "#6c7682");
+    });
+  });
+  return s + "}\n";
+}
+
+function stubEdge(a, b, kind, color){
+  if (kind === "loop")
+    return "  " + a + " -> " + b + ' [color="' + LOOPCOLOR + '" style=bold penwidth=1.5 arrowsize=0.8];\n';
+  return "  " + a + " -> " + b + ' [color="' + color + '" penwidth=1.1' + (kind === "dashed" ? " style=dashed" : "") + "];\n";
+}
+
+function table(mode){
+  const rows = NUMBERS.map(r => {
+    if (r.length === 1) return '<tr class="grp"><td colspan="4">' + esc(r[0]) + "</td></tr>";
+    const [name, code, value, who, fit, where] = r;
+    return "<tr><td>" + esc(mode === "plain" ? name : code) + '</td><td class="v">' + esc(value) +
+      '</td><td class="k' + (fit ? " fit" : "") + '">' + esc(who) + "</td><td>" + esc(where) + "</td></tr>";
+  }).join("");
+  return "<table><thead><tr><th>" + (mode === "plain" ? "Number" : "In the code") +
+    "</th><th>Value</th><th>Who sets it</th><th>Acts in</th></tr></thead><tbody>" + rows + "</tbody></table>";
+}
+
+const stage = document.getElementById("stage"), nav = document.getElementById("nav");
+let viz = null, mode = "plain", view = "overview";
+
+function read(k, d){ try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
+function keep(k, v){ try { localStorage.setItem(k, v); } catch (e) {} }
+
+ORDER.forEach(key => {
+  const b = document.createElement("button");
+  b.innerHTML = '<span style="background:' + VIEWS[key].color + '"></span>' + esc(VIEWS[key].name);
+  b.dataset.view = key;
+  b.addEventListener("click", () => setView(key));
+  nav.appendChild(b);
+});
+
+function draw(){
+  const v = VIEWS[view];
+  document.getElementById("vname").textContent = v.name;
+  document.getElementById("vblurb").textContent = v.blurb[mode];
+  nav.querySelectorAll("button").forEach(b =>
+    b.dataset.view === view ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
+  if (view === "numbers") { stage.innerHTML = table(mode); return; }
+  if (!viz) return;
+  const svg = viz.renderSVGElement(dot(view, mode));
+  const goes = Object.assign({}, v.open || {});
+  (v.stubs || []).forEach(t => { goes[t.id] = t.view; });
+  svg.querySelectorAll("g.node").forEach(g => {
+    const id = g.querySelector("title").textContent, to = goes[id];
+    if (!to) return;
+    g.classList.add("go"); g.setAttribute("tabindex", "0"); g.setAttribute("role", "link");
+    g.setAttribute("aria-label", "open " + VIEWS[to].name);
+    g.addEventListener("click", () => setView(to));
+    g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setView(to); } });
+  });
+  stage.replaceChildren(svg);
+}
+function setView(next){ view = next; keep("gps-view", next); draw(); window.scrollTo({top: 0}); }
+function setMode(next){
+  mode = next; keep("gps-mode", next);
+  document.getElementById("plain").setAttribute("aria-pressed", String(next === "plain"));
+  document.getElementById("tech").setAttribute("aria-pressed", String(next === "tech"));
+  draw();
+}
+document.getElementById("plain").addEventListener("click", () => setMode("plain"));
+document.getElementById("tech").addEventListener("click", () => setMode("tech"));
+
+mode = read("gps-mode", "plain") === "tech" ? "tech" : "plain";
+view = VIEWS[read("gps-view", "overview")] ? read("gps-view", "overview") : "overview";
+Viz.instance().then(v => { viz = v; setMode(mode); }).catch(err => {
+  stage.innerHTML = '<p class="loading">could not load the renderer: ' + esc(err.message) + "</p>";
+});
+</script>

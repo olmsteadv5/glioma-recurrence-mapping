@@ -104,3 +104,46 @@ through two separate warps. Brain dice 0.987 to 0.989 across five subjects, mean
 residual deformation 0.92 to 1.38 mm, 95th percentile 3.2 to 4.1 mm. The mean is
 well inside a voxel. The tail is comparable to the effects being measured, so it
 is worth stating as a limitation, but it is not corrupting anything.
+
+## What the follow-up scans are, and the resection cavities
+
+From the dataset paper (Bakas et al., Sci Data 2022, PMC9338035): the follow-ups
+come from patients with an initial gross total resection of the tumor core
+followed by chemoradiation, new or increasing enhancement, and a second
+resection, with the follow-up scan taken within 15 days before it. The
+`PsP_TP_score` in `participants.tsv` is the pathology of that second resection:
+the share of tissue with malignant features, 1 = <10%, 2 = 10-25%, 3 = 25-50%,
+4 = 50-75%, 5 = 75-90%, 6 = >90%. Across our 41: 3, 4, 6, 7, 10 and 11
+patients at scores 1 to 6.
+
+Two things in the data do not fit those criteria. Five of the 41 are listed as
+partial resections (`GTR_over90percent = N`). And 00055's follow-up is 31 days
+after its pre-op scan and looks like an unresected tumor, which leaves no room
+for a resection and chemoradiation in between.
+
+**The model labels a cavity on only 11 of the 41 follow-ups** (none on the
+pre-op scans), though every patient was resected. All 41 were looked at, one
+axial slice through the original tumor site on T1-Gd, FLAIR and T2
+(`outputs/figures/cavity_review/`, made by `evidence/cavity_sheets.py`):
+
+- where it labels one, the cavity looks right (00160, 00344, 00130, 00267)
+- at least one clear cavity is left unlabeled (00314); unlabeled voxels are in
+  none of the three volumes, so that is harmless
+- most of the rest show a ring-enhancing lesion at the resection site with a
+  dark center, where a cavity with enhancing recurrence and necrotic tumor are
+  hard to tell apart on one slice
+- 00354's follow-up does not line up with its pre-op scan in their shared
+  native frame; the analysis itself runs in MNI, where the pair registers fine
+
+**A missed cavity could only distort the results by being labeled
+non-enhancing core.** The enhancing tumor volume never includes that label.
+Non-enhancing core is a median 2.9% of the later whole tumor (at most 22.7%)
+and 15.5% of the later tumor core. Treating every non-enhancing voxel as cavity
+moves the median whole tumor capture at 20 mm from 93.6% to 93.4%, at most 4.0
+points in any patient. The core curve could move toward the enhancing curve,
+which it already nearly matches.
+
+An intensity test (fluid = ventricle-like on T1, T2 and FLAIR) was tried and
+dropped: it called the model's own cavities fluid in only 4 of 11 patients, so
+cavity contents here are not ventricle-like enough for it to work.
+

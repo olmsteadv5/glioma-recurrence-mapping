@@ -107,10 +107,12 @@ is worth stating as a limitation, but it is not corrupting anything.
 
 ## What the follow-up scans are, and the resection cavities
 
-From the dataset paper (Bakas et al., Sci Data 2022, PMC9338035): the follow-ups
-come from patients with an initial gross total resection of the tumor core
-followed by chemoradiation, new or increasing enhancement, and a second
-resection, with the follow-up scan taken within 15 days before it. The
+From the dataset paper (Bakas et al., Sci Data 2022, PMC9338035), the follow-up
+inclusion criteria "comprised 1) initial gross total resection of the tumor core
+followed by chemo-radiation, 2) new or increasing enhancement on follow-up MRI,
+3) second resection and histopathological tissue evaluation, and 4) acquisition
+of all modalities (T1, T1-Gd, T2, T2-FLAIR, DSC, and DTI), within 15 days prior
+to the second resection." The
 `PsP_TP_score` in `participants.tsv` is the pathology of that second resection:
 the share of tissue with malignant features, 1 = <10%, 2 = 10-25%, 3 = 25-50%,
 4 = 50-75%, 5 = 75-90%, 6 = >90%. Across our 41: 3, 4, 6, 7, 10 and 11

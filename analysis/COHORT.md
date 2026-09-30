@@ -58,9 +58,8 @@ median 0.988.
 
 **Found in passing, not yet used:** the mirror carries reconstructed diffusion
 imaging (DSI Studio GQI and QSDR) for 493 baselines and 38 follow-ups, and the
-participants table scores each follow-up on a 1 to 6 `PsP_TP_score`, which
-appears to grade pseudoprogression against true progression. Its exact meaning
-has to be confirmed from the release documentation before it is used.
+participants table scores each follow-up on a 1 to 6 `PsP_TP_score`, the
+pathology of the second resection (see below).
 
 ## Which compartment counts as the recurrence
 

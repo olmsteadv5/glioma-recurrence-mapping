@@ -111,6 +111,10 @@ def figure(reach, top, path):
     fig.text(0.075, 0.005, "Grey line = patient. Colored line = median. "
              "Shaded band = middle 50 percentile.", color=FAINT, fontsize=8.5)
     fig.subplots_adjust(hspace=0.42)
+    save(fig, path)
+
+
+def save(fig, path):
     fig.savefig(path, facecolor="white", transparent=False)
     plt.close(fig)
     # no alpha channel at all, since some viewers paint a checkerboard for one

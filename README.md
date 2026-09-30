@@ -43,6 +43,9 @@ This writes `outputs/overlap_review.csv`, one row per patient.
 `./analysis/capture_curves.py` draws how much of the later tumor a uniform
 margin catches, out to the farthest recurrence, into `outputs/figures/`, with each
 patient's numbers in `outputs/capture_curves.csv`.
+`./analysis/pathology_figures.py` splits both by the pathology of the second
+resection: where the tumor outside 20 mm ends up, and how much brain the 2 cm
+margin spends next to a plan that expands only where the tumor came back.
 `analysis/COHORT.md` explains how the 41 patients were chosen and checked.
 
 ## Looking at a patient

@@ -5,6 +5,7 @@ import functools
 
 import nibabel as nib
 import numpy as np
+from scipy import ndimage
 
 from geometry import MARGIN_MM, distance, ml_per_voxel, template_brain
 from paths import OUTPUTS, REGIONS, out_dir
@@ -82,21 +83,57 @@ def reach(first, later, region="WT"):
 
 
 @functools.lru_cache(maxsize=1)
-def _days():
-    # the dataset's own interval for each follow-up scan. Reconstructing it from
-    # TCIA study dates is wrong for 00130, which has an extra study 11 days before
-    # the one the release curated as its follow-up
+def _participants():
+    # the dataset's own record for each scan. Its interval beats one rebuilt from
+    # TCIA study dates, which is wrong for 00130: that patient has an extra study
+    # 11 days before the one the release curated as its follow-up
     path = OUTPUTS / "participants.tsv"
     if not path.exists():
         return {}
     with open(path) as fh:
-        rows = csv.DictReader(fh, delimiter="\t")
-        return {r["ID"]: r["Time_since_baseline_preop"] for r in rows}
+        return {r["ID"]: r for r in csv.DictReader(fh, delimiter="\t")}
+
+
+def _followup(first, column):
+    value = _participants().get(first[:-2] + "21", {}).get(column)
+    return int(value) if value and value.isdigit() else None
 
 
 def interval(first):
-    days = _days().get(first[:-2] + "21")
-    return int(days) if days and days.isdigit() else None
+    return _followup(first, "Time_since_baseline_preop")
+
+
+def pathology(first):
+    # the second resection's share of tissue with malignant features,
+    # 1 = under 10% up to 6 = over 90%
+    return _followup(first, "PsP_TP_score")
+
+
+def margin_ml(first, mm):
+    # brain added by growing the whole first tumor mm millimeters, in mL
+    _, image = _seg(first)
+    far = np.sort(_far(first, "WT")[template_brain()])
+    grown = np.searchsorted(far, mm, side="right") - np.searchsorted(far, 0, side="right")
+    return grown * ml_per_voxel(image)
+
+
+def zones(first, later, region="WT"):
+    # mL of the later tumor inside the whole first tumor, within the margin of it,
+    # past the margin but joined to tumor within it, and in separate lesions lying
+    # wholly past it. None when that part is absent at the later scan
+    b, image = _seg(later)
+    now = _in(b, region)
+    if not now.any():
+        return None
+    far = _far(first, "WT")
+    lesions, count = ndimage.label(now, structure=np.ones((3, 3, 3)))
+    nearest = np.asarray(ndimage.minimum(far, lesions, index=np.arange(1, count + 1)))
+    apart = np.isin(lesions, np.flatnonzero(nearest > MARGIN_MM) + 1)
+    ml = ml_per_voxel(image)
+    return {"inside": float((now & (far == 0)).sum()) * ml,
+            "within": float((now & (far > 0) & (far <= MARGIN_MM)).sum()) * ml,
+            "beyond": float((now & (far > MARGIN_MM) & ~apart).sum()) * ml,
+            "separate": float(apart.sum()) * ml}
 
 
 def pairs(tissue=False):
@@ -116,6 +153,11 @@ def review(pairs, regions=("WT", "TC", "ET")):
         for region in regions:
             rows.append({"patient": first[-8:-3], "days": interval(first),
                          **overlap(first, later, region)})
-        _seg.cache_clear()
-        _far.cache_clear()
+        forget()
     return rows
+
+
+def forget():
+    # each cached distance map is a whole MNI volume, so drop them between patients
+    _seg.cache_clear()
+    _far.cache_clear()

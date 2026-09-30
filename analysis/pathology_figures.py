@@ -27,8 +27,6 @@ BLUE, ORANGE, RED = "#2a78d6", "#eb6834", "#c8323c"
 PARTS = (("ET", "Enhancing"), ("WT", "Whole tumor"))
 # the dataset's six pathology scores, as the share of tissue with malignant features
 SCORES = ((6, "over 90%"), (5, "75-90%"), (4, "50-75%"), (3, "25-50%"), (2, "10-25%"), (1, "under 10%"))
-# three groups for the curves, since one score alone is as few as 3 patients
-GROUPS = (("Pathology 5-6", (5, 6)), ("Pathology 3-4", (3, 4)), ("Pathology 1-2", (1, 2)))
 # why: Lee et al.'s central class, 95% of the recurrence inside the field [lee99]
 LEVEL = 0.95
 MM = np.arange(0, 90.25, 0.25)
@@ -122,11 +120,11 @@ def crossing(curve, level):
 def headroom(rows, path):
     ml = ml_per_voxel(nib.load(MNI))
     level = 100 * LEVEL
-    fig, axes = plt.subplots(2, len(GROUPS), figsize=(11, 7), sharex=True, sharey=True)
+    fig, axes = plt.subplots(2, len(SCORES), figsize=(17, 6.6), sharex=True, sharey=True)
     for i, (code, part) in enumerate(PARTS):
-        for j, (name, scores) in enumerate(GROUPS):
+        for j, (score, share) in enumerate(SCORES):
             ax = axes[i, j]
-            uniform, best, points = curves([r for r in rows if r["score"] in scores], code, ml)
+            uniform, best, points = curves([r for r in rows if r["score"] == score], code, ml)
             mid, top = np.median(uniform, axis=0), np.median(best, axis=0)
             ax.fill_between(VOLUME, *np.percentile(uniform, [25, 75], axis=0), color=tint(BLUE, 0.72), lw=0, zorder=2)
             ax.plot(VOLUME, mid, color=BLUE, lw=2.2, zorder=4)
@@ -149,13 +147,14 @@ def headroom(rows, path):
             ax.xaxis.set_major_locator(MultipleLocator(200))
             ax.set_title(f"{part} ({len(uniform)})", loc="left", fontsize=11)
             if i == 0:
-                ax.text(0.5, 1.2, name, transform=ax.transAxes, ha="center", fontsize=12, fontweight="bold")
+                ax.text(0.5, 1.2, f"Pathology {score}\n{share} malignant", transform=ax.transAxes, ha="center",
+                        fontsize=12, fontweight="bold")
     fig.supxlabel("Brain irradiated beyond the original tumor (mL)", y=0.06, fontsize=10, color=SOFT)
     fig.supylabel("Recurrence captured (% of volume)", x=0.02, fontsize=10, color=SOFT)
     fig.text(0.02, 0.005, "Blue line = uniform expansion, median. Dashed line = best possible, median. Shaded band "
              "= middle 50 percentile.\nBest possible = expanding only into the voxels where the tumor came back. "
              f"Grey dot = patient at 2 cm. Orange = volume saved at {level:.0f}% capture.", color=FAINT, fontsize=9)
-    fig.subplots_adjust(left=0.09, right=0.98, top=0.87, bottom=0.16, wspace=0.12, hspace=0.45)
+    fig.subplots_adjust(left=0.06, right=0.99, top=0.84, bottom=0.17, wspace=0.12, hspace=0.5)
     save(fig, path)
 
 

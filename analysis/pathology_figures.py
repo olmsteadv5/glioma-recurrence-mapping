@@ -89,9 +89,9 @@ def recurrence_location(rows, path):
         ax.set_xlabel("Share of the follow-up tumor")
     fig.legend([Patch(color=c) for *_, c in zones], [name for _, name, _ in zones], loc="upper left",
                bbox_to_anchor=(0.08, 1.01), ncol=4, frameon=False, handlelength=1.1, columnspacing=1.6)
-    fig.text(0.01, 0.005, "One row per patient, sorted by days between scans. Distances are from the edge of "
-             "the whole original tumor.\nRight of each bar: follow-up volume of that part, and how much of it "
-             "lies beyond 20 mm (shown when at least 0.1 mL).", color=FAINT, fontsize=9)
+    fig.text(0.01, 0.005, "Bar = patient, sorted by days between scans. Distance = from the edge of the "
+             "original whole tumor.\nNumber = follow-up volume, and how much of it is beyond 20 mm.",
+             color=FAINT, fontsize=9)
     fig.subplots_adjust(left=0.08, right=0.86, top=0.955, bottom=0.05, hspace=0.5, wspace=0.36)
     save(fig, path)
 

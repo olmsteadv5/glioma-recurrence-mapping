@@ -51,7 +51,7 @@ def collect():
     return rows
 
 
-def failure_pattern(rows, path):
+def recurrence_location(rows, path):
     zones = (("inside", "Inside original tumor", tint(BLUE, 0.55)), ("within", "Outside, within 20 mm", BLUE),
              ("beyond", "Beyond 20 mm", ORANGE), ("separate", "Separate lesion beyond 20 mm", RED))
     groups = [sorted((r for r in rows if r["score"] == s and r["WT"]), key=lambda r: r["days"]) for s, _ in SCORES]
@@ -163,7 +163,7 @@ def main():
     figures.mkdir(exist_ok=True)
     rows = collect()
     style()
-    failure_pattern(rows, figures / "failure_pattern.png")
+    recurrence_location(rows, figures / "recurrence_location.png")
     headroom(rows, figures / "headroom.png")
 
 

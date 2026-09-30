@@ -19,7 +19,7 @@ from matplotlib.ticker import MultipleLocator, PercentFormatter
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from analysis import measure
-from analysis.capture_curves import FAINT, INK, PATIENT, SOFT, capture, save, style
+from analysis.capture_curves import FAINT, INK, SOFT, capture, save, style
 from geometry import MARGIN_MM, ml_per_voxel
 from paths import MNI, OUTPUTS
 
@@ -130,7 +130,6 @@ def headroom(rows, path):
             ax.plot(VOLUME, mid, color=BLUE, lw=2.2, zorder=4)
             ax.fill_between(VOLUME, *np.percentile(best, [25, 75], axis=0), color=tint(SOFT, 0.85), lw=0, zorder=1)
             ax.plot(VOLUME, top, color=SOFT, lw=1.2, ls=(0, (4, 2)), zorder=3)
-            ax.scatter(points[:, 0], 100 * points[:, 1], s=10, color=PATIENT, lw=0, zorder=2.5)
             at = float(np.median(points[:, 0]))
             here = float(np.interp(at, VOLUME, mid))
             ax.plot(at, here, "o", ms=6, mfc="white", mec=BLUE, mew=1.4, zorder=6, clip_on=False)
@@ -153,7 +152,7 @@ def headroom(rows, path):
     fig.supylabel("Recurrence captured (% of volume)", x=0.02, fontsize=10, color=SOFT)
     fig.text(0.02, 0.005, "Blue line = uniform expansion, median. Dashed line = best possible, median. Shaded band "
              "= middle 50 percentile.\nBest possible = expanding only into the voxels where the tumor came back. "
-             f"Grey dot = patient at 2 cm. Orange = volume saved at {level:.0f}% capture.", color=FAINT, fontsize=9)
+             f"Open circle = median patient at 2 cm. Orange = volume saved at {level:.0f}% capture.", color=FAINT, fontsize=9)
     fig.subplots_adjust(left=0.06, right=0.99, top=0.84, bottom=0.17, wspace=0.12, hspace=0.5)
     save(fig, path)
 

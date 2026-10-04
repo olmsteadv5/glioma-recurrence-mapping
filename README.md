@@ -26,26 +26,36 @@ and SynthSeg, and greedy, which comes with ITK-SNAP.
 ```
 
 The number is the UPenn-GBM patient number. It runs fetch, strip, tissue,
-segment, register and map in that order. Use `--from segment` (or any stage) to
+segment, register, align and map in that order. Align only does anything for a
+follow-up: it lines the same patient's pre-op scan up with it, rigidly, so
+the two can be compared without leaving the patient's own space. Use `--from segment` (or any stage) to
 redo a scan from that point, and `--no-view` to skip the browser window.
 
 Each scan takes about 5 minutes on CPU, mostly segmentation. The first run is
 slower because it downloads a 30 GB Docker image. Segmentation uses the BraTS
 2025 winning model on an NVIDIA GPU and the second-place model on CPU.
 
+The 82 segmentations in `outputs/` are from the winning model (BraTS25_1), run
+on a Yale Bouchet GPU because this laptop has none; each scan's
+`segmentation.log` says how. The earlier second-place (CPU) segmentations and
+the results made from them are kept in `outputs_25_2/`.
+
 ## The overlap results
 
+Every result is made twice, into `outputs/native/` and `outputs/mni/`. Native is
+the patient's own follow-up scan, where volumes are exactly as scanned; MNI is the
+standard brain the atlas lives in, which stretches volumes a little.
+
 ```bash
-./analysis/overlap_csv.py
+./analysis/overlap_csv.py        # overlap_review.csv, one row per patient
+./analysis/capture_curves.py     # how much a uniform margin catches, out to the farthest recurrence
+./analysis/pathology_figures.py  # where the tumor outside 20 mm goes, and what the 2 cm margin spends
+./analysis/overlap_plots.py      # overlap against tumor size, and margins by pathology score
+./analysis/lobes.py              # tumor_lobes.csv, the lobes each tumor sits in
+./analysis/walkdown.py           # a target 20 mm along the tracts leaving the tumor, against 2 cm and a same-size ball
+./analysis/walkdown_figures.py   # the two figures for sending: cost and capture of each target, and walk-down vs ball
 ```
 
-This writes `outputs/overlap_review.csv`, one row per patient.
-`./analysis/capture_curves.py` draws how much of the later tumor a uniform
-margin catches, out to the farthest recurrence, into `outputs/figures/`, with each
-patient's numbers in `outputs/capture_curves.csv`.
-`./analysis/pathology_figures.py` splits both by the pathology of the second
-resection: where the tumor outside 20 mm ends up, and how much brain the 2 cm
-margin spends next to a plan that expands only where the tumor came back.
 `analysis/COHORT.md` explains how the 41 patients were chosen and checked.
 
 ## Looking at a patient

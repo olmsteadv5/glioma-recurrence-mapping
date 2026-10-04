@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 import matplotlib
-import nibabel as nib
 import numpy as np
 
 matplotlib.use("Agg")
@@ -20,8 +19,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from analysis import measure
 from analysis.capture_curves import FAINT, INK, SOFT, capture, save, style
-from geometry import MARGIN_MM, ml_per_voxel
-from paths import MNI, OUTPUTS
+from geometry import MARGIN_MM
+from paths import results_dir
 
 BLUE, ORANGE, RED = "#2a78d6", "#eb6834", "#c8323c"
 PARTS = (("ET", "Enhancing"), ("WT", "Whole tumor"))
@@ -37,15 +36,16 @@ def tint(color, amount):
     return tuple(c + (1 - c) * amount for c in to_rgb(color))
 
 
-def collect():
+def collect(space):
     rows = []
-    for first, later in measure.pairs():
+    for first, later in measure.pairs(space):
         row = {"patient": first[-8:-3], "days": measure.interval(first),
-               "score": measure.pathology(first), "extra": measure.margin_ml(first, MM),
-               "extra_20": float(measure.margin_ml(first, MARGIN_MM))}
+               "score": measure.pathology(first), "ml": measure.voxel_ml(first, space),
+               "extra": measure.margin_ml(first, MM, space),
+               "extra_20": float(measure.margin_ml(first, MARGIN_MM, space))}
         for code, _ in PARTS:
-            far = measure.reach(first, later, code)
-            row[code] = None if far is None else {"far": far, "zones": measure.zones(first, later, code)}
+            far = measure.reach(first, later, code, space)
+            row[code] = None if far is None else {"far": far, "zones": measure.zones(first, later, code, space)}
         rows.append(row)
         measure.forget()
     return rows
@@ -96,7 +96,7 @@ def recurrence_location(rows, path):
     save(fig, path)
 
 
-def curves(rows, code, ml):
+def curves(rows, code):
     uniform, best, points = [], [], []
     for r in rows:
         if r[code] is None:
@@ -105,7 +105,7 @@ def curves(rows, code, ml):
         uniform.append(np.interp(VOLUME, r["extra"], capture(far, MM)))
         # the best plan adds only brain the tumor came back in, nearest first
         inside, outside = int((far == 0).sum()), int((np.isfinite(far) & (far > 0)).sum())
-        best.append((inside + np.minimum(VOLUME / ml, outside)) / far.size)
+        best.append((inside + np.minimum(VOLUME / r["ml"], outside)) / far.size)
         points.append((r["extra_20"], capture(far, MARGIN_MM)))
     return 100 * np.array(uniform), 100 * np.array(best), np.array(points)
 
@@ -118,13 +118,12 @@ def crossing(curve, level):
 
 
 def headroom(rows, path):
-    ml = ml_per_voxel(nib.load(MNI))
     level = 100 * LEVEL
     fig, axes = plt.subplots(2, len(SCORES), figsize=(17, 6.6), sharex=True, sharey=True)
     for i, (code, part) in enumerate(PARTS):
         for j, (score, share) in enumerate(SCORES):
             ax = axes[i, j]
-            uniform, best, points = curves([r for r in rows if r["score"] == score], code, ml)
+            uniform, best, points = curves([r for r in rows if r["score"] == score], code)
             mid, top = np.median(uniform, axis=0), np.median(best, axis=0)
             ax.fill_between(VOLUME, *np.percentile(uniform, [25, 75], axis=0), color=tint(BLUE, 0.72), lw=0, zorder=2)
             ax.plot(VOLUME, mid, color=BLUE, lw=2.2, zorder=4)
@@ -158,12 +157,11 @@ def headroom(rows, path):
 
 
 def main():
-    figures = OUTPUTS / "figures"
-    figures.mkdir(exist_ok=True)
-    rows = collect()
     style()
-    recurrence_location(rows, figures / "recurrence_location.png")
-    headroom(rows, figures / "headroom.png")
+    for space in measure.SPACES:
+        rows = collect(space)
+        recurrence_location(rows, results_dir(space) / "recurrence_location.png")
+        headroom(rows, results_dir(space) / "headroom.png")
 
 
 if __name__ == "__main__":

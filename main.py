@@ -7,7 +7,7 @@ import time
 
 import nibabel as nib
 
-from scan import evaluate, fetch, register, segment, skullstrip, tissue, verify
+from scan import align, evaluate, fetch, register, segment, skullstrip, tissue, verify
 from yale import atlas, function
 from paths import (MNI, OUTPUTS, RESULTS, STAGES, modality, out_dir, raw_dir,
                    stripped_dir, subject_id)
@@ -66,6 +66,12 @@ def process(number, first="fetch", timepoint=1, was=None):
         # the reslice needs the warp, so it cannot happen back at the tissue stage
         tissue.to_mni(subject)
         took("register", clock)
+
+    if at <= 5 and timepoint == 2:
+        mark("align")
+        clock = time.time()
+        align.run(subject)
+        took("align", clock)
     run["times"] = times
     run["finished"], run["seconds"] = time.time(), round(time.time() - started)
     scores["run"] = run
@@ -92,8 +98,10 @@ def missing(number, first, timepoint=1):
     # it existed must still reach map
     if at >= 4 and not (out_dir(subject) / "seg.nii.gz").exists():
         return f"{subject} has no segmentation, start from segment"
-    if at >= 5 and not (out_dir(subject) / "seg_in_mni.nii.gz").exists():
+    if at >= 6 and not (out_dir(subject) / "seg_in_mni.nii.gz").exists():
         return f"{subject} is not registered, start from register"
+    if at >= 5 and timepoint == 2 and not stripped_dir(subject_id(number, 1)).exists():
+        return f"{subject_id(number, 1)} has no pre-op scan to align, run it first"
     return None
 
 

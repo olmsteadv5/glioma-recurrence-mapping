@@ -32,6 +32,13 @@ def out_dir(subject):
     return OUTPUTS / subject
 
 
+def results_dir(space):
+    # analysis outputs, kept apart per space so neither overwrites the other
+    path = OUTPUTS / space
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def stripped_dir(subject):
     return out_dir(subject) / "stripped"
 
@@ -40,7 +47,7 @@ def modality(directory, subject, name):
     return directory / f"{subject}_{name}.nii.gz"
 
 
-STAGES = ("fetch", "strip", "tissue", "segment", "register", "map")
+STAGES = ("fetch", "strip", "tissue", "segment", "register", "align", "map")
 
 
 def stage_file(subject, stage):
@@ -51,4 +58,6 @@ def stage_file(subject, stage):
         "tissue": out_dir(subject) / "tissue.nii.gz",
         "segment": out_dir(subject) / "seg.nii.gz",
         "register": out_dir(subject) / "seg_in_mni.nii.gz",
+        # patient space is the follow-up's, so a pre-op scan has nothing of its own to align
+        "align": out_dir(subject) / ("seg.nii.gz" if subject.endswith("_11") else "first_seg_in_later.nii.gz"),
     }.get(stage)

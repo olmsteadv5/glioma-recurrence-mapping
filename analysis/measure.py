@@ -1,4 +1,6 @@
-# Where the recurrence sits relative to the first tumor, in MNI, the frame both share.
+# Where the recurrence sits relative to the first tumor, in either space a pair can
+# be compared in: MNI, where the atlas lives, or the patient's own follow-up scan,
+# which the pre-op scan reaches by a rigid fit that leaves every volume as scanned.
 
 import csv
 import functools
@@ -15,10 +17,34 @@ from paths import OUTPUTS, REGIONS, out_dir
 PATTERNS = ((0.95, "central"), (0.80, "in-field"), (0.20, "marginal"), (0.0, "distant"))
 
 
+SPACES = ("native", "mni")
+
+
+def later_of(first):
+    return first[:-2] + "21"
+
+
+def _seg_file(subject, space):
+    if space == "mni":
+        return out_dir(subject) / "seg_in_mni.nii.gz"
+    if subject.endswith("_11"):
+        return out_dir(later_of(subject)) / "first_seg_in_later.nii.gz"
+    return out_dir(subject) / "seg.nii.gz"
+
+
 @functools.lru_cache(maxsize=16)
-def _seg(subject):
-    image = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
+def _seg(subject, space):
+    image = nib.load(_seg_file(subject, space))
     return np.asarray(image.dataobj).astype(np.int16), image
+
+
+@functools.lru_cache(maxsize=4)
+def _brain(first, space):
+    # where a plan can reach: the template brain, or the follow-up scan's own.
+    # shared and cached, so callers must not write into it
+    if space == "mni":
+        return template_brain()
+    return np.asarray(nib.load(out_dir(later_of(first)) / "brainmask.nii.gz").dataobj) > 0
 
 
 def _in(data, region):
@@ -26,21 +52,26 @@ def _in(data, region):
 
 
 @functools.lru_cache(maxsize=16)
-def _far(subject, region):
+def _far(subject, region, space):
     # millimeters from the nearest voxel of the first tumor's region
-    data, image = _seg(subject)
+    data, image = _seg(subject, space)
     seed = _in(data, region)
     return distance(seed if seed.any() else data > 0, image)
+
+
+def mask(subject, region, space):
+    data, _ = _seg(subject, space)
+    return _in(data, region)
 
 
 def pattern(share):
     return next(name for floor, name in PATTERNS if share > floor or floor == 0.0)
 
 
-def overlap(first, later, region="WT"):
+def overlap(first, later, region, space):
     # the same compartment at both timepoints, and how far the later one reaches
-    a, _ = _seg(first)
-    b, image = _seg(later)
+    a, _ = _seg(first, space)
+    b, image = _seg(later, space)
     ml = ml_per_voxel(image)
     was, now = _in(a, region), _in(b, region)
     out = {"region": region, "first_ml": round(float(was.sum()) * ml, 2),
@@ -49,12 +80,12 @@ def overlap(first, later, region="WT"):
         return out
 
     shared = float((was & now).sum())
-    brain = template_brain()
+    brain = _brain(first, space)
     # no dose is available, so the two NRG volumes stand in for it: 2 cm from the
     # whole tumor is the 46 Gy one, 2 cm from the core the 60 Gy one, and the
     # literature's pattern classes are defined against the 60 Gy volume
-    whole = _far(first, "WT")[now]
-    core = _far(first, "TC")[now]
+    whole = _far(first, "WT", space)[now]
+    core = _far(first, "TC", space)[now]
     inside = brain[now]
     high = float(((core <= MARGIN_MM) & inside).mean())
     out.update({"inside": round(shared / float(now.sum()), 4),
@@ -71,15 +102,15 @@ def overlap(first, later, region="WT"):
     return out
 
 
-def reach(first, later, region="WT"):
+def reach(first, later, region, space):
     # how far each voxel of the later tumor sits from the whole first tumor,
     # sorted. Outside the brain counts as never reached, since a plan stops
     # at the brain edge. None when that part is absent at the later scan
-    b, _ = _seg(later)
+    b, _ = _seg(later, space)
     now = _in(b, region)
     if not now.any():
         return None
-    return np.sort(np.where(template_brain()[now], _far(first, "WT")[now], np.inf))
+    return np.sort(np.where(_brain(first, space)[now], _far(first, "WT", space)[now], np.inf))
 
 
 @functools.lru_cache(maxsize=1)
@@ -95,7 +126,7 @@ def _participants():
 
 
 def _followup(first, column):
-    value = _participants().get(first[:-2] + "21", {}).get(column)
+    value = _participants().get(later_of(first), {}).get(column)
     return int(value) if value and value.isdigit() else None
 
 
@@ -109,23 +140,27 @@ def pathology(first):
     return _followup(first, "PsP_TP_score")
 
 
-def margin_ml(first, mm):
+def voxel_ml(first, space):
+    return ml_per_voxel(_seg(first, space)[1])
+
+
+def margin_ml(first, mm, space):
     # brain added by growing the whole first tumor mm millimeters, in mL
-    _, image = _seg(first)
-    far = np.sort(_far(first, "WT")[template_brain()])
+    _, image = _seg(first, space)
+    far = np.sort(_far(first, "WT", space)[_brain(first, space)])
     grown = np.searchsorted(far, mm, side="right") - np.searchsorted(far, 0, side="right")
     return grown * ml_per_voxel(image)
 
 
-def zones(first, later, region="WT"):
+def zones(first, later, region, space):
     # mL of the later tumor inside the whole first tumor, within the margin of it,
     # past the margin but joined to tumor within it, and in separate lesions lying
     # wholly past it. None when that part is absent at the later scan
-    b, image = _seg(later)
+    b, image = _seg(later, space)
     now = _in(b, region)
     if not now.any():
         return None
-    far = _far(first, "WT")
+    far = _far(first, "WT", space)
     lesions, count = ndimage.label(now, structure=np.ones((3, 3, 3)))
     nearest = np.asarray(ndimage.minimum(far, lesions, index=np.arange(1, count + 1)))
     apart = np.isin(lesions, np.flatnonzero(nearest > MARGIN_MM) + 1)
@@ -136,28 +171,29 @@ def zones(first, later, region="WT"):
             "separate": float(apart.sum()) * ml}
 
 
-def pairs(tissue=False):
-    # every patient with both timepoints segmented and in MNI. Anything that
-    # builds a target needs the first scan's tissue map too, and asking for one
-    # that is missing quietly runs SynthSeg, so those callers pass tissue=True
-    have = {d.name for d in OUTPUTS.iterdir() if (d / "seg_in_mni.nii.gz").exists()
+def pairs(space, tissue=False):
+    # every patient with both timepoints segmented and in that space. Anything
+    # that builds a target needs the first scan's tissue map too, and asking for
+    # one that is missing quietly runs SynthSeg, so those callers pass tissue=True
+    have = {d.name for d in OUTPUTS.iterdir() if _seg_file(d.name, space).exists()
             and (not tissue or not d.name.endswith("_11")
                  or (d / "tissue_in_mni.nii.gz").exists())}
     return [(name, name[:-2] + "21") for name in sorted(have)
             if name.endswith("_11") and name[:-2] + "21" in have]
 
 
-def review(pairs, regions=("WT", "TC", "ET")):
+def review(pairs, space, regions=("WT", "TC", "ET")):
     rows = []
     for first, later in pairs:
         for region in regions:
             rows.append({"patient": first[-8:-3], "days": interval(first),
-                         **overlap(first, later, region)})
+                         **overlap(first, later, region, space)})
         forget()
     return rows
 
 
 def forget():
-    # each cached distance map is a whole MNI volume, so drop them between patients
+    # each cached distance map is a whole volume, so drop them between patients
     _seg.cache_clear()
     _far.cache_clear()
+    _brain.cache_clear()

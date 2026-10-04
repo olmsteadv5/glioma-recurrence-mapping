@@ -18,12 +18,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from analysis import measure
 from geometry import MARGIN_MM
-from paths import OUTPUTS
+from paths import results_dir
 
 # code, name in the csv, name on the figure, color
 PARTS = (("ET", "enhancing", "Enhancing tumor", "#2a78d6"),
          ("TC", "core", "Tumor core", "#1baf7a"),
-         ("WT", "whole", "Whole abnormality", "#eb6834"))
+         ("WT", "whole", "Whole tumor", "#eb6834"))
 # why: Lee et al.'s class boundaries, the share of the recurrence inside the
 #      high-dose region: central 95% or more, in-field 80, marginal 20 [lee99]
 LEE = (0.95, 0.80, 0.20)
@@ -35,11 +35,11 @@ def capture(far, mm):
     return np.searchsorted(far, mm, side="right") / far.size
 
 
-def collect():
+def collect(space):
     reach = {code: {} for code, *_ in PARTS}
-    for first, later in measure.pairs():
+    for first, later in measure.pairs(space):
         for code, *_ in PARTS:
-            far = measure.reach(first, later, code)
+            far = measure.reach(first, later, code, space)
             if far is not None:
                 reach[code][first[-8:-3]] = far
     return reach
@@ -122,13 +122,13 @@ def save(fig, path):
 
 
 def main():
-    figures = OUTPUTS / "figures"
-    figures.mkdir(exist_ok=True)
-    reach = collect()
-    top = far_end(reach)
-    write_curves(reach, top, OUTPUTS / "capture_curves.csv")
     style()
-    figure(reach, top, figures / "capture_per_patient.png")
+    for space in measure.SPACES:
+        out = results_dir(space)
+        reach = collect(space)
+        top = far_end(reach)
+        write_curves(reach, top, out / "capture_curves.csv")
+        figure(reach, top, out / "capture_per_patient.png")
 
 
 if __name__ == "__main__":

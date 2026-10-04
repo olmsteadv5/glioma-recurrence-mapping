@@ -1,59 +1,68 @@
 #!/home/vilem/Projects/brats-upenn-gbm/.venv/bin/python
 # Terminal UI for the segmentation pipeline. Needs kitty for the graphics protocol.
 
-import asyncio
+import csv
 import json
 import os
-import re
-import subprocess
-import sys
 import textwrap
 import time
 
-from textual import events, on, work
+from textual import events, on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
-from textual.widgets import Footer, Input, Label, ListItem, ListView, RichLog, Static
+from textual.containers import Grid, Horizontal, VerticalScroll
+from textual.widgets import Footer, Label, ListItem, ListView, Static
 from textual_image._terminal import get_cell_size
 from textual_image.renderable import Image as Renderable
 from textual_image.widget import Image as ImageWidget
 
+from analysis import measure
 from show import compare
-from scan import segment
 from show import render
 from yale import atlas, connect, function
-from paths import (ATLAS_INPUT, LABELS, MODALITIES, REGIONS, RESULTS, ROOT,
-                   STAGES, out_dir, raw_dir, stage_file, stripped_dir, subject_id)
+from paths import (ATLAS_INPUT, LABELS, MODALITIES, OUTPUTS, REGIONS, RESULTS,
+                   STAGES, out_dir, raw_dir, stage_file, stripped_dir)
 
-ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\r")
-MARKER = re.compile(r"^\* (\w+)$")
-SUBJECT = re.compile(r"^UPENN-GBM-\d{5}_\d\d$")
 
 # gruvbox dark, the same values btop reads out of gruvbox_dark_v2.theme
 FG, DIM, FAINT = "#ebdbb2", "#a89984", "#7c6f64"
-OK, WARN, BAD, GONE = "#b8bb26", "#fabd2f", "#fb4934", "#504945"
+WARN, BAD, GONE = "#fabd2f", "#fb4934", "#504945"
 SHELL_OPACITY = 0.15
 
 # the renderer's colors as hex for the text panels; 0 is the whole tumor
 TISSUE = {LABELS.get(k, "WT"): "#%02x%02x%02x" % rgb for k, rgb in render.TISSUE.items()}
-# the whole tumor as one shape, with its three parts under it
-PARTS = ("T:SNFH", "T:ET", "T:NETC", "T:RC")
+# each scan's tumor as one shape, with its parts under it
+SCAN_PARTS = (("WT", "tumor", 0), ("SNFH", "FLAIR hyperintense", 1), ("ET", "enhancing", 1),
+              ("NETC", "non-enhancing core", 1), ("RC", "cavity", 1))
+SCANS = {"1": "scan 1 \u00b7 pre-op", "2": "scan 2 \u00b7 follow-up"}
+
+
+def scan_rows(scan):
+    return [(f"{scan}:{name}", label, TISSUE[name], deep) for name, label, deep in SCAN_PARTS]
+
+
+# a key starting -- is a heading. Plans are always built from scan 1, the scan a
+# plan is drawn on, whichever scan is in the background
 LAYERS = [("shell", "brain surface", "#a89984", 0),
-          ("--a", "", "", 0),
-          ("T:margin", "margin 2 cm", "#b16286", 0),
-          ("T:WT", "tumor", TISSUE["WT"], 0),
-          ("T:SNFH", "SNFH edema", TISSUE["SNFH"], 1),
-          ("T:ET", "ET enhancing", TISSUE["ET"], 1),
-          ("T:NETC", "NETC necrosis", TISSUE["NETC"], 1),
-          ("T:RC", "RC cavity", TISSUE["RC"], 1),
-          ("--b", "", "", 0),
-          ("tracts", "tracts through the tumor", "#c67c48", 0),
-          ("tracts:near", "tracts clipping a parcel", "#76a096", 0),
-          ("--c", "", "", 0),
-          ("C:both", "both timepoints", "#ebdbb2", 0),
-          ("C:new", "new in the later", "#fb4934", 0),
-          ("C:gone", "gone since the first", "#8ec07c", 0)]
+          ("--1", SCANS["1"], "", 0),
+          *scan_rows("1"),
+          ("--p", "plans from scan 1", "", 0),
+          ("T:margin", "NRG 2 cm (46 Gy)", "#b16286", 0),
+          ("W:46", "walk-down 46 Gy", "#%02x%02x%02x" % render.WALK["46"], 0),
+          ("W:60", "walk-down 60 Gy", "#%02x%02x%02x" % render.WALK["60"], 0),
+          ("W:ends", "walk endpoints", "#ebdbb2", 1),
+          ("--2", SCANS["2"], "", 0),
+          *scan_rows("2"),
+          ("C:both", "in both scans", "#ebdbb2", 0),
+          ("C:new", "new at follow-up", "#fb4934", 0),
+          ("C:gone", "gone at follow-up", "#8ec07c", 0),
+          ("--t", "tracts", "", 0),
+          ("tracts", "through the tumor shown", "#c67c48", 0)]
+KEYS = {k for k, *_ in LAYERS if not k.startswith("--")}
+# on the first ever start; after that the viewer remembers
+SHOWN = {"shell", "1:WT", "2:WT", "tracts"}
+# what the viewer remembers between patients and between runs
+STATE = OUTPUTS / "tui_state.json"
 # WT, TC and ET are unions of the tissue classes, so they are deliberately left
 # uncolored: any class color on them reads as "this row is that tissue"
 ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
@@ -73,20 +82,25 @@ ABOUT = {
                     "tumor took, weighted by how much of each is gone. A healthy "
                     "population mean, not this patient.",
 }
-IDLE = "esc leaves · t returns"
-HELP = [("./main.py <n>...", "the whole pipeline, about 5 min a scan"),
-        ("--timepoint 2", "on any of these, the follow-up scan"),
-        ("fetch <n>...", "download the scans, then everything after"),
-        ("strip <n>...", "skull strip and check, then everything after"),
-        ("segment <n>...", "BraTS in docker, then everything after"),
-        ("register <n>...", "warp into MNI, then the atlas work, ~40 s"),
-        ("map <n>...", "parcel overlap and function terms only, seconds"),
-        ("show <n>", "load a subject into the viewer"),
-        ("browser <n>", "that subject in a separate browser window"),
-        ("save", "the viewer as a png, next to the outputs"),
-        ("cancel", "stop the running job"),
-        ("clear", "clear this log"),
-        ("help", "this")]
+
+
+def walk_ml(subject, phase):
+    # the walk-down target's patient-space volume, as analysis/walkdown.py scored it
+    path = OUTPUTS / "native" / "walkdown.csv"
+    if not path.exists():
+        return ""
+    stamp = path.stat().st_mtime
+    if _walked.get("stamp") != stamp:
+        with open(path) as fh:
+            _walked.clear()
+            _walked.update({(r["patient"], r["phase"]): r["volume_ml"]
+                            for r in csv.DictReader(fh) if r["target"] == "walk"})
+        _walked["stamp"] = stamp
+    value = _walked.get((subject[10:15], phase))
+    return f"{value} mL" if value else ""
+
+
+_walked = {}
 
 
 def bar(fraction, n=10):
@@ -262,26 +276,6 @@ class Bordered(VerticalScroll):
             self.app.click_strip(self.id, event.x)
 
 
-class Prompt(Input):
-    # Escape gives the keyboard back, up and down walk the history.
-    BINDINGS = [("escape", "leave", "leave the prompt")]
-
-    def action_leave(self):
-        self.app.leave_shell()
-
-    def on_key(self, event):
-        if event.key == "escape":
-            self.app.leave_shell()
-        elif event.key == "up":
-            self.app.recall(-1)
-        elif event.key == "down":
-            self.app.recall(1)
-        else:
-            return
-        event.stop()
-        event.prevent_default()
-
-
 class Console(App):
     CSS = """
     Screen { background: #282828; }
@@ -300,13 +294,6 @@ class Console(App):
     .pane { height: 1fr; border: round #504945; border-title-color: #a89984; }
     #readout { height: 1fr; border: round #504945; border-title-color: #a89984;
                padding: 0 1; }
-    #shell { height: 14; }
-    #shell:focus-within { border: round #fabd2f; }
-    #log { height: 1fr; background: #282828; padding: 0 1; }
-    #line { height: 1; padding: 0 1; }
-    #sigil { width: 2; color: #b8bb26; text-style: bold; }
-    #cmd { border: none; height: 1; padding: 0; background: #282828; color: #ebdbb2; }
-    #cmd:focus { border: none; background: #32302f; }
     #layers { height: auto; padding: 0 1; }
     #parcels { height: 1fr; min-height: 5; background: #282828; }
     ListItem { background: #282828; color: #a89984; padding: 0 1; }
@@ -318,7 +305,7 @@ class Console(App):
     #detailtext { height: auto; }
     #listhead { height: 1; padding: 0 1; color: #ebdbb2; text-style: bold;
                 border-top: solid #504945; }
-    #inputs, #log, #parcels {
+    #inputs, #parcels {
         scrollbar-size-vertical: 1;
         scrollbar-background: #282828; scrollbar-color: #504945;
         scrollbar-background-hover: #282828; scrollbar-color-hover: #7c6f64;
@@ -332,8 +319,8 @@ class Console(App):
     """
     BINDINGS = [
         ("q", "quit", "quit"), ("v", "view", "3d/slices"), ("s", "space", "native/mni"),
-        ("p", "palette", "colors"), ("t", "shell", "prompt"),
-        ("x", "cancel", "cancel run"),
+        ("p", "palette", "colors"), ("n", "background", "scan mri"),
+        ("e", "save", "save image"),
         Binding("a", "show_list('parcels')", "parcels", show=False),
         Binding("b", "show_list('functions')", "functions", show=False),
         Binding("c", "show_list('connectivity')", "connectivity", show=False),
@@ -346,12 +333,11 @@ class Console(App):
         self.subject = self.subjects[0] if self.subjects else None
         self.mode, self.space, self.palette, self.listing = "3d", "native", "contrast", "parcels"
         self.scene = self.slices = self.chart = None
-        self.proc = self._timer = self._clock = None
-        self.hidden_layers, self.subject_rows = {"T:margin",
-                                          "C:both", "C:new", "C:gone"}, {}
+        self.later, self.background = None, "1"
+        self._timer = None
+        self.hidden_layers, self.subject_rows = KEYS - SHOWN, {}
+        self.restore_state()
         self.layer_rows = list(LAYERS)
-        self.history, self.hpos, self.started = [], 0, 0
-        self.stage, self.watching = None, None
         self.row_text, self.marked, self.at_risk = [], None, []
         self.parcel_rows = []
         self.pending, self._spin, self._settle = [0.0, 0.0, 1.0], None, None
@@ -380,36 +366,29 @@ class Console(App):
                 yield ListView(id="parcels")
                 with VerticalScroll(id="detail"):
                     yield Static("", id="detailtext")
-        with Vertical(id="shell", classes="box"):
-            yield RichLog(id="log", wrap=True, markup=True, highlight=False)
-            with Horizontal(id="line"):
-                yield Static("$", id="sigil")
-                yield Prompt(id="cmd", placeholder="./main.py 36")
         yield Footer()
 
     def on_mount(self):
         self.query_one("#grid").display = False
         self.query_one("#board").display = False
         self.query_one("#inputs").border_title = "inputs"
-        self.query_one("#inputs").border_subtitle = "click a subject"
-        self.query_one("#shell").border_title = "pipeline"
-        self.query_one("#shell").border_subtitle = keyed(IDLE)
+        self.query_one("#inputs").border_subtitle = "click a patient"
         self.query_one("#readout").border_title = "cursor"
         self.query_one("#right").border_title = "breakdown"
-        self.log_write(f"[{DIM}]{len(self.results)} subjects from {RESULTS.name}[/]")
-        self.log_write(f"[{FAINT}]./main.py <n> runs everything, or start at a stage: "
-                       f"{' '.join(STAGES)}. help lists the rest.[/]")
         if not os.environ.get("TERM", "").startswith("xterm-kitty"):
-            self.log_write(f"[{WARN}]not kitty: images will render as text blocks[/]")
+            self.say("not kitty: images will render as text blocks", "warning")
         if self.subject:
             self.load_subject(self.subject)
+            self.show_mode()
             self.call_after_refresh(self.draw)
         else:
-            self.log_write(f"[{WARN}]nothing segmented yet, start with ./main.py 36[/]")
+            self.say("nothing segmented yet, run ./main.py 36 in a terminal", "warning")
         self.set_focus(self.query_one("#parcels"))
 
-    def log_write(self, text):
-        self.query_one("#log", RichLog).write(text)
+    def say(self, text, severity="information"):
+        # the pipeline runs in a terminal of its own now, so only a few things
+        # are ever worth saying here, and a toast is enough for them
+        self.notify(text, severity=severity)
 
     def schedule_draw(self):
         # resizing fires a burst of events; only redraw once it settles
@@ -419,26 +398,74 @@ class Console(App):
 
     # ---------------------------------------------------------------- subject
 
+    def scans_of(self, subject):
+        # the patient's pre-op scan, and the follow-up when there is one
+        group = [s for s in self.subjects if s[10:15] == subject[10:15]]
+        return group[0], (group[1] if len(group) > 1 else None)
+
     def load_subject(self, subject):
+        # any scan of a patient loads the patient: both scans, side by side
+        first, later = self.scans_of(subject)
         # results.json can outlive the files it describes, and that is not fatal
-        missing = [name for name in ("seg.nii.gz", "seg_in_mni.nii.gz")
-                   if not (out_dir(subject) / name).exists()]
-        if missing:
-            self.log_write(f"[{BAD}]{subject}: {', '.join(missing)} is gone, "
-                           f"rerun with ./main.py {int(subject[10:15])}[/]")
-            return False
-        self.subject, self.watching = subject, None
-        self.hidden_layers = {"T:margin", "C:both", "C:new", "C:gone"}
-        overlap = self.results[subject]["atlas"]
-        self.scene = render.Scene(subject, overlap, palette=self.palette)
+        for who in (first, later):
+            missing = [name for name in ("seg.nii.gz", "seg_in_mni.nii.gz")
+                       if who and not (out_dir(who) / name).exists()]
+            if missing:
+                self.say(f"{who}: {', '.join(missing)} is gone, "
+                         f"rerun with ./main.py {int(who[10:15])}", "error")
+                return False
+        self.subject, self.later = first, later
+        overlap = self.results[first]["atlas"]
+        self.scene = render.Scene(first, overlap, palette=self.palette, later=later)
         self.scene.set_opacity("shell", SHELL_OPACITY)
-        self.slices, self.chart = render.Slices(subject, self.space), None
+        self.slices = render.Slices(first, self.space, later=later, background=self.background)
+        self.chart = None
+        # the layers kept on from the last patient are built for this one too
+        self.ensure_layers(KEYS - self.hidden_layers)
         self.apply_layers()
         self.refresh_inputs()
         self.refresh_layers()
         self.refresh_list()
         self.draw()
+        self.save_state()
         return True
+
+    def ensure_layers(self, keys):
+        # the layers that are only built when first asked for
+        if "T:margin" in keys:
+            self.scene.ensure_margin()
+        for phase in render.WALK_PHASES:
+            if "W:" + phase in keys:
+                self.scene.ensure_walk(phase)
+        if "W:ends" in keys:
+            self.scene.ensure_ends()
+        if self.later and any(k.startswith("C:") for k in keys):
+            self.scene.ensure_compare(self.subject, self.later)
+
+    def restore_state(self):
+        # the last session's layers and views, so nothing resets between runs
+        try:
+            saved = json.loads(STATE.read_text())
+        except (OSError, ValueError):
+            return
+        shown = set(saved.get("shown", [])) & KEYS
+        self.hidden_layers = KEYS - shown
+        self.mode = saved.get("mode", self.mode) if saved.get("mode") in VIEWERS else self.mode
+        self.space = saved.get("space", self.space) if saved.get("space") in ("native", "mni") else self.space
+        self.palette = saved.get("palette", self.palette)
+        self.listing = saved.get("listing", self.listing)
+        self.background = saved.get("background", self.background)
+        if saved.get("subject") in self.results:
+            self.subject = saved["subject"]
+
+    def save_state(self):
+        try:
+            STATE.write_text(json.dumps({
+                "shown": sorted(KEYS - self.hidden_layers), "mode": self.mode,
+                "space": self.space, "palette": self.palette, "listing": self.listing,
+                "background": self.background, "subject": self.subject}, indent=1))
+        except OSError:
+            pass
 
     def panel_width(self):
         # The panel loses a column whenever its scrollbar appears.
@@ -447,89 +474,81 @@ class Console(App):
 
     def refresh_inputs(self):
         w = self._panel_width = self.panel_width()
-        out = [f"[{FG}]subject[/]"]
+        out = [f"[{FG}]{row('patient  days', 'whole tumor', w)}[/]"]
         self.subject_rows = {}
-        counts = {}
+        patients = {}
         for name in self.subjects:
-            counts[name[10:15]] = counts.get(name[10:15], 0) + 1
-        drawn = set()
-        for n, name in enumerate(self.subjects, start=1):
-            a = self.results[name]["atlas"]
-            here = name == self.subject
-            self.subject_rows[n] = name
-            patient = name[10:15]
-            if counts[patient] < 2:
-                tie = " "
-            elif patient not in drawn:
-                tie = "\u250c"
-            else:
-                tie = "\u2514" if name == [s for s in self.subjects
-                                           if s[10:15] == patient][-1] else "\u2502"
-            drawn.add(patient)
-            left = ("\u203a " if here else "  ") + tie + " " + name[10:]
-            right = "%3dp %7.0f mL" % (len(a["parcels"]), a["tumor_ml"])
+            patients.setdefault(name[10:15], []).append(name)
+        for n, (patient, scans) in enumerate(sorted(patients.items()), start=1):
+            here = patient == self.subject[10:15]
+            self.subject_rows[n] = scans[0]
+            sizes = [self.results[s]["regions_ml"]["WT"] for s in scans]
+            right = " \u2192 ".join(f"{v:.0f}" for v in sizes) + " mL"
+            # days between the scans, from the release's own table
+            days = measure.interval(scans[0]) if len(scans) > 1 else None
+            left = ("\u203a " if here else "  ") + patient + (f" {days:>4}d" if days else "")
             out.append(f"[{FG if here else DIM}]{row(left, right, w)}[/]")
+
         def rule(title):
             return f"[{FAINT}]\u2500\u2500 [/][{FG}]{title}[/][{FAINT}] {'\u2500' * (w - 4 - len(title))}[/]"
 
-        d = self.results[self.subject]
-        r = d["regions_ml"]
+        scans = [(tag, who) for tag, who in (("1", self.subject), ("2", self.later)) if who]
         out.append(rule("stats"))
-        out.append(f"[{DIM}]tumor[/]")
-        for name in ("WT", "TC", "ET", "RC"):
-            if not r.get(name):
-                continue
-            # each token names exactly one class, so it can carry that color
-            parts = [LABELS[v] for v in REGIONS[name]]
-            made = "" if len(parts) == 1 else " " + "+".join(parts)
-            painted = "" if len(parts) == 1 else " " + f"[{FAINT}]+[/]".join(
-                f"[{TISSUE[t]}]{t}[/]" for t in parts)
-            out.append(f"[{FG}]  {name}[/]{painted}"
-                       f"[{DIM}]{f'{r[name]} mL':>{w - 4 - len(made)}}[/]")
-        in_parcels = f"{d['atlas']['in_parcels_ml']} mL"
-        out.append(f"[{FAINT}]  in parcels[/]"
-                   f"[{DIM}]{in_parcels:>{w - 12}}[/]")
-        # nested under the line they break down, in the same unit as it
-        out += [f"[{FAINT}]{row('    ' + '  ' * deep + name, f'{value} mL', w)}[/]"
-                for deep, name, value in distribution(d["atlas"])]
-        group = [s for s in self.subjects if s[10:15] == self.subject[10:15]]
-        if len(group) > 1:
+        for tag, who in scans:
+            d = self.results[who]
+            r = d["regions_ml"]
+            out.append(f"[{DIM}]{SCANS[tag]}[/]")
+            for name in ("WT", "TC", "ET", "RC"):
+                if not r.get(name):
+                    continue
+                # each token names exactly one class, so it can carry that color
+                parts = [LABELS[v] for v in REGIONS[name]]
+                made = "" if len(parts) == 1 else " " + "+".join(parts)
+                painted = "" if len(parts) == 1 else " " + f"[{FAINT}]+[/]".join(
+                    f"[{TISSUE[t]}]{t}[/]" for t in parts)
+                out.append(f"[{FG}]  {name}[/]{painted}"
+                           f"[{DIM}]{f'{r[name]} mL':>{w - 4 - len(made)}}[/]")
+            in_parcels = f"{d['atlas']['in_parcels_ml']} mL"
+            out.append(f"[{FAINT}]  in parcels[/]"
+                       f"[{DIM}]{in_parcels:>{w - 12}}[/]")
+            # nested under the line they break down, in the same unit as it
+            out += [f"[{FAINT}]{row('    ' + '  ' * deep + name, f'{value} mL', w)}[/]"
+                    for deep, name, value in distribution(d["atlas"])]
+        if self.later:
+            before, after = self.subject, self.later
             out.append(f"[{DIM}]changes[/]")
-            for before, after in zip(group, group[1:]):
-                change = (self.results[after]["regions_ml"]["WT"]
-                          - self.results[before]["regions_ml"]["WT"])
-                label = f"  _{before[16:]} \u2192 _{after[16:]} WT"
-                out.append(f"[{WARN if change > 0 else FAINT}]"
-                           f"{row(label, f'{change:+.1f} mL', w)}[/]")
-                was = {r["parcel"] for r in self.results[before]["atlas"]["parcels"]}
-                now = {r["parcel"] for r in self.results[after]["atlas"]["parcels"]}
-                out.append(f"[{WARN if now - was else FAINT}]"
-                           f"{row('  newly involved', str(len(now - was)), w)}[/]")
-                out.append(f"[{FAINT}]{row('  no longer', str(len(was - now)), w)}[/]")
-                same = compare.against(before, after)
-                out.append(f"[{FAINT}]{row('  dice', f"{same['dice']:.2f}", w)}[/]")
-                label = f"  of _{after[16:]} inside _{before[16:]}"
-                out.append(f"[{FAINT}]{row(label, f"{same['inside']:.0%}", w)}[/]")
+            change = (self.results[after]["regions_ml"]["WT"]
+                      - self.results[before]["regions_ml"]["WT"])
+            out.append(f"[{WARN if change > 0 else FAINT}]"
+                       f"{row('  scan 1 \u2192 2 WT', f'{change:+.1f} mL', w)}[/]")
+            was = {r["parcel"] for r in self.results[before]["atlas"]["parcels"]}
+            now = {r["parcel"] for r in self.results[after]["atlas"]["parcels"]}
+            out.append(f"[{WARN if now - was else FAINT}]"
+                       f"{row('  newly involved', str(len(now - was)), w)}[/]")
+            out.append(f"[{FAINT}]{row('  no longer', str(len(was - now)), w)}[/]")
+            same = compare.against(before, after)
+            out.append(f"[{FAINT}]{row('  dice', f"{same['dice']:.2f}", w)}[/]")
+            out.append(f"[{FAINT}]{row('  of scan 2 inside scan 1', f"{same['inside']:.0%}", w)}[/]")
 
-        run = d.get("run", {})
         out.append(f"[{DIM}]run[/]")
-        if "algorithm" in run:
-            made = f"  {run['algorithm']} {run.get('device', '')}".rstrip()
+        for tag, who in scans:
+            d = self.results[who]
+            run = d.get("run", {})
+            made = f"  {tag}: {run.get('algorithm', 'not recorded')}"
             out.append(f"[{FAINT}]{row(made, spell(run['seconds']) if 'seconds' in run else '', w)}[/]")
-        else:
-            out.append(f"[{FAINT}]{row('  segmenter', 'not recorded', w)}[/]")
-        out.append(f"[{FAINT}]{row('  dice WT', self.dice(d), w)}[/]")
-        if "kept" in run:
-            out.append(f"[{FAINT}]{row('  aligned on', f"{run['kept']:.0%}", w)}[/]")
+            if "kept" in run:
+                out.append(f"[{FAINT}]{row('     aligned on', f"{run['kept']:.0%}", w)}[/]")
 
         out.append(rule("checks"))
-        out.append(f"[{DIM}]stages[/]")
-        for name, note, gap, trouble in self.stage_checks(d, run):
-            mark, tone = ("\u2713", FAINT) if trouble is None else ("\u2717", BAD)
-            out.append(f"[{tone}]  {mark}[/] [{FAINT}]{name}[/]"
-                       f"[{tone if trouble else FAINT}]{note:>{w - len(name) - 4}}[/]")
-            if trouble:
-                out.append(f"[{BAD}]{row('    \u2514 ' + trouble, '', w)}[/]")
+        for tag, who in scans:
+            d = self.results[who]
+            out.append(f"[{DIM}]{SCANS[tag]}[/]")
+            for name, note, gap, trouble in self.stage_checks(who, d, d.get("run", {})):
+                mark, tone = ("\u2713", FAINT) if trouble is None else ("\u2717", BAD)
+                out.append(f"[{tone}]  {mark}[/] [{FAINT}]{name}[/]"
+                           f"[{tone if trouble else FAINT}]{note:>{w - len(name) - 4}}[/]")
+                if trouble:
+                    out.append(f"[{BAD}]{row('    \u2514 ' + trouble, '', w)}[/]")
 
         out.append(f"[{DIM}]atlas[/]")
         for name, label, note in ATLAS_FILES:
@@ -540,14 +559,16 @@ class Console(App):
 
         self.query_one("#stats", Rows).update("\n".join(out))
 
-    def stage_checks(self, d, run):
+    def stage_checks(self, subject, d, run):
         # name, what it says, and what is wrong if anything
         times, stamps, out = run.get("times", {}), {}, []
         for stage in STAGES:
-            path = stage_file(self.subject, stage)
+            if stage == "align" and subject.endswith("_11"):
+                continue
+            path = stage_file(subject, stage)
             stamps[stage] = (run.get("mapped") if path is None
                              else path.stat().st_mtime if path.exists() else None)
-            trouble = self.gap(stage, d)
+            trouble = self.gap(subject, stage, d)
             if stamps[stage] is None and stage != "map":
                 out.append((stage, "never run", None, trouble or "no output"))
                 continue
@@ -559,38 +580,24 @@ class Console(App):
                         trouble or ("left behind by a rerun" if stale else None)))
         return out
 
-    def gap(self, stage, d):
+    def gap(self, subject, stage, d):
         # the specific thing missing, which is what the red sub row says
         if stage == "fetch":
             short = [m for m in MODALITIES
-                     if not (raw_dir(self.subject) / f"{self.subject}_{m}.nii.gz").exists()]
+                     if not (raw_dir(subject) / f"{subject}_{m}.nii.gz").exists()]
             return ", ".join(short) + " not downloaded" if short else None
         if stage == "strip":
             short = [m for m in MODALITIES
-                     if not (stripped_dir(self.subject) / f"{self.subject}_{m}.nii.gz").exists()]
+                     if not (stripped_dir(subject) / f"{subject}_{m}.nii.gz").exists()]
             if short:
                 return ", ".join(short) + " not stripped"
-            found = out_dir(self.subject) / "verify.txt"
+            found = out_dir(subject) / "verify.txt"
             if found.exists() and found.read_text().strip():
                 return found.read_text().strip().splitlines()[0]
             return None
         if stage == "map" and "atlas" not in d:
             return "no parcel overlap"
         return None
-
-    def dice(self, d):
-        return f"{d['dice']['WT']:.2f}" if d.get("dice") else "no reference"
-
-    def pair(self):
-        # the patient's two timepoints, earliest first, or nothing
-        group = [s for s in self.subjects if s[10:15] == self.subject[10:15]]
-        return tuple(group[:2]) if len(group) > 1 else None
-
-    def sibling(self, subject):
-        # the same patient at the other timepoint, if it has been run
-        other = next((s for s in self.subjects
-                      if s[10:15] == subject[10:15] and s != subject), None)
-        return other
 
     def click_subject(self, row_index):
         chosen = self.subject_rows.get(row_index)
@@ -599,75 +606,103 @@ class Console(App):
 
     # ----------------------------------------------------------------- layers
 
+    def scan_subject(self, scan):
+        return self.subject if scan == "1" else self.later
+
     def refresh_layers(self):
         out = []
         self._layers_width = self.query_one("#layers", Rows).size.width
         w = max(self._layers_width, 30) - 4
-        volumes = self.results[self.subject]["labels_ml"]
-        regions = self.results[self.subject]["regions_ml"]
-        pair = self.pair()
-        self.layer_rows = [r for r in LAYERS
-                           if (not r[0].startswith("T:") or r[0] in ("T:WT", "T:margin")
-                               or r[0][2:] in volumes)
-                           and (pair or not (r[0].startswith("C:") or r[0] == "--c"))]
+        walked = render.walk_file(self.subject, "46", "mni") is not None
+
+        def offered(key):
+            if key in ("--2", "C:both", "C:new", "C:gone") or key.startswith("2:"):
+                if not self.later:
+                    return False
+            if key.startswith("W:"):
+                return walked
+            if key[:2] in ("1:", "2:") and not key.endswith(":WT"):
+                return key[2:] in self.results[self.scan_subject(key[0])]["labels_ml"]
+            return True
+
+        self.layer_rows = [r for r in LAYERS if offered(r[0])]
         for key, name, color, deep in self.layer_rows:
             if key.startswith("--"):
-                out.append(f"[{FAINT}]{'\u2500' * (w + 4)}[/]")
+                title = f" {name} "
+                out.append(f"[{FAINT}]\u2500\u2500[/][{DIM}]{title}[/]"
+                           f"[{FAINT}]{'\u2500' * max(w + 2 - len(title), 0)}[/]")
                 continue
             on = key not in self.hidden_layers
-            if key.startswith("tracts"):
-                value = str(self.scene.tract_counts.get(key, "")) if self.scene else ""
+            if key == "tracts":
+                value = str(self.scene.tract_count) if self.scene and on else ""
             elif key.startswith("C:"):
-                value = f"{compare.against(*pair)[key[2:]]} mL"
+                value = f"{compare.against(self.subject, self.later)[key[2:]]} mL"
             elif key == "T:margin":
                 grown = self.results[self.subject].get("margin_ml")
                 value = f"{grown} mL" if grown else "rerun map"
-            elif key == "T:WT":
-                value = f"{regions['WT']} mL"
-            else:
-                value = volumes.get(key.split(":")[-1])
+            elif key == "W:ends":
+                value = str(sum(len(e) for e in render.walk_ends(self.subject).values()))
+            elif key.startswith("W:"):
+                value = walk_ml(self.subject, key[2:])
+            elif key.endswith(":WT"):
+                value = f"{self.results[self.scan_subject(key[0])]['regions_ml']['WT']} mL"
+            elif key[:2] in ("1:", "2:"):
+                value = self.results[self.scan_subject(key[0])]["labels_ml"].get(key[2:])
                 value = f"{value} mL" if value else ""
+            else:
+                value = ""
             out.append("  " * deep + f"[{color if on else FAINT}]"
                        f"{'[\u00d7]' if on else '[ ]'}[/] "
                        f"[{DIM if on else FAINT}]{row(name, value, w - 2 * deep)}[/]")
         self.query_one("#layers", Rows).update("\n".join(out))
 
     def shown_parcels(self):
-        # the parcels the layers are actually drawing, which is what the list shows
+        # the parcels scan 1's shown tumor reaches, which is what the list is about
         rows = self.results[self.subject]["atlas"]["parcels"]
         change = tuple(k[2:] for k, *_ in LAYERS
                        if k.startswith("C:") and k not in self.hidden_layers)
-        if change and self.pair():
-            touched = compare.parcels_in(*self.pair(), change)
+        if change and self.later:
+            touched = compare.parcels_in(self.subject, self.later, change)
             return [r for r in rows if r["parcel"] in touched]
         # only the classes this subject actually has; RC is usually absent
         present = self.results[self.subject]["labels_ml"]
         classes = {name for name in LABELS.values()
-                   if name in present and "T:" + name not in self.hidden_layers}
+                   if name in present and "1:" + name not in self.hidden_layers}
         if not classes:
-            return rows if "T:WT" not in self.hidden_layers else []
+            return rows if "1:WT" not in self.hidden_layers else []
         return [r for r in rows if r["tissue"] in classes]
 
     def apply_layers(self):
         # the one place that turns the checkbox states into what is drawn
         if not self.scene:
             return
+        self.scene.show_crossing(self.crossing() if "tracts" not in self.hidden_layers else ())
         for key, *_ in LAYERS:
             if key.startswith("--"):
                 continue
             on = key not in self.hidden_layers
             # the combined shape stands in for the parts when none of them is on
-            if key == "T:WT":
-                on = on and not self.split(key)
+            if key.endswith(":WT"):
+                on = on and not self.split(key[0])
             if key in self.scene.actors:
                 self.scene.set_visible(key, on)
         self.sync_overlay()
 
-    def split(self, parent):
-        # the children of a parent row that are on and have something to draw
-        kin = PARTS
-        return [k for k in kin
-                if k not in self.hidden_layers and k in self.scene.actors]
+    def split(self, scan):
+        # that scan's parts that are on and have something to draw
+        return [f"{scan}:{name}" for name, _, deep in SCAN_PARTS
+                if deep and f"{scan}:{name}" not in self.hidden_layers
+                and f"{scan}:{name}" in self.scene.actors]
+
+    def crossing(self):
+        # the tissue on screen, as the (scan, label) pairs the tracts follow
+        out = set()
+        for scan in ("1", "2"):
+            if f"{scan}:WT" not in self.hidden_layers and not self.split(scan):
+                out |= {(scan, value) for value in LABELS}
+            out |= {(scan, value) for value, name in LABELS.items()
+                    if f"{scan}:{name}" not in self.hidden_layers}
+        return out
 
     def click_layer(self, row_index):
         if not (0 <= row_index < len(self.layer_rows) and self.scene):
@@ -675,49 +710,50 @@ class Console(App):
         key = self.layer_rows[row_index][0]
         if key.startswith("--"):
             return
-        tumor = {"T:WT", *PARTS}
+        scan = key[0] if key[:2] in ("1:", "2:") else None
+        tumor = {f"{t}:{name}" for t in ("1", "2") for name, *_ in SCAN_PARTS}
         change = {k for k, *_ in LAYERS if k.startswith("C:")}
-        if key == "T:WT":
+        if scan and key.endswith(":WT"):
             # the parent carries its parts with it
-            self.hidden_layers = (self.hidden_layers - tumor if key in self.hidden_layers
-                                  else self.hidden_layers | tumor)
+            family = {f"{scan}:{name}" for name, *_ in SCAN_PARTS}
+            self.hidden_layers = (self.hidden_layers - family if key in self.hidden_layers
+                                  else self.hidden_layers | family)
         else:
             self.hidden_layers ^= {key}
-            if key in PARTS and key not in self.hidden_layers:
-                self.hidden_layers.discard("T:WT")
-        # these two draw the same tissue, so only one of them at a time. nothing
-        # else is a rival: the margin, the tracts and the shell sit over any of it
+            if scan and key not in self.hidden_layers:
+                self.hidden_layers.discard(f"{scan}:WT")
+        # the comparison redraws the same tissue, so it and the tumors take turns.
+        # nothing else is a rival: plans, tracts and the shell sit over any of it
         if key not in self.hidden_layers:
             if key in tumor:
                 self.hidden_layers |= change
             elif key in change:
                 self.hidden_layers |= tumor
-        if key == "T:margin" and key not in self.hidden_layers:
-            self.scene.ensure_margin()
-        if key.startswith("C:") and key not in self.hidden_layers:
-            self.scene.ensure_compare(*self.pair())
+            self.ensure_layers({key})
         self.apply_layers()
         self.refresh_layers()
         self.refresh_list()
         self.draw()
+        self.save_state()
 
     def sync_overlay(self):
         # the same checkbox hides a class in the slices as in the 3d
         if not self.slices:
             return
-        self.slices.hidden = {value for value, name in LABELS.items()
-                              if "T:" + name in self.hidden_layers}
-        whole = "T:WT" not in self.hidden_layers and not self.split("T:WT")
-        self.slices.whole = render.TISSUE[0] if whole else None
+        for scan in ("1", "2"):
+            self.slices.hidden[scan] = {value for value, name in LABELS.items()
+                                        if f"{scan}:{name}" in self.hidden_layers}
+            whole = f"{scan}:WT" not in self.hidden_layers and not (self.scene and self.split(scan))
+            self.slices.whole[scan] = render.TISSUE[0] if whole else None
         self.slices.show_margin = "T:margin" not in self.hidden_layers
+        self.slices.show_walk = {p for p in render.WALK_PHASES if "W:" + p not in self.hidden_layers}
         self.slices.compare = {}
-        pair = self.pair()
         wanted = [k[2:] for k, *_ in LAYERS
                   if k.startswith("C:") and k not in self.hidden_layers]
-        if pair and wanted:
-            # in mni the pieces are already on the grid; in native they are brought back through this subject's own inverse warp
-            source = (compare.masks(*pair) if self.space == "mni"
-                      else compare.native(self.subject, *pair))
+        if self.later and wanted:
+            # in mni the pieces are already on the grid; in native they go onto the follow-up's
+            source = (compare.masks(self.subject, self.later) if self.space == "mni"
+                      else compare.native(self.later, self.subject, self.later))
             for name in wanted:
                 if name in source:
                     self.slices.compare[name] = self.slices.canon_mask(source[name])
@@ -775,7 +811,7 @@ class Console(App):
 
         if self.listing == "parcels":
             rows = self.parcel_rows = self.shown_parcels()
-            head.update(f"parcels shown \u00b7 {len(rows)}")
+            head.update(f"parcels shown \u00b7 scan 1 \u00b7 {len(rows)}")
             body = [chips.get(p["parcel"], " ") + " " +
                     row(p["parcel"], f"{bar(p['fraction'])} {p['fraction']:>4.0%}", w - 2)
                     for p in rows]
@@ -1011,9 +1047,9 @@ class Console(App):
                     which, (max(size.width * cell.width, 32), max(size.height * cell.height, 32)))
             self.refresh_readout()
             r = self.slices.readout()
-            who = "" if self.watching is None else f" · {self.watching[10:]}"
             colors = f" · {self.palette} colors" if self.slices.involved else ""
-            viewer.border_title = f"slices · {r['space']}{who}{colors}"
+            mri = f" · scan {r['background']} mri" if self.later else ""
+            viewer.border_title = f"slices · {r['space']}{mri}{colors}"
             strip, taken = self.strip(
                 "viewer", [(str(i), m) for i, m in enumerate(MODALITIES, start=1)],
                 r["modality"], absent=[m for m in MODALITIES if m not in r["modalities"]])
@@ -1026,7 +1062,9 @@ class Console(App):
         place = " ".join(str(v) for v in r["coords"]) if r["coords"] else "—"
         lines = [f"[{FAINT}]{row(r['coord_space'], place, w)}[/]",
                  f"[{FAINT}]{row('voxel', ' '.join(str(v) for v in r['voxel']), w)}[/]",
-                 f"[{DIM}]{row('label', r['label'] if r['segmented'] else '—', w)}[/]"]
+                 f"[{DIM}]{row('scan 1', r['label'] if r['segmented'] else '—', w)}[/]"]
+        if r["label2"] is not None:
+            lines.append(f"[{DIM}]{row('scan 2', r['label2'], w)}[/]")
         for note, ready in (("not stripped yet", r["stripped"]),
                             ("not segmented yet", r["segmented"])):
             if not ready:
@@ -1080,6 +1118,8 @@ class Console(App):
     def slice_hints(self):
         # each key names what it gives you, not what you are looking at
         core = f"v graph · s {'native' if self.space == 'mni' else 'mni'}"
+        if self.later:
+            core += f" · n scan {'1' if self.slices.background == '2' else '2'} mri"
         if self.slices.involved:
             other = "yba" if self.palette == "contrast" else "contrast"
             return [f"{core} · p {other} colors", core]
@@ -1254,7 +1294,7 @@ class Console(App):
 
     # ---------------------------------------------------------------- actions
 
-    VIEW_ACTIONS = ("view", "space", "palette", "show_list")
+    VIEW_ACTIONS = ("view", "space", "palette", "show_list", "background")
 
     def check_action(self, action, parameters):
         # gray a key out rather than let it look like it did nothing
@@ -1265,17 +1305,21 @@ class Console(App):
             return (self.mode == "3d" or (self.mode == "slices" and self.space == "mni")) or None
         if action == "space":
             return self.mode == "slices" or None
-        if action == "cancel":
-            return self.proc is not None or None
+        if action == "background":
+            return (self.mode == "slices" and self.later is not None) or None
         if action == "show_list":
             return bool(self.scene)
         return True
 
-    def action_view(self):
-        self.mode = VIEWERS[(VIEWERS.index(self.mode) + 1) % len(VIEWERS)]
+    def show_mode(self):
         self.query_one("#canvas").display = self.mode == "3d"
         self.query_one("#grid").display = self.mode == "slices"
         self.query_one("#board").display = self.mode == "graph"
+
+    def action_view(self):
+        self.mode = VIEWERS[(VIEWERS.index(self.mode) + 1) % len(VIEWERS)]
+        self.show_mode()
+        self.save_state()
         # a tract picked in the chart stays picked in the 3d and the other way
         if self.scene and self.chart is not None:
             self.sync_tracts()
@@ -1289,11 +1333,22 @@ class Console(App):
         self.slices.load(self.space)
         self.sync_overlay()
         self.refresh_bindings()
+        self.save_state()
         if self.mode == "slices":
             self.draw()
 
+    def action_background(self):
+        # which scan's MRI the slices are drawn on; the tumors stay where they are
+        self.background = "2" if self.background == "1" else "1"
+        self.slices.background = self.background
+        self.slices.load(self.space)
+        self.sync_overlay()
+        self.save_state()
+        self.draw()
+
     def action_palette(self):
         self.palette = "yba" if self.palette == "contrast" else "contrast"
+        self.save_state()
         self.scene.recolor(self.palette)
         self.sync_overlay()
         self.refresh_list()
@@ -1303,6 +1358,7 @@ class Console(App):
         if which == self.listing:
             return
         self.listing = which
+        self.save_state()
         if self.scene:
             self.scene.spotlight(None)
         self.refresh_list()
@@ -1311,10 +1367,10 @@ class Console(App):
     def show_list(self, which):
         self.action_show_list(which)
 
-    def save_view(self):
+    def action_save(self):
         # whatever the viewer is showing, at a size worth sending to someone
         if not self.scene:
-            self.log_write(f"[{BAD}]nothing loaded to save[/]")
+            self.say("nothing loaded to save", "error")
             return
         stamp = time.strftime("%Y%m%d-%H%M%S")
         if self.mode == "3d":
@@ -1323,10 +1379,7 @@ class Console(App):
             image, kind = self.slices.montage(), f"slices-{self.space}"
         dest = out_dir(self.subject) / f"{self.subject}_{kind}_{stamp}.png"
         image.save(dest)
-        self.log_write(f"[{OK}]wrote {dest.name}[/] [{FAINT}]{image.size[0]}x{image.size[1]}[/]")
-
-    def action_shell(self):
-        self.set_focus(self.query_one("#cmd"))
+        self.say(f"wrote {dest.name}, {image.size[0]}x{image.size[1]}")
 
     def on_key(self, event: events.Key):
         if self.mode == "slices" and self.slices:
@@ -1336,181 +1389,6 @@ class Console(App):
                 if i < len(names):
                     self.slices.modality = names[i]
                     self.draw()
-
-    # ------------------------------------------------------------------ shell
-
-    def leave_shell(self):
-        self.set_focus(self.query_one("#parcels"))
-
-    def recall(self, delta):
-        if not self.history:
-            return
-        self.hpos = max(0, min(len(self.history), self.hpos + delta))
-        field = self.query_one("#cmd", Prompt)
-        field.value = self.history[self.hpos] if self.hpos < len(self.history) else ""
-        field.cursor_position = len(field.value)
-
-    @on(Input.Submitted, "#cmd")
-    def submit(self, event):
-        line = event.value.strip()
-        self.query_one("#cmd", Prompt).value = ""
-        self.log_write(f"[{OK}]$[/] [{FG}]{line}[/]")
-        if not line:
-            return
-        self.history.append(line)
-        self.hpos = len(self.history)
-        self.execute(line)
-
-    def execute(self, line):
-        parts = line.split()
-        name = parts[0].lstrip("./")
-        args = parts[1:]
-
-        # a stage name is shorthand for main.py --from that stage
-        stage, timepoint = name if name in STAGES else "fetch", 1
-        for flag in ("--from", "--timepoint"):
-            if flag in args:
-                cut = args.index(flag)
-                value = args[cut + 1] if cut + 1 < len(args) else ""
-                args = args[:cut] + args[cut + 2:]
-                if flag == "--from":
-                    stage = value
-                elif value in ("1", "2"):
-                    timepoint = int(value)
-                else:
-                    self.log_write(f"[{BAD}]timepoint is 1 or 2[/]")
-                    return
-        if stage not in STAGES:
-            self.log_write(f"[{BAD}]stages are {', '.join(STAGES)}[/]")
-            return
-
-        numbers = []
-        for arg in args:
-            if not arg.isdigit():
-                self.log_write(f"[{BAD}]{arg}: expected a subject number[/]")
-                return
-            numbers.append(int(arg))
-
-        if name in STAGES or name in ("main.py", "main", "run"):
-            if not numbers:
-                self.log_write(f"[{BAD}]usage: {name} <subject numbers>[/]")
-            elif self.proc:
-                self.log_write(f"[{WARN}]a job is already running, cancel it first[/]")
-            else:
-                self.run_pipeline(numbers, stage, timepoint)
-        elif name in ("show", "load"):
-            self.show_subject(numbers, timepoint)
-        elif name in ("save", "export"):
-            self.save_view()
-        elif name in ("browser", "view.py", "view"):
-            self.open_browser(numbers)
-        elif name in ("cancel", "stop"):
-            self.action_cancel()
-        elif name == "clear":
-            self.query_one("#log", RichLog).clear()
-        elif name in ("quit", "exit"):
-            self.exit()
-        elif name == "help":
-            for command, note in HELP:
-                self.log_write(f"[{DIM}]{command:<20}[/][{FAINT}]{note}[/]")
-        else:
-            self.log_write(f"[{BAD}]{name}: not a command. try help.[/]")
-
-    def show_subject(self, numbers, timepoint=1):
-        if not numbers:
-            self.log_write(f"[{BAD}]usage: show <subject number>[/]")
-            return
-        wanted = subject_id(numbers[0], timepoint)
-        if wanted not in self.results:
-            self.log_write(f"[{BAD}]{wanted} has no results yet[/]")
-            return
-        self.load_subject(wanted)
-
-    def open_browser(self, numbers):
-        wanted = subject_id(numbers[0]) if numbers else self.subject
-        if wanted not in self.results:
-            self.log_write(f"[{BAD}]{wanted} has no results yet[/]")
-            return
-        # say where it went, it draws in a window that is not this one
-        self.log_write(f"[{DIM}]{wanted} is opening in a separate browser window[/]")
-        subprocess.Popen([sys.executable, "view.py", wanted.split("-")[2].split("_")[0]],
-                         cwd=str(ROOT), stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, start_new_session=True)
-
-    def action_cancel(self):
-        if not self.proc:
-            self.log_write(f"[{FAINT}]nothing running[/]")
-            return
-        self.proc.terminate()
-        # the segmenter runs detached, so it needs stopping in its own right
-        stopped = segment.stop()
-        self.log_write(f"[{WARN}]canceled{', stopped the segmenter' if stopped else ''}[/]")
-
-    def busy(self, note):
-        self.query_one("#shell").border_subtitle = keyed(note)
-
-    def tick(self):
-        done = STAGES.index(self.stage) + 1 if self.stage in STAGES else 0
-        where = f"{self.stage} {bar(done / len(STAGES), 5)} {done}/{len(STAGES)}"
-        self.busy(f"{where} · {spell(round(time.time() - self.started))} · x cancels")
-
-    def preview(self, subject):
-        # the scans exist from here on, so look at the case instead of a stale one
-        if not stage_file(subject, "fetch").exists() or subject == self.subject:
-            return
-        self.slices = render.Slices(subject, self.space)
-        self.watching = subject
-        if self.mode == "3d":
-            self.action_view()
-        else:
-            self.draw()
-
-    @work(exclusive=True)
-    async def run_pipeline(self, numbers, stage="fetch", timepoint=1):
-        self.started = time.time()
-        self._clock = self.set_interval(1.0, self.tick)
-        self.tick()
-        # --no-view because this panel already has the viewer next to it
-        call = ["main.py", *[str(n) for n in numbers], "--no-view"]
-        if stage != "fetch":
-            call += ["--from", stage]
-        if timepoint != 1:
-            call += ["--timepoint", str(timepoint)]
-        self.log_write(f"[{FAINT}]{' '.join(call)}[/]")
-        # rich draws a live spinner that becomes escape-code debris in a log widget
-        env = {**os.environ, "TERM": "dumb", "NO_COLOR": "1", "PYTHONUNBUFFERED": "1"}
-        self.proc = await asyncio.create_subprocess_exec(
-            sys.executable, *call, cwd=str(ROOT), env=env,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
-        self.refresh_bindings()
-        async for raw in self.proc.stdout:
-            text = ANSI.sub("", raw.decode(errors="replace")).rstrip()
-            if not text:
-                continue
-            found = MARKER.match(text)
-            if found:
-                self.stage = found.group(1)
-                self.tick()
-            elif SUBJECT.match(text):
-                self.log_write(f"[{FG}]{text}[/]")
-                self.preview(text)
-            else:
-                self.log_write(f"[{DIM}]{text}[/]")
-        code = await self.proc.wait()
-        elapsed = time.time() - self.started
-        self.proc, self.stage = None, None
-        self._clock.stop()
-        self.busy(IDLE)
-        self.refresh_bindings()
-        if code < 0:
-            return
-        if code != 0:
-            self.log_write(f"[{BAD}]exited {code}[/]")
-            return
-        self.results = json.loads(RESULTS.read_text())
-        self.subjects = sorted(self.results)
-        self.log_write(f"[{OK}]done in {elapsed:.0f}s[/]")
-        self.load_subject(subject_id(numbers[-1], timepoint))
 
 
 if __name__ == "__main__":

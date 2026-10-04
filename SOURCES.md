@@ -57,4 +57,35 @@ The reference behind each `# why: ... [tag]` comment in the code.
             tumours, and pathologies." Nothing published supports the labels it
             returns inside a tumor, and this collection's tumors are 35-170 mL.
             Treat tumor-region labels as unvalidated; see scan/tissue.py.
+
+[rtog0825]  [verified]
+            RTOG 0825 protocol (bevacizumab with chemoradiation for newly
+            diagnosed glioblastoma), section 6.4, target volumes.
+            https://irochouston.mdanderson.org/rpc/credentialing/files/0825.pdf
+            -> drawn on the post-operative MRI, the pre-op used for correlation
+            -> GTV1 = T2 or FLAIR abnormality plus all enhancement and the
+               cavity; CTV1 = GTV1 + 2 cm; 46 Gy in 23 fractions
+            -> no edema: enhancement and cavity + 2.5 cm instead
+            -> GTV2 = enhancement and cavity; CTV2 = GTV2 + 2 cm; boost of
+               14 Gy in 7 fractions to 60 Gy
+            -> either CTV "may be reduced to 0.5 cm around natural barriers to
+               tumor growth such as the skull, ventricles, falx", which is
+               where analysis/walkdown.py takes its 5 mm floor
+            -> PTV = CTV + 3 to 5 mm for setup; not modelled here
+
+[nrg19]     [verified]
+            Kruser TJ, Bosch WR, Badiyan SN, et al. NRG brain tumor
+            specialists consensus guidelines for glioblastoma contouring.
+            J Neurooncol. 2019;143(1):157-166. PMID 30888558, PMC6483830.
+            -> ten NRG brain tumor radiation oncologists; volumes as RTOG:
+               FLAIR + 2 cm for 46 Gy, cavity and enhancement + 2 cm for 60 Gy
+            -> falx: trim "directly to the falx (not 5 mm); assume the falx
+               is a hard barrier to tumor spread, as long as there is no FLAIR
+               or T2 abnormality crossing the corpus callosum"
+            -> careful trimming at barriers cut the planned brain by 13.6% on
+               average (66.8 cc) without losing coverage
+            -> closes by calling for target volumes "beyond isometric
+               expansion techniques for individual patients"
+            -> analysis/walkdown.py reads "crossing" as at least 1 mL of the
+               original whole tumor past the midline; that cutoff is ours
 ```

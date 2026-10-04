@@ -4,7 +4,7 @@ The baseline work: which patients are in the study, how we know the list is
 complete, and how much of each patient's later tumor overlaps the first.
 
 - `measure.py` computes the overlap. `overlap_csv.py` writes
-  `outputs/overlap_review.csv` from it, one row per patient.
+  `outputs/<space>/overlap_review.csv` from it, one row per patient.
 - `evidence/` holds what the cohort was checked against: the mirror's file
   list and sizes, the release's participant table, the TCIA study-date query,
   and `audit.py`, which re-checks every file of every patient.
@@ -43,12 +43,24 @@ extra single-series study 11 days before its curated follow-up, so taking the
 second TCIA date gave 433 days where the release says 444. `measure.interval`
 now reads `Time_since_baseline_preop` from the participants table.
 
-**One segmentation model for every scan.** All scans were segmented on CPU by
-the BraTS 2025 adult glioma **second-place** entry, `brainles/brats25_gli_ecnu`,
-image digest `sha256:c2a27297deab0638296e8b90569d19f7dfda1519ed116093cb2602fa8f1f1596`,
-built 2025-08-07 and never re-pulled. The winning entry needs CUDA. Checked
-against every scan's own segmentation log, not the summary file, since four
-early scans predate the pipeline recording which algorithm it used.
+**One segmentation model for every scan.** All 82 scans are segmented by the
+BraTS 2025 adult glioma **winning** entry (BraTS25_1),
+`brainles/brats25_gli_aia-bots`, image digest
+`sha256:3b531f596b25aec240c2b635caab796263c4af37bc5e3045261c87446c3b33ac`, run
+2026-10-02 on Yale Bouchet GPUs (Slurm jobs 28160680-28160683) since it needs
+CUDA. Its PyTorch has no kernels for Blackwell cards, so it has to be kept to
+A40, A5000, L40S or RTX 5000 Ada nodes. Each scan was named
+`BraTS-GLI-<number><timepoint>-100`, as the brats package names everything, so
+the model applies its post-treatment cleanup thresholds to both timepoints.
+
+Before that, every scan was segmented on CPU by the **second-place** entry,
+`brainles/brats25_gli_ecnu`, digest
+`sha256:c2a27297deab0638296e8b90569d19f7dfda1519ed116093cb2602fa8f1f1596`. Those
+segmentations and every result made from them are kept in `outputs_25_2/`. The
+two agree closely: median Dice per scan 0.99 for whole tumor and 0.98 for
+enhancing tumor at both timepoints, lowest 0.93 and 0.78. They differ mainly in
+the cavity, which the winner labels on 16 follow-ups instead of 11, taking some
+voxels the second-place model called non-enhancing core.
 
 **Download integrity.** Every input file's size matches the mirror's recorded
 asset size to the byte.
@@ -64,14 +76,14 @@ pathology of the second resection (see below).
 ## Which compartment counts as the recurrence
 
 *The table in this section is from the first 21 pairs. The full 41 are in
-`outputs/overlap_review.csv` and on the summary page.*
+`outputs/<space>/overlap_review.csv` and on the summary page.*
 
 **Open, and for the supervisor to settle before the model goes further.**
 
 `planeval.coverage` scores a target against the **whole** later segmentation,
-`data > 0`: enhancing tumor, necrosis, and FLAIR hyperintensity together. Every
+`data > 0`: enhancing tumor, non-enhancing core, and FLAIR hyperintensity together. Every
 coverage number so far, the corridor null included, is therefore mostly a
-measure of catching edema.
+measure of catching FLAIR hyperintensity.
 
 `measure.overlap` on the first 21 pairs shows the compartments behave very
 differently:
@@ -104,6 +116,19 @@ residual deformation 0.92 to 1.38 mm, 95th percentile 3.2 to 4.1 mm. The mean is
 well inside a voxel. The tail is comparable to the effects being measured, so it
 is worth stating as a limitation, but it is not corrupting anything.
 
+**In patient space** each pre-op scan is fitted rigidly onto its own follow-up
+T1 (`scan/align.py`, greedy, NCC, both tumors masked out of the fit), so every
+pair is measured on the scan the tumor came back on, as Dr. Munbodh asked. Brain
+Dice across the 41 goes from a median 0.978 as shipped to 0.981. Tumor volumes
+survive the resampling to within 1%. The lowest after fitting, 00301 at 0.930
+and 00130 at 0.957, were looked at: midline and ventricles line up, and what is
+left is real change between the scans (pre-op swelling, a cyst that is gone), which
+a rigid fit should not undo. NMI was tried first and swung 00130 off by 21
+degrees, so the stage now refuses any fit that ends clearly worse than the start.
+The shipped grid is itself rigid: the release put every scan on SRI24 with
+"rigidly (6 degrees of freedom)" registration, so native volumes are the
+patient's own.
+
 ## What the follow-up scans are, and the resection cavities
 
 From the dataset paper (Bakas et al., Sci Data 2022, PMC9338035), the follow-up
@@ -121,6 +146,10 @@ Two things in the data do not fit those criteria. Five of the 41 are listed as
 partial resections (`GTR_over90percent = N`). And 00055's follow-up is 31 days
 after its pre-op scan and looks like an unresected tumor, which leaves no room
 for a resection and chemoradiation in between.
+
+*This section was written with the second-place (25_2) segmentations. The winner
+labels a cavity on 16 of the 41 follow-ups, 9 of them over 3 mL, and catches
+00314's; the numbers below have not been redone with it.*
 
 **The model labels a cavity on only 11 of the 41 follow-ups** (none on the
 pre-op scans), though every patient was resected. All 41 were looked at, one
@@ -148,3 +177,39 @@ An intensity test (fluid = ventricle-like on T1, T2 and FLAIR) was tried and
 dropped: it called the model's own cavities fluid in only 4 of 11 patients, so
 cavity contents here are not ventricle-like enough for it to work.
 
+
+## Walk-down target
+
+`walkdown.py` builds a target that follows white matter instead of growing
+evenly, for both NRG phases: from the whole tumor (the 46 Gy volume) and from the
+core (the 60 Gy boost, kept inside the first). Every atlas tract with a point in
+the tumor is followed 20 mm along its own path from each place it leaves; one
+convex hull is wrapped around the tumor's edge and all those end points. Walks
+stop at the end of the tract, at the brain edge, back inside the tumor, or at the
+midline. Then, as NRG allows, nothing goes below the tumor + 5 mm, nothing goes
+outside the brain, and nothing crosses the falx unless at least 1 mL of the
+original whole tumor already lies past the midline (6 of 41 here, by that cutoff).
+
+Built in MNI, where the tracts are, and carried into each follow-up scan along
+the pre-op scan's own road (its inverse warp, then the rigid fit), which puts an
+MNI copy of the pre-op tumor back on top of the patient-space one at Dice 0.988.
+Checked on a made-up 15 mm sphere with straight tracts in 2000 directions: the
+hull came out 176.9 mL against the 179.6 mL of a perfect 35 mm sphere. A tract
+bent into a 10 mm circle ends 16.8 mm away after 20 mm of path, as it should.
+
+Patient space, first run (25_1 segmentations):
+
+| | 46 Gy walk | NRG 2 cm | 60 Gy walk | NRG 2 cm |
+|---|---|---|---|---|
+| brain beyond the tumor, median | 148 mL | 289 mL | 68 mL | 180 mL |
+| enhancing recurrence caught, median | 99.7% | 100.0% | 88.1% | 99.8% |
+| whole recurrence caught, median | 81.6% | 96.2% | 42.2% | 74.1% |
+
+Against a ball of exactly its size, grown evenly from the same tumor, the walk
+catches the same share of the enhancing recurrence (46 Gy: better in 12, worse in
+12, p = 0.47; 60 Gy: 17 against 16, p = 0.29) and more of the whole recurrence
+(46 Gy: 26 against 9, p < 0.001; 60 Gy: 37 against 4, p < 0.001). MNI agrees.
+
+Open: the 3 mm skim rule and the 1 mL crossing cutoff are ours, not from a
+paper. 00354's pre-op scan has no core at all, so its 60 Gy walk falls back to
+the whole tumor; under NRG it would have no boost volume.

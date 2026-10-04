@@ -17,3 +17,6 @@ archive/**/*.nii.gz
 
 # editor settings stay local
 .idea/
+
+# local segmentation backups and downloads, kept out of git
+outputs_*/

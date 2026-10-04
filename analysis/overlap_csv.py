@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from analysis import measure
-from paths import OUTPUTS
+from paths import results_dir
 
 PARTS = (("ET", "enhancing"), ("TC", "core"), ("WT", "whole"))
 
@@ -30,17 +30,19 @@ def rows(review):
         yield row
 
 
-def main(path=OUTPUTS / "overlap_review.csv"):
+def write(space):
     head = ["patient", "days_between_scans"]
     for _, name in PARTS:
         head += [f"{name}_first_ml", f"{name}_later_ml", f"{name}_pct_on_original",
                  f"{name}_pct_inside_2cm_plan", f"{name}_pattern"]
+    path = results_dir(space) / "overlap_review.csv"
     with open(path, "w", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(head)
-        writer.writerows(rows(measure.review(measure.pairs())))
+        writer.writerows(rows(measure.review(measure.pairs(space), space)))
     return path
 
 
 if __name__ == "__main__":
-    print(main(Path(sys.argv[1]) if len(sys.argv) > 1 else OUTPUTS / "overlap_review.csv"))
+    for space in measure.SPACES:
+        print(write(space))

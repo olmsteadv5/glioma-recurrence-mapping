@@ -35,14 +35,15 @@ Each scan takes about 5 minutes on CPU, mostly segmentation. The first run is
 slower because it downloads a 30 GB Docker image. Segmentation uses the BraTS
 2025 winning model on an NVIDIA GPU and the second-place model on CPU.
 
-The 82 segmentations in `outputs/` are from the winning model (BraTS25_1), run
+The 82 segmentations in `outputs/scans/` are from the winning model (BraTS25_1), run
 on a Yale Bouchet GPU because this laptop has none; each scan's
 `segmentation.log` says how. The earlier second-place (CPU) segmentations and
-the results made from them are kept in `outputs_25_2/`.
+the results made from them are kept in `outputs/archive/brats25_2/`.
 
 ## The overlap results
 
-Every result is made twice, into `outputs/native/` and `outputs/mni/`. Native is
+Every result is made twice, into `outputs/results/native/` and `outputs/results/mni/`,
+each split into `tables/` and `figures/`. Native is
 the patient's own follow-up scan, where volumes are exactly as scanned; MNI is the
 standard brain the atlas lives in, which stretches volumes a little.
 
@@ -53,7 +54,7 @@ standard brain the atlas lives in, which stretches volumes a little.
 ./analysis/overlap_plots.py      # overlap against tumor size, and margins by pathology score
 ./analysis/lobes.py              # tumor_lobes.csv, the lobes each tumor sits in
 ./analysis/walkdown.py           # a target 20 mm along the tracts leaving the tumor, against 2 cm and a same-size ball
-./analysis/walkdown_figures.py   # the two figures for sending: cost and capture of each target, and walk-down vs ball
+./analysis/walkdown_figures.py   # the figure for sending: what each target costs and catches
 ```
 
 `analysis/COHORT.md` explains how the 41 patients were chosen and checked.
@@ -74,8 +75,16 @@ scan/       processing each scan
 yale/       the Yale Brain Atlas
 analysis/   the overlap results
 show/       the viewers
-inputs/     raw downloads      (not in git)
-outputs/    everything made from them (not in git)
+inputs/     raw downloads and the release's participants.tsv   (not in git)
+outputs/    everything made from them                           (not in git)
+  scans/      one folder per scan: what the pipeline makes, plus cache/ for the viewer
+  pairs/      one folder per patient: the rigid fit onto the follow-up, lobes, walkdown/
+  results/    native/ and mni/, each with tables/ and figures/; qc/ for hand checks
+  atlas/      the atlas on MNI, shared by every scan
+  archive/    superseded runs, e.g. the second-place segmentations
+  results.json  the pipeline's record of every scan
 ```
 
-Everything in `inputs/` and `outputs/` can be regenerated.
+Everything in `inputs/` and `outputs/` can be regenerated. Any `cache/` folder can be
+deleted outright; the viewer remakes what it needs. Viewer settings live in
+`~/.config/brats-tui/state.json`.

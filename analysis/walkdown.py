@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from analysis import measure
 from geometry import MARGIN_MM, distance, ml_per_voxel, outline, template_brain
-from paths import THREADS, modality, out_dir, results_dir, stripped_dir
+from paths import THREADS, modality, out_dir, pair_dir, results_dir, stripped_dir, walk_dir
 from show.compare import _inverse
 from yale import tracts
 
@@ -134,22 +134,22 @@ def build_mni(first, lines):
             target &= built["46"] | gtv
         built[phase] = target
         info[phase] = {"tracts": used, "ends": len(ends)}
-        np.save(out_dir(first) / f"walk_{phase}_ends.npy", np.array(ends).reshape(-1, 3))
+        np.save(walk_dir(first) / f"walk_{phase}_ends.npy", np.array(ends).reshape(-1, 3))
         nib.save(nib.Nifti1Image(target.astype(np.uint8), image.affine),
-                 out_dir(first) / f"walk_{phase}_mni.nii.gz")
+                 walk_dir(first) / f"walk_{phase}_mni.nii.gz")
     nib.save(nib.Nifti1Image(allowed.astype(np.uint8), image.affine),
-             out_dir(first) / "walk_allowed_mni.nii.gz")
+             walk_dir(first) / "walk_allowed_mni.nii.gz")
     return info
 
 
 def to_native(first, later, name):
     # MNI -> the pre-op scan -> the follow-up scan, the same road the pre-op tumor
     # takes into patient space, so the two line up
-    source = out_dir(first) / f"{name}_mni.nii.gz"
-    dest = out_dir(later) / f"{name}.nii.gz"
+    source = walk_dir(first) / f"{name}_mni.nii.gz"
+    dest = walk_dir(later) / f"{name}.nii.gz"
     subprocess.run(["greedy", "-d", "3", "-rf", str(modality(stripped_dir(later), later, "T1")),
                     "-ri", "LABEL", "0.2vox", "-rm", str(source), str(dest),
-                    "-r", str(out_dir(later) / "rigid_first_to_later.mat"),
+                    "-r", str(pair_dir(later) / "rigid_first_to_later.mat"),
                     str(out_dir(first) / "affine.mat") + ",-1", str(_inverse(first)),
                     "-threads", THREADS], capture_output=True, check=True)
     return np.asarray(nib.load(dest).dataobj) > 0
@@ -158,7 +158,7 @@ def to_native(first, later, name):
 def targets(first, later, space):
     # every target this comparison scores, in one space
     if space == "mni":
-        load = lambda name: np.asarray(nib.load(out_dir(first) / f"{name}_mni.nii.gz").dataobj) > 0
+        load = lambda name: np.asarray(nib.load(walk_dir(first) / f"{name}_mni.nii.gz").dataobj) > 0
     else:
         load = lambda name: to_native(first, later, name)
     allowed = load("walk_allowed") & measure._brain(first, space)
@@ -214,10 +214,6 @@ def write(space):
     return path
 
 
-LABEL = {"iso": "NRG 2 cm", "walk": "Walk-down", "ball": "Same-volume ball"}
-PART = {"ET": "Enhancing", "WT": "Whole tumor"}
-
-
 def _rows(space):
     with open(results_dir(space) / "walkdown.csv") as fh:
         rows = list(csv.DictReader(fh))
@@ -263,61 +259,6 @@ def summarize(space):
     return path
 
 
-def figure(space):
-    # each patient's walk-down against the ball of the same volume, and against
-    # the NRG 2 cm volume, with what each costs in brain
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from analysis.capture_curves import FAINT, INK, PATIENT, SOFT, save, style
-    style()
-    by = _rows(space)
-    fig, axes = plt.subplots(2, 3, figsize=(15, 9.2))
-    for i, (phase, _) in enumerate(PHASES):
-        walk, ball, iso = (by[(phase, k)] for k in ("walk", "ball", "iso"))
-        title = "46 Gy volume, from the whole tumor" if phase == "46" else "60 Gy boost, from the tumor core"
-        for j, code in enumerate(("ET", "WT")):
-            ax = axes[i, j]
-            pts = [(_num(ball[p][f"{code}_pct"]), _num(walk[p][f"{code}_pct"])) for p in walk
-                   if _num(walk[p][f"{code}_pct"]) is not None]
-            x, y = np.array(pts).T
-            low = max(0, min(x.min(), y.min()) - 3)
-            ax.plot([low, 100.5], [low, 100.5], color=FAINT, lw=1, ls=(0, (4, 3)), zorder=1)
-            ax.scatter(x, y, s=20, color="#2a78d6", lw=0, zorder=3)
-            ax.set_xlim(low, 101)
-            ax.set_ylim(low, 101)
-            ax.set_aspect("equal")
-            ax.set_xlabel("Same-volume ball (% captured)")
-            ax.set_ylabel("Walk-down (% captured)")
-            ax.set_title(f"{PART[code]} recurrence ({len(x)})", loc="left", fontsize=11)
-            ax.text(0.97, 0.04, f"walk better {int((y - x > 0.05).sum())}, worse {int((x - y > 0.05).sum())}",
-                    transform=ax.transAxes, ha="right", fontsize=9, color=SOFT)
-        ax = axes[i, 2]
-        for k, kind in enumerate(("iso", "walk")):
-            group = by[(phase, kind)]
-            vals = [_num(r["beyond_gtv_ml"]) for r in group.values()]
-            ax.boxplot([vals], positions=[k], widths=0.5, showfliers=False, patch_artist=True,
-                       boxprops={"facecolor": "white", "edgecolor": FAINT},
-                       whiskerprops={"color": FAINT}, capprops={"color": FAINT},
-                       medianprops={"color": "#eb6834", "lw": 2.2})
-            rng = np.random.default_rng(0)
-            ax.scatter(k + rng.uniform(-0.12, 0.12, len(vals)), vals, s=10, color=PATIENT, lw=0, zorder=3)
-        ax.set_xticks([0, 1])
-        ax.set_xticklabels([LABEL["iso"], LABEL["walk"]])
-        ax.set_ylabel("Brain beyond the tumor (mL)")
-        ax.set_ylim(bottom=0)
-        ax.set_title("Cost", loc="left", fontsize=11)
-        fig.text(0.01, 0.975 - i * 0.49, title, fontsize=12, color=INK, weight="bold")
-    fig.text(0.01, 0.005, "Dot = patient. Dashed line = no difference; above it the walk-down "
-             "catches more than a ball of exactly its size.\nWalk-down = convex hull around the "
-             "tumor and the points 20 mm along every atlas tract leaving it. Box = middle 50 "
-             "percentile, line = median.", color=FAINT, fontsize=9)
-    fig.subplots_adjust(left=0.06, right=0.98, top=0.93, bottom=0.1, hspace=0.42, wspace=0.28)
-    path = results_dir(space) / "walkdown.png"
-    save(fig, path)
-    return path
-
-
 def main():
     lines = None
     for first, later in measure.pairs("mni"):
@@ -328,7 +269,7 @@ def main():
         print(first[-8:-3], info, flush=True)
         measure.forget()
     for space in measure.SPACES:
-        print(write(space), summarize(space), figure(space))
+        print(write(space), summarize(space))
 
 
 if __name__ == "__main__":

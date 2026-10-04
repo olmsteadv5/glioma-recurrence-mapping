@@ -10,7 +10,7 @@ import numpy as np
 from scipy import ndimage
 
 from geometry import MARGIN_MM, distance, ml_per_voxel, template_brain
-from paths import OUTPUTS, REGIONS, out_dir
+from paths import PARTICIPANTS, REGIONS, SCANS, out_dir, pair_dir
 
 # why: central >95%, in-field 80-95%, marginal 20-80%, distant <20% of the
 #      recurrence inside the high-dose volume [lee99]
@@ -28,7 +28,7 @@ def _seg_file(subject, space):
     if space == "mni":
         return out_dir(subject) / "seg_in_mni.nii.gz"
     if subject.endswith("_11"):
-        return out_dir(later_of(subject)) / "first_seg_in_later.nii.gz"
+        return pair_dir(subject) / "first_seg_in_later.nii.gz"
     return out_dir(subject) / "seg.nii.gz"
 
 
@@ -118,7 +118,7 @@ def _participants():
     # the dataset's own record for each scan. Its interval beats one rebuilt from
     # TCIA study dates, which is wrong for 00130: that patient has an extra study
     # 11 days before the one the release curated as its follow-up
-    path = OUTPUTS / "participants.tsv"
+    path = PARTICIPANTS
     if not path.exists():
         return {}
     with open(path) as fh:
@@ -175,7 +175,7 @@ def pairs(space, tissue=False):
     # every patient with both timepoints segmented and in that space. Anything
     # that builds a target needs the first scan's tissue map too, and asking for
     # one that is missing quietly runs SynthSeg, so those callers pass tissue=True
-    have = {d.name for d in OUTPUTS.iterdir() if _seg_file(d.name, space).exists()
+    have = {d.name for d in SCANS.iterdir() if _seg_file(d.name, space).exists()
             and (not tissue or not d.name.endswith("_11")
                  or (d / "tissue_in_mni.nii.gz").exists())}
     return [(name, name[:-2] + "21") for name in sorted(have)

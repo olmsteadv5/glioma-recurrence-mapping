@@ -4,7 +4,7 @@ The baseline work: which patients are in the study, how we know the list is
 complete, and how much of each patient's later tumor overlaps the first.
 
 - `measure.py` computes the overlap. `overlap_csv.py` writes
-  `outputs/<space>/overlap_review.csv` from it, one row per patient.
+  `outputs/results/<space>/tables/overlap_review.csv` from it, one row per patient.
 - `evidence/` holds what the cohort was checked against: the mirror's file
   list and sizes, the release's participant table, the TCIA study-date query,
   and `audit.py`, which re-checks every file of every patient.
@@ -18,7 +18,7 @@ Copied from the planning notes when the target planning was archived on
 
 **41 patient pairs.** Three independent sources agree on exactly the same 41:
 
-- the release's own participants table (`outputs/participants.tsv`): 671
+- the release's own participants table (`inputs/participants.tsv`): 671
   scans, 611 baselines (`_11`), 60 follow-ups (`_21`), 41 patients with both
 - the public mirror's file list: 41 patients with a `sub-NNN_2` scan, all four
   sequences present for both timepoints, no third timepoints
@@ -56,7 +56,7 @@ the model applies its post-treatment cleanup thresholds to both timepoints.
 Before that, every scan was segmented on CPU by the **second-place** entry,
 `brainles/brats25_gli_ecnu`, digest
 `sha256:c2a27297deab0638296e8b90569d19f7dfda1519ed116093cb2602fa8f1f1596`. Those
-segmentations and every result made from them are kept in `outputs_25_2/`. The
+segmentations and every result made from them are kept in `outputs/archive/brats25_2/`. The
 two agree closely: median Dice per scan 0.99 for whole tumor and 0.98 for
 enhancing tumor at both timepoints, lowest 0.93 and 0.78. They differ mainly in
 the cavity, which the winner labels on 16 follow-ups instead of 11, taking some
@@ -76,7 +76,7 @@ pathology of the second resection (see below).
 ## Which compartment counts as the recurrence
 
 *The table in this section is from the first 21 pairs. The full 41 are in
-`outputs/<space>/overlap_review.csv` and on the summary page.*
+`outputs/results/<space>/tables/overlap_review.csv` and on the summary page.*
 
 **Open, and for the supervisor to settle before the model goes further.**
 
@@ -154,7 +154,7 @@ labels a cavity on 16 of the 41 follow-ups, 9 of them over 3 mL, and catches
 **The model labels a cavity on only 11 of the 41 follow-ups** (none on the
 pre-op scans), though every patient was resected. All 41 were looked at, one
 axial slice through the original tumor site on T1-Gd, FLAIR and T2
-(`outputs/figures/cavity_review/`, made by `evidence/cavity_sheets.py`):
+(`outputs/results/qc/cavity_review/`, made by `evidence/cavity_sheets.py`):
 
 - where it labels one, the cavity looks right (00160, 00344, 00130, 00267)
 - at least one clear cavity is left unlabeled (00314); unlabeled voxels are in

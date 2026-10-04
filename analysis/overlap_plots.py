@@ -137,7 +137,7 @@ def main():
     style()
     for space in measure.SPACES:
         rows = collect(space)
-        out = results_dir(space)
+        out = results_dir(space, "figures")
         overlap_vs_size(rows, out / "overlap_vs_size.png")
         volume_by_score(rows, out / "volume_by_pathology.png")
         margin_by_score(rows, out / "margin_pct_by_pathology.png", absolute=False)

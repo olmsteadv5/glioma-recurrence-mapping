@@ -6,6 +6,7 @@ import json
 import os
 import textwrap
 import time
+from pathlib import Path
 
 from textual import events, on
 from textual.app import App, ComposeResult
@@ -20,7 +21,7 @@ from analysis import measure
 from show import compare
 from show import render
 from yale import atlas, connect, function
-from paths import (ATLAS_INPUT, LABELS, MODALITIES, OUTPUTS, REGIONS, RESULTS,
+from paths import (ATLAS_INPUT, LABELS, MODALITIES, REGIONS, RESULTS, results_dir,
                    STAGES, out_dir, raw_dir, stage_file, stripped_dir)
 
 
@@ -61,8 +62,9 @@ LAYERS = [("shell", "brain surface", "#a89984", 0),
 KEYS = {k for k, *_ in LAYERS if not k.startswith("--")}
 # on the first ever start; after that the viewer remembers
 SHOWN = {"shell", "1:WT", "2:WT", "tracts"}
-# what the viewer remembers between patients and between runs
-STATE = OUTPUTS / "tui_state.json"
+# what the viewer remembers between patients and between runs; a personal
+# setting, so it lives with the user's config rather than with the results
+STATE = Path.home() / ".config" / "brats-tui" / "state.json"
 # WT, TC and ET are unions of the tissue classes, so they are deliberately left
 # uncolored: any class color on them reads as "this row is that tissue"
 ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
@@ -86,7 +88,7 @@ ABOUT = {
 
 def walk_ml(subject, phase):
     # the walk-down target's patient-space volume, as analysis/walkdown.py scored it
-    path = OUTPUTS / "native" / "walkdown.csv"
+    path = results_dir("native") / "walkdown.csv"
     if not path.exists():
         return ""
     stamp = path.stat().st_mtime
@@ -460,6 +462,7 @@ class Console(App):
 
     def save_state(self):
         try:
+            STATE.parent.mkdir(parents=True, exist_ok=True)
             STATE.write_text(json.dumps({
                 "shown": sorted(KEYS - self.hidden_layers), "mode": self.mode,
                 "space": self.space, "palette": self.palette, "listing": self.listing,
@@ -1377,7 +1380,7 @@ class Console(App):
             image, kind = self.scene.snapshot(), "3d"
         else:
             image, kind = self.slices.montage(), f"slices-{self.space}"
-        dest = out_dir(self.subject) / f"{self.subject}_{kind}_{stamp}.png"
+        dest = results_dir("screenshots", "") / f"{self.subject[10:15]}_{kind}_{stamp}.png"
         image.save(dest)
         self.say(f"wrote {dest.name}, {image.size[0]}x{image.size[1]}")
 

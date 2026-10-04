@@ -16,7 +16,8 @@ from show.compare import _inverse
 from yale import atlas
 from yale import tracts as tractography
 from geometry import grow, outline, template_brain
-from paths import LABELS, MNI, MODALITIES, THREADS, modality, out_dir, raw_dir, stripped_dir
+from paths import (LABELS, MNI, MODALITIES, THREADS, cache_dir, modality, out_dir, pair_cache,
+                   pair_dir, raw_dir, stripped_dir, walk_dir)
 
 pv.OFF_SCREEN = True
 
@@ -59,16 +60,16 @@ def walk_file(subject, phase, space):
     # where a walk-down target sits for this scan in this space. Both scans of a
     # pair show the one target, which is built from the pre-op tumor. None if
     # analysis/walkdown.py has not been run for this patient
-    first = subject[:-2] + "11"
-    mni = out_dir(first) / f"walk_{phase}_mni.nii.gz"
+    mni = walk_dir(subject) / f"walk_{phase}_mni.nii.gz"
     if not mni.exists():
         return None
     if space == "mni":
         return mni
-    here = out_dir(subject) / f"walk_{phase}.nii.gz"
     if subject.endswith("_21"):
+        here = walk_dir(subject) / f"walk_{phase}.nii.gz"
         # walkdown.py writes the follow-up's copy itself
         return here if here.exists() else None
+    here = cache_dir(subject) / f"walk_{phase}.nii.gz"
     if not here.exists() or here.stat().st_mtime < mni.stat().st_mtime:
         # the pre-op scan's own grid, through its own way back from MNI
         subprocess.run(["greedy", "-d", "3", "-rf", str(modality(stripped_dir(subject), subject, "T1")),
@@ -80,10 +81,9 @@ def walk_file(subject, phase, space):
 
 def walk_ends(subject):
     # where each walk stopped, both phases, in MNI mm
-    first = subject[:-2] + "11"
     out = {}
     for phase in WALK_PHASES:
-        path = out_dir(first) / f"walk_{phase}_ends.npy"
+        path = walk_dir(subject) / f"walk_{phase}_ends.npy"
         if path.exists():
             out[phase] = np.load(path)
     return out
@@ -161,7 +161,7 @@ class Scene:
     def _tumor(subject, image):
         # contouring the four labels is half a second, and it only changes
         # when the registration does
-        cache = out_dir(subject) / "tumor_surfaces.npz"
+        cache = cache_dir(subject) / "tumor_surfaces.npz"
         if cache.exists() and cache.stat().st_mtime >= os.path.getmtime(image.get_filename()):
             held = np.load(cache)
             return {int(v): (WHOLE if int(v) == 0 else LABELS[int(v)],
@@ -266,7 +266,7 @@ class Scene:
         # only built when it is asked for: the distance transform is not free
         if "T:margin" in self.actors:
             return
-        cache = out_dir(self.subject) / "margin_surface.npz"
+        cache = cache_dir(self.subject) / "margin_surface.npz"
         if cache.exists():
             held = np.load(cache)
             points, faces = held["vertices"], held["faces"]
@@ -286,7 +286,7 @@ class Scene:
         source = walk_file(self.subject, phase, "mni")
         if source is None:
             return
-        cache = source.with_name(f"walk_{phase}_surface.npz")
+        cache = pair_cache(self.subject) / f"walk_{phase}_surface.npz"
         if cache.exists() and cache.stat().st_mtime >= source.stat().st_mtime:
             held = np.load(cache)
             points, faces = held["vertices"], held["faces"]
@@ -1162,19 +1162,21 @@ class Slices:
         if self.space == "mni":
             return out_dir(who) / "seg_in_mni.nii.gz"
         if scan == "1" and self.later:
-            return out_dir(self.later) / "first_seg_in_later.nii.gz"
+            return pair_dir(self.later) / "first_seg_in_later.nii.gz"
         return out_dir(who) / "seg.nii.gz"
 
     def _first_on_later(self, name):
         # a pre-op sequence moved onto the follow-up's grid by the same rigid fit
         # the tumor took, made once and kept
-        dest = out_dir(self.later) / f"first_{name}_in_later.nii.gz"
+        # align already made the T1; the others are only ever wanted here
+        dest = (pair_dir(self.later) / "first_t1_in_later.nii.gz" if name == "T1"
+                else pair_cache(self.later) / f"first_{name}_in_later.nii.gz")
         source = modality(stripped_dir(self.subject), self.subject, name)
         if not dest.exists() and source.exists():
             subprocess.run(["greedy", "-d", "3",
                             "-rf", str(modality(stripped_dir(self.later), self.later, "T1")),
                             "-rm", str(source), str(dest),
-                            "-r", str(out_dir(self.later) / "rigid_first_to_later.mat"),
+                            "-r", str(pair_dir(self.later) / "rigid_first_to_later.mat"),
                             "-threads", THREADS], capture_output=True)
         return dest
 

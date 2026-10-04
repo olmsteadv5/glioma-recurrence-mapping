@@ -6,7 +6,7 @@
 import nibabel as nib
 import numpy as np
 
-from paths import THREADS, modality, out_dir, stripped_dir
+from paths import THREADS, modality, out_dir, pair_dir, stripped_dir
 from scan.register import _greedy, _metric_mask
 
 
@@ -22,7 +22,7 @@ def _brain_dice(a, b):
 
 def run(later):
     first = first_of(later)
-    destination = out_dir(later)
+    destination = pair_dir(later)
     fixed = modality(stripped_dir(later), later, "T1")
     moving = modality(stripped_dir(first), first, "T1")
     log = destination / "align.log"
@@ -33,7 +33,7 @@ def run(later):
 
     # the follow-up brain minus its tumor drives the fit, so neither lesion can.
     # -gm masks the fixed image; -mm is the one that crashes in affine mode
-    _metric_mask(fixed, destination / "seg.nii.gz", mask)
+    _metric_mask(fixed, out_dir(later) / "seg.nii.gz", mask)
     # both scans ship on the SRI24 grid, so the headers already roughly line up.
     # NCC, since NMI wandered 21 degrees off a good start on 00130
     _greedy(["-d", 3, "-a", "-dof", 6, "-m", "NCC", "4x4x4", "-i", fixed, moving, "-gm", mask,

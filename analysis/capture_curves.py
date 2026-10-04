@@ -124,11 +124,11 @@ def save(fig, path):
 def main():
     style()
     for space in measure.SPACES:
-        out = results_dir(space)
+        tables, figures = results_dir(space), results_dir(space, "figures")
         reach = collect(space)
         top = far_end(reach)
-        write_curves(reach, top, out / "capture_curves.csv")
-        figure(reach, top, out / "capture_per_patient.png")
+        write_curves(reach, top, tables / "capture_curves.csv")
+        figure(reach, top, figures / "capture_per_patient.png")
 
 
 if __name__ == "__main__":

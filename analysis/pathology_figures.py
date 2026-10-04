@@ -160,8 +160,8 @@ def main():
     style()
     for space in measure.SPACES:
         rows = collect(space)
-        recurrence_location(rows, results_dir(space) / "recurrence_location.png")
-        headroom(rows, results_dir(space) / "headroom.png")
+        recurrence_location(rows, results_dir(space, "figures") / "recurrence_location.png")
+        headroom(rows, results_dir(space, "figures") / "headroom.png")
 
 
 if __name__ == "__main__":

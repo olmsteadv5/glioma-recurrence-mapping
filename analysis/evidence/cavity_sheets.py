@@ -5,10 +5,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from paths import OUTPUTS, modality, out_dir, stripped_dir
+from paths import PARTICIPANTS, QC_DIR, modality, out_dir, stripped_dir
 
 pairs = json.load(open(Path(__file__).parent / "pairs41.json"))
-meta = {r["ID"]: r for r in csv.DictReader(open(OUTPUTS / "participants.tsv"), delimiter="\t")}
+meta = {r["ID"]: r for r in csv.DictReader(open(PARTICIPANTS), delimiter="\t")}
 COLORS = {1: "#ffd21f", 3: "#ff3b30", 4: "#ff4fd8"}  # NETC, ET, RC
 
 def window(img, mask):
@@ -36,7 +36,7 @@ def sheet(batch, path):
     fig.text(0.01, 0.002, "cyan dashed = original tumor core   yellow = NETC   red = ET   magenta = RC", fontsize=8)
     fig.tight_layout(); fig.savefig(path, dpi=110); plt.close(fig)
 
-(OUTPUTS / "figures" / "cavity_review").mkdir(parents=True, exist_ok=True)
+(QC_DIR / "cavity_review").mkdir(parents=True, exist_ok=True)
 for i in range(0, len(pairs), 7):
-    sheet(pairs[i:i + 7], OUTPUTS / "figures" / "cavity_review" / f"cav_{i // 7}.png")
+    sheet(pairs[i:i + 7], QC_DIR / "cavity_review" / f"cav_{i // 7}.png")
 print("sheets written")

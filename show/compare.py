@@ -8,7 +8,7 @@ import numpy as np
 import subprocess
 
 from geometry import ml_per_voxel
-from paths import THREADS, modality, out_dir, stripped_dir
+from paths import THREADS, cache_dir, modality, out_dir, stripped_dir
 
 PARTS = ("both", "new", "gone")
 
@@ -89,9 +89,9 @@ def native(subject, first, second):
     back = _inverse(subject)
     source = nib.load(out_dir(first) / "seg_in_mni.nii.gz")
     for name, mask in masks(first, second).items():
-        dest = out_dir(subject) / f"compare_{name}.nii.gz"
+        dest = cache_dir(subject) / f"compare_{name}.nii.gz"
         if not dest.exists():
-            held = out_dir(subject) / f"compare_{name}_mni.nii.gz"
+            held = cache_dir(subject) / f"compare_{name}_mni.nii.gz"
             nib.save(nib.Nifti1Image(mask.astype(np.uint8), source.affine), held)
             subprocess.run(
                 ["greedy", "-d", "3", "-rf", str(reference), "-ri", "LABEL", "0.2vox",

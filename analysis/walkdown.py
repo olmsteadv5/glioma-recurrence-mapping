@@ -1,13 +1,19 @@
 #!/home/vilem/Projects/brats-upenn-gbm/.venv/bin/python
-# A target that follows white matter instead of growing evenly: walk 20 mm along
+# A target that follows white matter instead of growing evenly: walk d mm along
 # every atlas tract that leaves the tumor, then wrap one convex hull around the
-# tumor and where the walks ended. Built for both NRG phases, in MNI where the
-# tracts are, and pulled into each follow-up scan for patient space.
+# tumor and where the walks ended. Built for every d from 0 to 40 mm, for both
+# NRG phases, in MNI where the tracts are, and pulled into each follow-up scan
+# for patient space.
 
 import csv
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+# set before numpy loads, or each worker starts its own pool of threads
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 import nibabel as nib
 import numpy as np
@@ -23,8 +29,13 @@ from yale import tracts
 
 # why: the NRG margin, 2 cm along the tract instead of in every direction [rtog0825]
 WALK_MM = MARGIN_MM
-# why: NRG lets the margin shrink to 0.5 cm at barriers, so no target goes below it [rtog0825]
-FLOOR_MM = 5
+# twice that, so the walk-down can be followed past where it catches as much as
+# the 2 cm volume does, and the brain it saves read off at equal coverage
+LONGEST_MM = 2 * WALK_MM
+# every whole mm up to it, so nothing between two samples goes unseen
+DISTANCES = tuple(range(LONGEST_MM + 1))
+# a voxel no walk ever reaches
+NEVER = 255
 # a tract that leaves and comes back within this is running along the edge,
 # not leaving. A judgement call, about three voxels; not from any paper
 SKIM_MM = 3
@@ -53,39 +64,51 @@ class Lines:
         return np.split(flags, self.cut)
 
 
-def _walk(line, inside, allowed):
-    # one end of the walk for every place this line leaves the tumor, in both
-    # directions along it. It stops at 20 mm of path, at the line's end, at the
-    # edge of where a plan may go, or where it comes back into the tumor
-    ends = []
+def _walk(line, inside, allowed, skim=SKIM_MM):
+    # one path for every place this line leaves the tumor, in both directions
+    # along it, as its points and the distance walked to each. A path stops at
+    # the longest walk, at the line's end, at the edge of where a plan may go, or where it
+    # comes back into the tumor
+    paths = []
     for points, gtv, ok in ((line, inside, allowed), (line[::-1], inside[::-1], allowed[::-1])):
         step = np.linalg.norm(np.diff(points, axis=0), axis=1)
         for i in np.flatnonzero(gtv[:-1] & ~gtv[1:]):
             back = np.flatnonzero(gtv[i + 1:])
-            if back.size and step[i:i + 1 + back[0]].sum() < SKIM_MM:
+            if back.size and step[i:i + 1 + back[0]].sum() < skim:
                 continue
-            walked, j = 0.0, i
-            while j + 1 < len(points) and ok[j + 1] and not gtv[j + 1]:
-                if walked + step[j] >= WALK_MM:
-                    t = (WALK_MM - walked) / step[j]
-                    ends.append(points[j] + t * (points[j + 1] - points[j]))
-                    break
-                walked += step[j]
+            j, walked = i, [0.0]
+            while j + 1 < len(points) and ok[j + 1] and not gtv[j + 1] and walked[-1] < LONGEST_MM:
+                walked.append(walked[-1] + step[j])
                 j += 1
-            else:
-                ends.append(points[j])
-    return ends
+            walked = np.array(walked)
+            paths.append((points[i:j + 1], walked))
+    return paths
 
 
-def _hull(points, image, shape):
-    # every voxel whose center is inside the convex hull of the points
+def _ends(paths, mm):
+    # where each path stands after mm of walking, or where it stopped if sooner
+    out = []
+    for points, walked in paths:
+        at = min(mm, walked[-1])
+        out.append([np.interp(at, walked, points[:, k]) for k in range(3)])
+    return np.array(out).reshape(-1, 3)
+
+
+def _hull(points, image, shape, candidates=None):
+    # every voxel whose center is inside the convex hull of the points. With
+    # candidates, a boolean volume, only those voxels are tested, which is all a
+    # caller growing a target needs: the rest are settled already
     hull = ConvexHull(points)
     inverse = np.linalg.inv(image.affine)
     corners = nib.affines.apply_affine(inverse, points[hull.vertices])
     low = np.maximum(np.floor(corners.min(0)).astype(int), 0)
     high = np.minimum(np.ceil(corners.max(0)).astype(int) + 1, shape)
-    box = np.stack(np.meshgrid(*[np.arange(a, b) for a, b in zip(low, high)], indexing="ij"), -1)
-    box = box.reshape(-1, 3)
+    if candidates is None:
+        box = np.stack(np.meshgrid(*[np.arange(a, b) for a, b in zip(low, high)], indexing="ij"), -1)
+        box = box.reshape(-1, 3)
+    else:
+        window = tuple(slice(a, b) for a, b in zip(low, high))
+        box = np.argwhere(candidates[window]) + low
     out = np.zeros(shape, bool)
     for start in range(0, len(box), 500_000):
         chunk = box[start:start + 500_000]
@@ -110,35 +133,49 @@ def allowed_mni(first):
     return brain & side, False
 
 
-def build_mni(first, lines):
-    # both walk targets in MNI, plus the endpoints, which the viewer can draw
+def reach_mni(first, lines, skim=SKIM_MM):
+    # for both phases, the shortest walk at which each voxel joins the target.
+    # The target at d is every voxel reached by a walk of d or less, so it can
+    # only grow with d; the tumor itself is reached at 0
     data, image = measure._seg(first, "mni")
     allowed, crossed = allowed_mni(first)
     may = lines.lookup(allowed)
-    built, info = {}, {"crossed": crossed}
+    reach, info = {}, {"crossed": crossed}
     for phase, region in PHASES:
         gtv = measure.mask(first, region, "mni")
         if not gtv.any():
             gtv = data > 0
-        ends, used = [], 0
+        paths, used = [], 0
         for line, inside, ok in zip(lines.lines, lines.lookup(gtv), may):
             if inside.any():
                 used += 1
-                ends += _walk(line, inside, ok)
+                paths += _walk(line, inside, ok, skim)
         edge = nib.affines.apply_affine(image.affine, np.argwhere(outline(gtv)))
-        cloud = np.vstack([edge] + ([np.array(ends)] if ends else []))
-        target = _hull(cloud, image, gtv.shape) & allowed
-        target |= (distance(gtv, image) <= FLOOR_MM) & allowed
-        target |= gtv
+        first_in = np.full(gtv.shape, NEVER, np.uint8)
+        first_in[gtv] = 0
+        for mm in DISTANCES:
+            # only voxels the plan may reach and no shorter walk has reached
+            open_ = allowed & (first_in == NEVER)
+            first_in[_hull(np.vstack([edge, _ends(paths, mm)]), image, gtv.shape, open_)] = mm
         if phase == "60":
-            target &= built["46"] | gtv
-        built[phase] = target
-        info[phase] = {"tracts": used, "ends": len(ends)}
-        np.save(walk_dir(first) / f"walk_{phase}_ends.npy", np.array(ends).reshape(-1, 3))
-        nib.save(nib.Nifti1Image(target.astype(np.uint8), image.affine),
-                 walk_dir(first) / f"walk_{phase}_mni.nii.gz")
-    nib.save(nib.Nifti1Image(allowed.astype(np.uint8), image.affine),
-             walk_dir(first) / "walk_allowed_mni.nii.gz")
+            # the boost stays inside the 46 Gy volume at the same walk
+            first_in = np.where(gtv, 0, np.maximum(first_in, reach["46"])).astype(np.uint8)
+        reach[phase] = first_in
+        info[phase] = {"tracts": used, "exits": len(paths)}
+        info[f"ends_{phase}"] = _ends(paths, WALK_MM)
+    return reach, allowed, image, info
+
+
+def build_mni(first, lines):
+    # the reach maps, the 20 mm targets the viewer draws, and their end points
+    reach, allowed, image, info = reach_mni(first, lines)
+    here = walk_dir(first)
+    for phase, _ in PHASES:
+        nib.save(nib.Nifti1Image(reach[phase], image.affine), here / f"walk_{phase}_reach_mni.nii.gz")
+        nib.save(nib.Nifti1Image((reach[phase] <= WALK_MM).astype(np.uint8), image.affine),
+                 here / f"walk_{phase}_mni.nii.gz")
+        np.save(here / f"walk_{phase}_ends.npy", info.pop(f"ends_{phase}"))
+    nib.save(nib.Nifti1Image(allowed.astype(np.uint8), image.affine), here / "walk_allowed_mni.nii.gz")
     return info
 
 
@@ -152,66 +189,79 @@ def to_native(first, later, name):
                     "-r", str(pair_dir(later) / "rigid_first_to_later.mat"),
                     str(out_dir(first) / "affine.mat") + ",-1", str(_inverse(first)),
                     "-threads", THREADS], capture_output=True, check=True)
-    return np.asarray(nib.load(dest).dataobj) > 0
+    return np.asarray(nib.load(dest).dataobj)
 
 
-def targets(first, later, space):
-    # every target this comparison scores, in one space
-    if space == "mni":
-        load = lambda name: np.asarray(nib.load(walk_dir(first) / f"{name}_mni.nii.gz").dataobj) > 0
-    else:
-        load = lambda name: to_native(first, later, name)
-    allowed = load("walk_allowed") & measure._brain(first, space)
+def score(first, later, space, reach=None, allowed=None):
+    # every target at every walk distance, in one space: the walk-down, the plain
+    # margin grown the same distance, and a ball of exactly the walk-down's size.
+    # reach and allowed, when given, are MNI maps already in memory
+    if reach is None:
+        if space == "mni":
+            load = lambda name: np.asarray(nib.load(walk_dir(first) / f"{name}_mni.nii.gz").dataobj)
+        else:
+            load = lambda name: to_native(first, later, name)
+        reach = {phase: load(f"walk_{phase}_reach") for phase, _ in PHASES}
+        allowed = load("walk_allowed") > 0
+        if space == "native":
+            nib.save(nib.Nifti1Image((reach["46"] <= WALK_MM).astype(np.uint8),
+                                     nib.load(walk_dir(later) / "walk_46_reach.nii.gz").affine),
+                     walk_dir(later) / "walk_46.nii.gz")
+            nib.save(nib.Nifti1Image((reach["60"] <= WALK_MM).astype(np.uint8),
+                                     nib.load(walk_dir(later) / "walk_60_reach.nii.gz").affine),
+                     walk_dir(later) / "walk_60.nii.gz")
+    allowed = allowed & measure._brain(first, space)
     _, image = measure._seg(first, space)
-    out = {}
+    ml = measure.voxel_ml(first, space)
+    now = {code: measure.mask(later, code, space) for code in ("ET", "WT")}
+    rows, iso_46 = [], None
     for phase, region in PHASES:
         gtv = measure.mask(first, region, space)
         if not gtv.any():
             gtv = measure.mask(first, "WT", space)
-        walk = (load(f"walk_{phase}") & allowed) | gtv
+        first_in = np.where(gtv, 0, np.where(allowed, reach[phase], NEVER))
         far = np.where(allowed | gtv, distance(gtv, image), np.inf)
-        iso = far <= MARGIN_MM
-        # the same number of voxels as the walk, nearest the tumor first
-        order = np.argsort(far, axis=None, kind="stable")[:int(walk.sum())]
-        ball = np.zeros(gtv.shape, bool)
-        ball.flat[order] = True
-        if phase == "60":
-            iso &= out["iso_46"]
-        out[f"walk_{phase}"], out[f"iso_{phase}"], out[f"ball_{phase}"] = walk, iso, ball
-        out[f"gtv_{phase}"] = gtv
-    return out
-
-
-def score(first, later, space):
-    built = targets(first, later, space)
-    ml = measure.voxel_ml(first, space)
-    rows = []
-    for phase, _ in PHASES:
-        gtv = built[f"gtv_{phase}"]
-        for kind in ("walk", "iso", "ball"):
-            target = built[f"{kind}_{phase}"]
-            row = {"patient": first[-8:-3], "pathology": measure.pathology(first), "phase": phase,
-                   "target": kind, "volume_ml": round(float(target.sum()) * ml, 1),
-                   "beyond_gtv_ml": round(float((target & ~gtv).sum()) * ml, 1)}
-            for code in ("ET", "WT"):
-                now = measure.mask(later, code, space)
-                row[f"{code}_pct"] = (round(100 * float((now & target).sum()) / float(now.sum()), 1)
-                                      if now.any() else None)
-            rows.append(row)
+        order = np.argsort(far, axis=None, kind="stable")
+        # cumulative catches along the ball's order, so any size is one lookup
+        along = {code: np.cumsum(now[code].ravel()[order]) for code in now}
+        for mm in DISTANCES:
+            walk = first_in <= mm
+            iso = far <= mm
+            if phase == "60":
+                iso &= iso_46[mm]
+            size = int(walk.sum())
+            for kind, target in (("walk", walk), ("iso", iso), ("ball", None)):
+                count = size if target is None else int(target.sum())
+                inside_gtv = int(gtv.sum())
+                row = {"patient": first[-8:-3], "pathology": measure.pathology(first), "phase": phase,
+                       "walk_mm": mm, "target": kind, "volume_ml": round(count * ml, 1),
+                       "beyond_gtv_ml": round(max(count - inside_gtv, 0) * ml, 1)}
+                for code, mask in now.items():
+                    if not mask.any():
+                        row[f"{code}_pct"] = None
+                        continue
+                    caught = (int(along[code][size - 1]) if target is None
+                              else int((mask & target).sum()))
+                    row[f"{code}_pct"] = round(100 * caught / float(mask.sum()), 1)
+                rows.append(row)
+        if phase == "46":
+            iso_46 = {mm: far <= mm for mm in DISTANCES}
     return rows
 
 
 def write(space):
-    path = results_dir(space) / "walkdown.csv"
+    # every distance into walkdown_curves.csv, and 20 mm alone into walkdown.csv
     rows = []
     for first, later in measure.pairs(space):
         rows += score(first, later, space)
         measure.forget()
-    with open(path, "w", newline="") as fh:
-        out = csv.DictWriter(fh, fieldnames=list(rows[0]))
-        out.writeheader()
-        out.writerows(rows)
-    return path
+    for name, keep in (("walkdown_curves.csv", rows),
+                       ("walkdown.csv", [r for r in rows if r["walk_mm"] == WALK_MM])):
+        with open(results_dir(space) / name, "w", newline="") as fh:
+            out = csv.DictWriter(fh, fieldnames=list(keep[0]))
+            out.writeheader()
+            out.writerows(keep)
+    return results_dir(space) / "walkdown_curves.csv"
 
 
 def _rows(space):
@@ -259,17 +309,92 @@ def summarize(space):
     return path
 
 
+def summarize_curves(space):
+    # at every distance: the median of each target, and how far the walk-down
+    # beats a ball of its own size, with a bootstrap 95% interval on that median
+    with open(results_dir(space) / "walkdown_curves.csv") as fh:
+        rows = list(csv.DictReader(fh))
+    cell = {}
+    for r in rows:
+        cell.setdefault((r["phase"], int(r["walk_mm"]), r["target"]), {})[r["patient"]] = r
+    rng = np.random.default_rng(0)
+    path = results_dir(space) / "walkdown_curves_summary.csv"
+    with open(path, "w", newline="") as fh:
+        out = csv.writer(fh)
+        out.writerow(["phase", "walk_mm", "target", "median_beyond_gtv_ml", "median_ET_pct",
+                      "median_WT_pct", "ET_walk_minus_ball", "ET_low", "ET_high",
+                      "WT_walk_minus_ball", "WT_low", "WT_high"])
+        for phase, _ in PHASES:
+            for mm in DISTANCES:
+                walk = cell[(phase, mm, "walk")]
+                for kind in ("walk", "iso", "ball"):
+                    group = cell[(phase, mm, kind)]
+                    row = [phase, mm, kind]
+                    for key in ("beyond_gtv_ml", "ET_pct", "WT_pct"):
+                        values = [_num(r[key]) for r in group.values() if _num(r[key]) is not None]
+                        row.append(round(float(np.median(values)), 1))
+                    for code in ("ET", "WT"):
+                        if kind != "ball":
+                            row += ["", "", ""]
+                            continue
+                        diff = np.array([_num(walk[p][f"{code}_pct"]) - _num(group[p][f"{code}_pct"])
+                                         for p in walk if _num(walk[p][f"{code}_pct"]) is not None])
+                        boot = np.median(rng.choice(diff, (2000, len(diff))), axis=1)
+                        row += [round(float(np.median(diff)), 2),
+                                round(float(np.percentile(boot, 2.5)), 2),
+                                round(float(np.percentile(boot, 97.5)), 2)]
+                    out.writerow(row)
+    return path
+
+
+def matched(space):
+    # the walk-down at equal coverage: for each patient, the shortest walk that
+    # catches at least as much as the NRG 2 cm volume, and the brain that saves.
+    # No weighting of misses against brain is needed, since none are traded
+    with open(results_dir(space) / "walkdown_curves.csv") as fh:
+        rows = list(csv.DictReader(fh))
+    cell = {(r["patient"], r["phase"], int(r["walk_mm"]), r["target"]): r for r in rows}
+    out = []
+    for patient in sorted({r["patient"] for r in rows}):
+        for phase, _ in PHASES:
+            nrg = cell[(patient, phase, WALK_MM, "iso")]
+            for code in ("ET", "WT"):
+                goal = _num(nrg[f"{code}_pct"])
+                if goal is None:
+                    continue
+                hit = next((mm for mm in DISTANCES
+                            if _num(cell[(patient, phase, mm, "walk")][f"{code}_pct"]) >= goal), None)
+                walk = cell[(patient, phase, hit, "walk")] if hit is not None else None
+                out.append({"patient": patient, "pathology": nrg["pathology"], "phase": phase,
+                            "recurrence": code, "nrg_pct": goal,
+                            "nrg_beyond_gtv_ml": _num(nrg["beyond_gtv_ml"]),
+                            "walk_mm_needed": hit,
+                            "walk_beyond_gtv_ml": _num(walk["beyond_gtv_ml"]) if walk else None,
+                            "saved_ml": (round(_num(nrg["beyond_gtv_ml"]) - _num(walk["beyond_gtv_ml"]), 1)
+                                         if walk else None)})
+    path = results_dir(space) / "walkdown_matched.csv"
+    with open(path, "w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=list(out[0]))
+        writer.writeheader()
+        writer.writerows(out)
+    return path
+
+
+def _build(first):
+    # one patient's MNI maps; a process of its own so patients run side by side
+    data, image = measure._seg(first, "mni")
+    return first, build_mni(first, Lines(image, data.shape))
+
+
 def main():
-    lines = None
-    for first, later in measure.pairs("mni"):
-        if lines is None:
-            data, image = measure._seg(first, "mni")
-            lines = Lines(image, data.shape)
-        info = build_mni(first, lines)
-        print(first[-8:-3], info, flush=True)
-        measure.forget()
+    from concurrent.futures import ProcessPoolExecutor
+    firsts = [first for first, _ in measure.pairs("mni")]
+    # one thread each, so the workers share the cores instead of fighting over them
+    with ProcessPoolExecutor(12) as pool:
+        for first, info in pool.map(_build, firsts):
+            print(first[-8:-3], info, flush=True)
     for space in measure.SPACES:
-        print(write(space), summarize(space))
+        print(write(space), summarize(space), summarize_curves(space), matched(space), flush=True)
 
 
 if __name__ == "__main__":

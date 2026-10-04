@@ -53,8 +53,8 @@ standard brain the atlas lives in, which stretches volumes a little.
 ./analysis/pathology_figures.py  # where the tumor outside 20 mm goes, and what the 2 cm margin spends
 ./analysis/overlap_plots.py      # overlap against tumor size, and margins by pathology score
 ./analysis/lobes.py              # tumor_lobes.csv, the lobes each tumor sits in
-./analysis/walkdown.py           # a target 20 mm along the tracts leaving the tumor, against 2 cm and a same-size ball
-./analysis/walkdown_figures.py   # the figure for sending: what each target costs and catches
+./analysis/walkdown.py           # a target 0-40 mm along the tracts leaving the tumor, against plain margins and same-size balls
+./analysis/walkdown_figures.py   # the walk-down figures: each target by walk distance, catch against brain spent, brain saved at equal coverage
 ```
 
 `analysis/COHORT.md` explains how the 41 patients were chosen and checked.

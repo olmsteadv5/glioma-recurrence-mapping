@@ -182,13 +182,22 @@ cavity contents here are not ventricle-like enough for it to work.
 
 `walkdown.py` builds a target that follows white matter instead of growing
 evenly, for both NRG phases: from the whole tumor (the 46 Gy volume) and from the
-core (the 60 Gy boost, kept inside the first). Every atlas tract with a point in
-the tumor is followed 20 mm along its own path from each place it leaves; one
-convex hull is wrapped around the tumor's edge and all those end points. Walks
-stop at the end of the tract, at the brain edge, back inside the tumor, or at the
-midline. Then, as NRG allows, nothing goes below the tumor + 5 mm, nothing goes
-outside the brain, and nothing crosses the falx unless at least 1 mL of the
-original whole tumor already lies past the midline (6 of 41 here, by that cutoff).
+core (the 60 Gy boost, kept inside the first at the same distance). Every atlas
+tract with a point in the tumor is followed d mm along its own path from each
+place it leaves; one convex hull is wrapped around the tumor's edge and all those
+end points. Walks stop at d, at the end of the tract, at the brain edge, back
+inside the tumor, or at the midline. Nothing goes outside the brain, and nothing
+crosses the falx unless at least 1 mL of the original whole tumor already lies
+past the midline (6 of 41 here, by that cutoff). There is no minimum margin.
+
+It is built at every whole mm from 0 to 40, so nothing between two samples goes
+unseen; 20 mm stays the reference, and is the target the viewer draws. Each voxel stores the shortest walk at which it joins the target, and the
+target at d is every voxel reached by d or less, so it only grows with d. At
+20 mm the end points are identical to the first, single-distance run; that run
+also kept a 5 mm minimum margin, which is gone, so its 20 mm target is a little
+smaller (00036: 348 to 329 mL, entirely inside the old one). Even at d = 0 the
+hull is bigger than the tumor, since it fills the tumor's dents, which is why the
+ball of the same size, not the margin of the same distance, is the fair control.
 
 Built in MNI, where the tracts are, and carried into each follow-up scan along
 the pre-op scan's own road (its inverse warp, then the rigid fit), which puts an
@@ -197,19 +206,39 @@ Checked on a made-up 15 mm sphere with straight tracts in 2000 directions: the
 hull came out 176.9 mL against the 179.6 mL of a perfect 35 mm sphere. A tract
 bent into a 10 mm circle ends 16.8 mm away after 20 mm of path, as it should.
 
-Patient space, first run (25_1 segmentations):
+Patient space, at 20 mm:
 
 | | 46 Gy walk | NRG 2 cm | 60 Gy walk | NRG 2 cm |
 |---|---|---|---|---|
-| brain beyond the tumor, median | 148 mL | 289 mL | 68 mL | 180 mL |
-| enhancing recurrence caught, median | 99.7% | 100.0% | 88.1% | 99.8% |
-| whole recurrence caught, median | 81.6% | 96.2% | 42.2% | 74.1% |
+| brain beyond the tumor, median | 138 mL | 289 mL | 57 mL | 180 mL |
+| enhancing recurrence caught, median | 98.5% | 100.0% | 84.2% | 99.8% |
+| whole recurrence caught, median | 81.6% | 96.2% | 41.9% | 74.1% |
 
-Against a ball of exactly its size, grown evenly from the same tumor, the walk
-catches the same share of the enhancing recurrence (46 Gy: better in 12, worse in
-12, p = 0.47; 60 Gy: 17 against 16, p = 0.29) and more of the whole recurrence
-(46 Gy: 26 against 9, p < 0.001; 60 Gy: 37 against 4, p < 0.001). MNI agrees.
+Against a ball of exactly its size, the walk catches the same share of the
+enhancing recurrence at every distance (median difference about 0 points; at
+20 mm, 46 Gy: better in 12, worse in 16, p = 0.67) and more of the whole
+recurrence, a gap that grows with distance: about 0 at d = 0, +1.5 points at
+10 mm, +2.2 at 20 mm for 46 Gy (better in 25, worse in 14, p < 0.001), and +2.0
+at 20 mm for 60 Gy (36 against 4). The median patient's walk-down first catches
+95% of the enhancing recurrence at 7 mm, against 5 mm for the plain margin and
+the ball; the 60 Gy walk never gets there. MNI agrees.
 
-Open: the 3 mm skim rule and the 1 mL crossing cutoff are ours, not from a
-paper. 00354's pre-op scan has no core at all, so its 60 Gy walk falls back to
-the whole tumor; under NRG it would have no boost volume.
+The 3 mm skim rule (a tract leaving and re-entering within 3 mm is not an exit)
+changes nothing: run again with it off, in MNI, no patient's target moved by
+even 0.1 mL at any distance, because a skimming tract's end points already sit
+inside the hull around the tumor's edge.
+
+Past 20 mm the walk-down keeps growing slowly, since tracts end and the midline and
+brain edge stop walks: at 40 mm it still spends less brain than the 2 cm volume
+(46 Gy: median 242 against 289 mL). Its edge over the same-size ball on the whole
+recurrence peaks near 22 mm (+2.3 points) and is gone by about 37 mm for 46 Gy,
+while for 60 Gy it holds at about +2 points out to 40 mm. At equal coverage (the
+shortest walk catching at least as much as the 2 cm volume, in
+`walkdown_matched.csv`), only some patients get there within 40 mm: 19 of 40 for
+the enhancing recurrence, saving a median 198 mL each, and 13 of 41 for the whole
+recurrence, saving 77 mL. The others never catch as much, so those medians
+describe the patients whose tumors suit the walk-down, not everyone.
+
+Open: the 1 mL crossing cutoff is ours, not from a paper. 00354's pre-op scan
+has no core at all, so its 60 Gy walk falls back to the whole tumor; under NRG it
+would have no boost volume.

@@ -242,3 +242,26 @@ describe the patients whose tumors suit the walk-down, not everyone.
 Open: the 1 mL crossing cutoff is ours, not from a paper. 00354's pre-op scan
 has no core at all, so its 60 Gy walk falls back to the whole tumor; under NRG it
 would have no boost volume.
+
+## Recurrence on and off the tracts
+
+`tract_shell.py` asks the tract question without building any target. In 1 mm
+shells around the pre-op whole tumor, white matter a tract through the tumor
+passes is compared with white matter at the same distance that no tract passes
+(SynthSeg white matter only, since tracts only run there and so does swelling;
+MNI, where the atlas is).
+
+The whole recurrence is more likely on a tract at every distance out to 20 mm:
+about 6 to 12 percentage points in the median patient, and higher on the tract in
+33 of 41 patients at 1 mm, 35 at 5 mm and 30 at 15 mm. Part of this may be
+swelling following the tracts rather than tumor.
+
+The enhancing recurrence is also more common on tracts in the first few mm
+(median share 10.7% against 7.8% at 1 mm, 9.5% against 5.3% at 3 mm), and the two
+meet by about 8 mm. Patient by patient it is mixed (higher on the tract in 18 of
+40 at 1 mm), because most patients have little or no enhancing recurrence in any
+one shell; pooled over 0 to 5 mm it is higher on tracts in 24 patients and lower
+in 12 (p = 0.003), about 0.65 points.
+
+The walk-down did not show this because its convex hull fills in everything
+between the walks; a target made of corridors along the tracts would use it.

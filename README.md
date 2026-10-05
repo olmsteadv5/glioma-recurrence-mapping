@@ -55,6 +55,7 @@ standard brain the atlas lives in, which stretches volumes a little.
 ./analysis/lobes.py              # tumor_lobes.csv, the lobes each tumor sits in
 ./analysis/walkdown.py           # a target 0-40 mm along the tracts leaving the tumor, against plain margins and same-size balls
 ./analysis/walkdown_figures.py   # the walk-down figures: each target by walk distance, catch against brain spent, brain saved at equal coverage
+./analysis/tract_shell.py        # at the same distance from the tumor, does white matter on a tract recur more often (MNI)
 ```
 
 `analysis/COHORT.md` explains how the 41 patients were chosen and checked.

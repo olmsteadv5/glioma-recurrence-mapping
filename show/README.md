@@ -84,14 +84,16 @@ tumor** ties two of them together. That is the whole rule, and every number in
 the view follows from it: irradiate this volume and these are the connections
 that go through it.
 
-A parcel is a node if the tumor overlaps it, or if at least three tracts
-through the tumor reach it. One or two is a graze and would only crowd a plan.
-Subject 2 comes to 233 nodes and 810 lines from its 1034 crossing tracts.
+The tracts are streamlines from the HCP-1065 atlas (a fixed 1 in 10 of each
+bundle, about 48,000 in all). A parcel is a node if the tumor overlaps it, or if
+at least 0.5% of the streamlines through the tumor reach it (and never fewer
+than three). Fewer is a graze and would only crowd a plan. Subject 36 comes to
+157 nodes and 1,435 lines from its 12,353 crossing streamlines.
 
 There are two hubs. The yellow one is the tumor. The second, **no parcel**, is
 not a place but the absence of one: the far end the atlas has no name for. The
-190 tracts that cross the tumor and land in unnamed tissue run to it, and so do
-the 173 that miss the tumor but pass through the parcels it has taken, which
+1,263 streamlines that cross the tumor and land in unnamed tissue run to it, and so do
+the 1,116 that miss the tumor but pass through the parcels it has taken, which
 would otherwise be nowhere at all on the chart. Because two hubs want the width
 and the pane is wider than it is tall, the rim is an ellipse rather than a
 circle, with the hubs abreast in the middle. It stops stretching at 1.85 times
@@ -105,9 +107,9 @@ one connection, never one per tract; a thicker line is more tracts along it,
 which is what a plan needs to know.
 
 The key names lines and counts the tracts on them, which are different things
-and are labeled as such. Its total, `824 lines for 1207 tracts` on subject 2,
-matches the left panel's two tract rows added, 1034 through the tumor and 173
-clipping a parcel. The rows overlap on purpose: a tract joining two parcels is
+and are labeled as such. Its tracts total on subject 36, 13,469, matches the
+left panel's two tract rows added, 12,353 through the tumor and 1,116 clipping
+a parcel. The rows overlap on purpose: a tract joining two parcels is
 one pair line and two spokes, so it is counted on all three. Toggle either
 layer and the 3d shows exactly what the chart is built from.
 
@@ -150,22 +152,22 @@ of it, and that length printed alongside. Rows keep a readable height and the
 list scrolls on the wheel rather than squeezing. The wheel sends notches faster
 than a frame takes to draw, so they are collected on the same clock as panning
 instead of each one forcing a redraw, and a scroll keeps the chart underneath
-rather than drawing it again; `L_CC_B` has 717 tracts and
+rather than drawing it again; `L_CC_B` has 7,146 rows and
 they are still one row each. The length is printed alongside, following its own bar rather than
 sitting in a column of its own. A gray scale in millimeters runs underneath the
 rows rather than over them. Both dots keep the size and color they have on the
 chart, and the mass is not named because it is the one yellow dot.
 
-The header gives three numbers rather than calling them all tracts: `L_CC_B`
-is on 57 connections, has 177 tracts, and fills 717 rows, one per tract per
-connection. Picking it also lights those 177 tracts in the 3d and drops the
+The header gives three numbers rather than calling them all tracts: on subject
+36 `L_CC_B` is on 106 connections, has 2,285 tracts, and fills 7,146 rows, one
+per tract per connection. Picking it also lights those 2,285 tracts in the 3d and drops the
 rest of the bundle back, so the same pick is the same object in both views.
 
 The left hand column is the point of it. For `L_SF8_C` on subject 36 the
-longest tracts, 111 to 129 mm, run to `R_SF8_C` and `R_M2_C`, across to the
-other hemisphere and into parcels the tumor missed; the middle band at 50 to 61
-mm all goes to `L_CC_B`, the corpus callosum, which the tumor overlaps; and the
-shortest, 4 to 32 mm, go to the mass itself and to its own neighbors. The
+longest tracts, 63 to 85 mm, run to `L_M1_C`, `L_MF7_C` and `L_M2_H`, into
+motor and frontal parcels; the band at 58 to 72 mm goes across the corpus
+callosum to `R_CC_B`, in the other hemisphere; and the shortest, 20 to 39 mm,
+go to the mass itself. The
 chart cannot show any of this, because a line there is as long as the gap
 between the two dots it joins.
 
@@ -182,9 +184,9 @@ is a number rather than an impression. Every row carries its own count, so the
 key doubles as the tally for what is on screen.
 
 The tumor's own edges are real geometry: a spoke is drawn to every parcel that
-a tract centerline passes through **after passing through the tumor**. For
-subject 36 that is 803 centerlines through the mass, 676 of which go on to
-reach a parcel, 218 of them into `L_CC_B` alone.
+a streamline passes through **after passing through the tumor**. For
+subject 36 that is 12,353 streamlines through the mass, 11,090 of which go on to
+reach a parcel, 1,831 of them into `L_CC_B` alone.
 
 A tract's own length is not on the chart at all, because a line between two
 dots is as long as the gap between them. That is what the inventory panel is
@@ -233,6 +235,14 @@ each other out.
 A rule separates the tumor and its margin from the tracts and the brain
 surface, which are context rather than parts of it.
 
+The tracts are two rows: the atlas streamlines through the pre-op tumor (orange)
+and through the follow-up tumor (pink), each from that scan's whole tumor
+whatever tissue layers are on. Each row counts its own streamlines; for subject
+36, 12,357 and 13,621. With both on, the 11,361 that pass through both tumors
+turn cream, the color the compare layers use for tissue in both scans, and are
+drawn once rather than twice on top of each other. The pre-op row is the set the
+walk-down walks along. A patient with one scan has only the first row.
+
 For a patient with two timepoints, a second rule divides off three more: what both scans have in cream, what is new in the later one in
 red, and what has gone since the first in green. They draw the same tissue the
 tumor layers do, so the two groups are exclusive: ticking one of these unticks
@@ -246,15 +256,21 @@ The volumes differ between the two, 61 mL of shared tumor in MNI against 54 in
 native, because the warp stretches the brain. The native figure is the
 patient's.
 
-Every layer draws in both views. The margin is an outline on the slices and the
-rest are fills, so anything you tick shows up whichever viewer you are in.
+Every layer draws in both views. The NRG and walk-down volumes are outlines on
+the slices and the rest are fills, so anything you tick shows up whichever viewer you are in.
 
-`margin 2 cm` above that is the whole tumor grown by 20 mm, the usual CTV
-expansion, **clipped to the brain**: a fifth to a quarter of a raw expansion
-lands in skull and air, which would put subject 36 at 751 mL instead of 549.
-It is an outline on the slices rather than a fill, since 2 cm of fill hides the
-thing you grew it from. Both the surface and the slice mask are built the first
-time you tick it, because the distance transform is not free.
+`NRG 2 cm (46 Gy)` and `NRG 2 cm (60 Gy)` are the two NRG volumes exactly as
+`analysis/walkdown.py` scores them, read from the masks it saves: the whole tumor
+and the core each grown 20 mm, clipped to the brain, crossing the midline only
+around the part of the tumor already across it, and the 60 Gy one kept inside
+the 46 Gy one. Their volumes are the table's: for subject 36, 472.6
+and 221.1 mL in patient space. They and the two walk-down volumes are outlines
+on the slices rather than fills, since 2 cm of fill hides the thing it was grown
+from, and they appear once `analysis/walkdown.py` has been run for the patient.
+
+The walk endpoints are two rows too, one per phase, each in its walk-down's
+color: a dot where every walk of that phase stopped at 20 mm, 24,135 for 46 Gy
+and 15,165 for 60 Gy on subject 36. They show only in 3D.
 
 The volume is measured in native space, where the millimeters are the
 patient's, not in the warped MNI copy. Across these six subjects a 2 cm margin

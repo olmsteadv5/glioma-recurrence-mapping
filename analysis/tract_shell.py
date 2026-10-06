@@ -25,9 +25,7 @@ from analysis.capture_curves import FAINT, INK, PATIENT, save, style
 from analysis.walkdown import Lines
 from geometry import distance
 from paths import out_dir, results_dir, walk_dir
-
-# why: SynthSeg's cerebral white matter, left and right [billot23]
-WHITE = (2, 41)
+from scan.tissue import WM
 SHELLS = tuple(range(20))
 # a shell side with fewer voxels than this gives no rate worth reporting
 SMALLEST = 20
@@ -36,8 +34,8 @@ ON, OFF = "#2a78d6", "#8a9199"
 
 
 def tract_voxels(first, lines, image, shape):
-    # every voxel a centerline through the pre-op whole tumor passes, and its
-    # immediate neighbours, since a centerline is one voxel wide
+    # every voxel a streamline through the pre-op whole tumor passes, and its
+    # immediate neighbours, since a streamline is one voxel wide
     wt = measure.mask(first, "WT", "mni")
     hit = np.zeros(shape, bool)
     inverse = np.linalg.inv(image.affine)
@@ -54,7 +52,7 @@ def rows(first, later, lines):
     wt = measure.mask(first, "WT", "mni")
     # the same brain the walk-down may use: inside it, and the falx rule
     allowed = np.asarray(nib.load(walk_dir(first) / "walk_allowed_mni.nii.gz").dataobj) > 0
-    white = np.isin(np.asarray(nib.load(out_dir(first) / "tissue_in_mni.nii.gz").dataobj), WHITE)
+    white = np.isin(np.asarray(nib.load(out_dir(first) / "tissue_in_mni.nii.gz").dataobj), WM)
     tract = tract_voxels(first, lines, image, data.shape)
     far = distance(wt, image)
     out = []
@@ -134,7 +132,7 @@ def figure():
     axes[0, 0].set_xlim(shells[0], shells[-1])
     fig.text(0.01, 0.005, "Each shell is the white matter between d-1 and d mm from the pre-op whole tumor, "
              "inside the brain and on the tumor's side unless it already crosses (NRG falx rule).\n"
-             "On a tract = within one voxel of an atlas centerline through the tumor. Line = median patient, "
+             "On a tract = within one voxel of an atlas streamline through the tumor. Line = median patient, "
              "band = middle 50 percentile, grey = one patient. MNI space.", color=FAINT, fontsize=9)
     fig.subplots_adjust(left=0.07, right=0.98, top=0.93, bottom=0.12, hspace=0.42, wspace=0.18)
     path = results_dir("mni", "figures") / "tract_shell.png"

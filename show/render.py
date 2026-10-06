@@ -14,8 +14,8 @@ from PIL import Image, ImageDraw
 from show import view
 from show.compare import _inverse
 from yale import atlas
-from yale import tracts as tractography
-from geometry import grow, outline, template_brain
+from hcp import streamlines
+from geometry import outline
 from paths import (LABELS, MNI, MODALITIES, THREADS, cache_dir, modality, out_dir, pair_cache,
                    pair_dir, raw_dir, stripped_dir, walk_dir)
 
@@ -42,34 +42,39 @@ def _panel(base=(40, 40, 40)):
 PANEL = _panel()
 BG = "#%02x%02x%02x" % PANEL
 SHELL = (168, 153, 132)
-TRACT = (95, 155, 114)
-TRACT_MASS = (198, 124, 72)
+# tracts through the pre-op tumor, the follow-up's, and both; both is the cream
+# the compare layers use for tissue in both scans
+TRACTS = {"1": (198, 124, 72), "2": (211, 134, 155), "both": (235, 219, 178)}
 TISSUE = {1: (242, 193, 78), 2: (63, 167, 214), 3: (228, 87, 46), 4: (142, 125, 190),
           0: (214, 200, 175)}  # 0 is the three of them as one shape
 CROSS = (250, 189, 47)
 LIT = (251, 241, 199)
 WHOLE = "WT"
-MARGIN = (177, 98, 134)
 COMPARE = {"both": (235, 219, 178), "new": (251, 73, 52), "gone": (142, 192, 124)}
-# the walk-down targets from analysis/walkdown.py, one per NRG phase
+# the targets from analysis/walkdown.py, one per NRG phase: the walk-down, and the
+# NRG 2 cm volume it is scored against, exactly as the tables score it
 WALK = {"46": (131, 165, 152), "60": (215, 153, 33)}
+NRG = {"46": (177, 98, 134), "60": (126, 108, 204)}
 WALK_PHASES = tuple(WALK)
+TARGETS = {"walk": WALK, "nrg": NRG}
+# the layer key each kind of target goes by
+TARGET_KEY = {"walk": "W:", "nrg": "T:"}
 
 
-def walk_file(subject, phase, space):
-    # where a walk-down target sits for this scan in this space. Both scans of a
-    # pair show the one target, which is built from the pre-op tumor. None if
+def target_file(subject, kind, phase, space):
+    # where a target sits for this scan in this space. Both scans of a pair show
+    # the one target, which is built from the pre-op tumor. None if
     # analysis/walkdown.py has not been run for this patient
-    mni = walk_dir(subject) / f"walk_{phase}_mni.nii.gz"
+    mni = walk_dir(subject) / f"{kind}_{phase}_mni.nii.gz"
     if not mni.exists():
         return None
     if space == "mni":
         return mni
     if subject.endswith("_21"):
-        here = walk_dir(subject) / f"walk_{phase}.nii.gz"
+        here = walk_dir(subject) / f"{kind}_{phase}.nii.gz"
         # walkdown.py writes the follow-up's copy itself
         return here if here.exists() else None
-    here = cache_dir(subject) / f"walk_{phase}.nii.gz"
+    here = cache_dir(subject) / f"{kind}_{phase}.nii.gz"
     if not here.exists() or here.stat().st_mtime < mni.stat().st_mtime:
         # the pre-op scan's own grid, through its own way back from MNI
         subprocess.run(["greedy", "-d", "3", "-rf", str(modality(stripped_dir(subject), subject, "T1")),
@@ -137,7 +142,7 @@ class Scene:
                                                            solid if scan == "1" else solid * 0.4)
 
         self._crossing = self._through()
-        self.tract_count, self.tract_keys = 0, None
+        self.tract_count, self.tract_keys = {}, None
 
         self._picker, self.lit, self.shown = None, None, None
         self.plotter.show(auto_close=False)
@@ -188,7 +193,7 @@ class Scene:
     def _through(self):
         # for each scan and tissue class, the tracts with a point in it, so the
         # tracts drawn can follow whatever tumor is on without a fresh search
-        lines = tractography.centerlines()
+        lines = streamlines.streamlines()
         stacked = np.vstack(lines)
         owner = np.repeat(np.arange(len(lines)), [len(l) for l in lines])
         out = {}
@@ -202,23 +207,29 @@ class Scene:
                 out[(scan, label)] = set(np.unique(owner[value == label]).tolist())
         return out
 
-    def show_crossing(self, keys):
-        # the tracts through the tissue now on screen, from either scan. keys are
-        # (scan, label) pairs; an empty set draws none
-        keys = frozenset(keys)
-        if keys == self.tract_keys:
+    def show_crossing(self, scans):
+        # the streamlines through each chosen scan's whole tumor, whatever tissue
+        # is on screen. With both scans chosen, a streamline through both is
+        # drawn once, in its own color, so the two never fight over one place
+        scans = frozenset(scans)
+        if scans == self.tract_keys:
             return
-        self.tract_keys = keys
-        ids = set().union(*[self._crossing.get(k, set()) for k in keys]) if keys else set()
-        self.tract_count = len(ids)
-        if "tracts" in self.actors:
-            self.plotter.remove_actor(self.actors.pop("tracts"))
-        lines = tractography.centerlines()
-        mesh = self._lines([lines[i] for i in sorted(ids)])
-        if mesh is not None:
-            self.actors["tracts"] = self.plotter.add_mesh(
-                mesh, color=_hex(TRACT_MASS), line_width=1,
-                opacity=self.TRACT_DIM if self.shown else 0.55)
+        self.tract_keys = scans
+        through = {scan: set().union(*[self._crossing.get((scan, value), set()) for value in LABELS])
+                   if scan in scans else set() for scan in ("1", "2")}
+        shared = through["1"] & through["2"]
+        groups = {"1": through["1"] - shared, "2": through["2"] - shared, "both": shared}
+        self.tract_count = {"1": len(through["1"]), "2": len(through["2"]), "both": len(shared)}
+        lines = streamlines.streamlines()
+        for group, ids in groups.items():
+            key = f"tracts:{group}"
+            if key in self.actors:
+                self.plotter.remove_actor(self.actors.pop(key))
+            mesh = self._lines([lines[i] for i in sorted(ids)])
+            if mesh is not None:
+                self.actors[key] = self.plotter.add_mesh(
+                    mesh, color=_hex(TRACTS[group]), line_width=1,
+                    opacity=self.TRACT_DIM if self.shown else 0.55)
 
     @staticmethod
     def _lines(lines):
@@ -262,31 +273,16 @@ class Scene:
             actor.visibility = other in keep
             actor.prop.opacity = 1.0
 
-    def ensure_margin(self):
-        # only built when it is asked for: the distance transform is not free
-        if "T:margin" in self.actors:
-            return
-        cache = cache_dir(self.subject) / "margin_surface.npz"
-        if cache.exists():
-            held = np.load(cache)
-            points, faces = held["vertices"], held["faces"]
-        else:
-            image = nib.load(out_dir(self.subject) / "seg_in_mni.nii.gz")
-            grown = grow(image, template_brain())
-            points, faces = view._tumor_surface(grown.astype(np.int16), image.affine, 1)
-            np.savez_compressed(cache, vertices=points, faces=faces)
-        self.actors["T:margin"] = self._mesh(points, faces, _hex(MARGIN), 0.25)
-
-    def ensure_walk(self, phase):
-        # built the first time it is asked for, like the margin, but cached on the
-        # mask's own date so a rebuilt target never shows the old shape
-        key = "W:" + phase
+    def ensure_target(self, kind, phase):
+        # built the first time it is asked for, and cached on the mask's own date
+        # so a rebuilt target never shows the old shape
+        key = TARGET_KEY[kind] + phase
         if key in self.actors:
             return
-        source = walk_file(self.subject, phase, "mni")
+        source = target_file(self.subject, kind, phase, "mni")
         if source is None:
             return
-        cache = pair_cache(self.subject) / f"walk_{phase}_surface.npz"
+        cache = pair_cache(self.subject) / f"{kind}_{phase}_surface.npz"
         if cache.exists() and cache.stat().st_mtime >= source.stat().st_mtime:
             held = np.load(cache)
             points, faces = held["vertices"], held["faces"]
@@ -297,21 +293,18 @@ class Scene:
                 return
             points, faces = surface
             np.savez_compressed(cache, vertices=points, faces=faces)
-        self.actors[key] = self._mesh(points, faces, _hex(WALK[phase]), 0.22)
+        self.actors[key] = self._mesh(points, faces, _hex(TARGETS[kind][phase]), 0.22)
 
-    def ensure_ends(self):
-        # one dot where each walk stopped, in its phase's color
-        if "W:ends" in self.actors:
+    def ensure_ends(self, phase):
+        # one dot where each walk of this phase stopped, in its walk-down's color
+        key = "W:ends" + phase
+        if key in self.actors:
             return
-        ends = walk_ends(self.subject)
-        if not ends:
+        ends = walk_ends(self.subject).get(phase)
+        if ends is None or not len(ends):
             return
-        points = np.vstack(list(ends.values()))
-        colors = np.vstack([np.tile(WALK[p], (len(e), 1)) for p, e in ends.items()]).astype(np.uint8)
-        cloud = pv.PolyData(points)
-        cloud["rgb"] = colors
-        self.actors["W:ends"] = self.plotter.add_mesh(cloud, scalars="rgb", rgb=True,
-                                                      point_size=4, render_points_as_spheres=True)
+        self.actors[key] = self.plotter.add_mesh(pv.PolyData(ends), color=_hex(WALK[phase]),
+                                                 point_size=4, render_points_as_spheres=True)
 
     def ensure_compare(self, first, second):
         # the two timepoints against each other, built the first time it is asked for
@@ -333,10 +326,11 @@ class Scene:
             self.plotter.remove_actor(self.actors.pop("tract"))
         self.shown = ids
         # the rest of the bundle falls back so the picked ones are readable
-        self.set_opacity("tracts", self.TRACT_DIM if ids else 0.55)
+        for group in TRACTS:
+            self.set_opacity(f"tracts:{group}", self.TRACT_DIM if ids else 0.55)
         if ids is None:
             return
-        lines = tractography.centerlines()
+        lines = streamlines.streamlines()
         mesh = self._lines([lines[n] for n in sorted(ids) if n < len(lines)])
         if mesh is None:
             return
@@ -445,8 +439,6 @@ NODE_OUT = (132, 186, 108)
 NODE_TUMOR = (250, 189, 47)
 # one hue per kind of link: cool where the mass is not in the path, warm where
 # it is. strength brightens a line without draining its hue
-EDGE = (84, 102, 112)
-ATLAS = (64, 70, 76)
 SPOKE = (152, 100, 108)
 THROUGH = (154, 112, 72)
 STRAY = (108, 170, 232)
@@ -743,7 +735,7 @@ class Chart:
 
     def runs(self):
         # every tract of whatever is picked, longest first, each carrying the
-        # id of the centerline itself so the 3d can be asked to show that one
+        # id of the streamline itself so the 3d can be asked to show that one
         key = (self.lit, tuple(sorted(self.crowd)),
                self.guest["name"] if self.guest else None)
         if key == self._runs_was:
@@ -1148,8 +1140,8 @@ class Slices:
         # stands in for its parts
         self.hidden, self.whole = {"1": set(), "2": set(LABELS)}, {"1": None, "2": None}
         self.involved, self.lit = {}, None
-        self.margin, self.show_margin = None, False
-        self.walks, self.show_walk = {}, set()
+        # (kind, phase) pairs shown, and the masks loaded for them
+        self.targets, self.show_targets = {}, set()
         self.compare, self.pair = {}, None
         self.load(space)
 
@@ -1183,8 +1175,8 @@ class Slices:
     def load(self, space):
         self.space = space
         self.volumes, self.parcels, self.stripped = {}, None, True
-        self.margin, self.compare = None, {}   # a different grid needs different ones
-        self.walks = {}
+        self.compare = {}   # a different grid needs different ones
+        self.targets = {}
         shown = self.later if self.background == "2" and self.later else self.subject
         if space == "native":
             if shown != self._grid():
@@ -1235,7 +1227,7 @@ class Slices:
         blank = np.zeros_like(self.seg) if self.parcels is None else self.parcels
         planes = []
         later = self.segs.get("2", np.zeros_like(self.seg))
-        for volume in (self._gray(), self.seg, blank, self._margin(), later):
+        for volume in (self._gray(), self.seg, blank, later):
             if which == "axial":
                 planes.append(volume[::-1, ::-1, z].T)
             elif which == "coronal":
@@ -1260,25 +1252,15 @@ class Slices:
         reference = nib.load(out_dir(self._grid()) / name)
         return self._canon(nib.Nifti1Image(mask.astype(np.uint8), reference.affine))[1] > 0
 
-    def _margin(self):
-        if self.show_margin and self.margin is None and self.segmented:
-            # always the pre-op tumor's margin, whichever scan is in the background
-            path = self._seg_path("1")
-            brain = self._gray() > 0
-            self.margin = self._canon(nib.Nifti1Image(
-                grow(nib.load(path), np.ones_like(brain)).astype(np.uint8),
-                nib.load(path).affine))[1] & (next(iter(self.volumes.values()))[1] > 0)
-        return self.margin if self.margin is not None else np.zeros_like(self.seg)
-
-    def _walk(self, phase):
-        # the walk-down target on this space's grid, loaded the first time it is shown
-        if phase not in self.walks:
-            source = walk_file(self._grid(), phase, self.space)
-            self.walks[phase] = (self._canon(nib.load(source))[1] > 0) if source else None
-        return self.walks[phase]
+    def _target(self, kind, phase):
+        # a target on this space's grid, loaded the first time it is shown
+        if (kind, phase) not in self.targets:
+            source = target_file(self._grid(), kind, phase, self.space)
+            self.targets[kind, phase] = (self._canon(nib.load(source))[1] > 0) if source else None
+        return self.targets[kind, phase]
 
     def plane(self, which, size):
-        gray, lab, parcel, edge, lab2 = self._slab(which)
+        gray, lab, parcel, lab2 = self._slab(which)
         top = np.percentile(gray[gray > 0], 99) if (gray > 0).any() else 1
         rgb = np.repeat((np.clip(gray / max(top, 1) * 255, 0, 255)
                          ).astype(np.uint8)[:, :, None], 3, axis=2)
@@ -1304,13 +1286,9 @@ class Slices:
                 rgb[slab] = (rgb[slab] * 0.45
                              + np.array(COMPARE[name]) * 0.55).astype(np.uint8)
 
-        if self.show_margin:
-            ring = outline(edge > 0)
-            if ring.any():
-                rgb[ring] = np.array(MARGIN, dtype=np.uint8)
-
-        for phase in sorted(self.show_walk):
-            mask = self._walk(phase)
+        # every target as an outline, since a fill would hide what it was grown from
+        for kind, phase in sorted(self.show_targets):
+            mask = self._target(kind, phase)
             if mask is None:
                 continue
             if which == "axial":
@@ -1321,7 +1299,7 @@ class Slices:
                 slab = mask[self.cursor[0], ::-1, ::-1].T
             ring = outline(slab)
             if ring.any():
-                rgb[ring] = np.array(WALK[phase], dtype=np.uint8)
+                rgb[ring] = np.array(TARGETS[kind][phase], dtype=np.uint8)
 
         # the pre-op tumor as fills: the whole one under its parts
         if self.whole["1"] is not None:

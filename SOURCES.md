@@ -69,8 +69,8 @@ The reference behind each `# why: ... [tag]` comment in the code.
             -> GTV2 = enhancement and cavity; CTV2 = GTV2 + 2 cm; boost of
                14 Gy in 7 fractions to 60 Gy
             -> either CTV "may be reduced to 0.5 cm around natural barriers to
-               tumor growth such as the skull, ventricles, falx", which is
-               where analysis/walkdown.py takes its 5 mm floor
+               tumor growth such as the skull, ventricles, falx"; the
+               walk-down keeps no such floor
             -> PTV = CTV + 3 to 5 mm for setup; not modelled here
 
 [nrg19]     [verified]
@@ -86,6 +86,22 @@ The reference behind each `# why: ... [tag]` comment in the code.
                average (66.8 cc) without losing coverage
             -> closes by calling for target volumes "beyond isometric
                expansion techniques for individual patients"
-            -> analysis/walkdown.py reads "crossing" as at least 1 mL of the
-               original whole tumor past the midline; that cutoff is ours
+            -> analysis/walkdown.py lets a target across the midline only from
+               the part of the tumor already there, grown the same distance,
+               and ignores less than 0.1 mL across; both choices are ours
+
+[yeh22]     [verified]
+            Yeh FC. Population-based tract-to-region connectome of the human
+            brain and its hierarchical topology. Nat Commun. 2022;13:4933.
+            doi:10.1038/s41467-022-32595-4. PMID 35995773.
+            Atlas files: https://brain.labsolver.org/hcp_trk_atlas.html
+            -> the HCP-1065 tract atlas: 87 named bundles, 503,085 streamlines,
+               tracked in 1,065 young adults from the Human Connectome Project
+               and placed in the ICBM152 2009a template
+            -> healthy adults, so it says where tracts run in a typical brain,
+               not in this patient, and nothing about mass effect
+            -> hcp/streamlines.py keeps a fixed 1 in 10 of each bundle (seed 0),
+               drops the cranial nerves, resamples at 1 mm and registers the
+               ICBM152 template onto our MNI brain to move them; those choices
+               are ours
 ```

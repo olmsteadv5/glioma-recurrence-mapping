@@ -5,13 +5,15 @@ import numpy as np
 import plotly.graph_objects as go
 import pyvista as pv
 
-from yale import tracts as tractography
+from hcp import streamlines
 from yale.atlas import brain, colors, label_volume, meshes, parcels
 from paths import LABELS, MNI, out_dir
 
 TISSUE_COLOR = {1: "#f2c14e", 2: "#3fa7d6", 3: "#e4572e", 4: "#8e7dbe"}
 SHELL_COLOR = "#9aa3ad"
 TRACT_COLOR = "#2f6f4e"
+# the most streamlines one page draws
+DRAWN = 2000
 
 
 def _tumor_surface(data, affine, value):
@@ -56,10 +58,14 @@ def add_tracts(subject, overlap, fig, width=1.5):
     involved = [index[r["parcel"]] for r in overlap["parcels"] if r["parcel"] in index]
     seg = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
 
-    mass, nearby = tractography.crossing(tractography.centerlines(), seg, labels, involved)
+    mass, nearby = streamlines.crossing(streamlines.streamlines(), seg, labels, involved)
     lines = mass + nearby
     if not lines:
         return fig
+    # tens of thousands of lines make a page the browser cannot turn, so draw
+    # an even sample of them
+    total = len(lines)
+    lines = lines[::-(-total // DRAWN)]
 
     # all in one trace, None separates the lines
     xs, ys, zs = [], [], []
@@ -69,7 +75,7 @@ def add_tracts(subject, overlap, fig, width=1.5):
         zs += [*line[:, 2], None]
     fig.add_trace(go.Scatter3d(x=xs, y=ys, z=zs, mode="lines",
                                line=dict(color=TRACT_COLOR, width=width),
-                               name=f"tracts crossing ({len(lines)})",
+                               name=f"tracts crossing ({total}, {len(lines)} drawn)",
                                showlegend=True, legendrank=20, hoverinfo="skip"))
     return fig
 

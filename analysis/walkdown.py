@@ -25,7 +25,7 @@ from analysis import measure
 from geometry import MARGIN_MM, distance, ml_per_voxel, outline, template_brain
 from paths import THREADS, modality, out_dir, pair_dir, results_dir, stripped_dir, walk_dir
 from show.compare import _inverse
-from yale import tracts
+from hcp import streamlines
 
 # why: the NRG margin, 2 cm along the tract instead of in every direction [rtog0825]
 WALK_MM = MARGIN_MM
@@ -39,8 +39,12 @@ NEVER = 255
 # a tract that leaves and comes back within this is running along the edge,
 # not leaving. A judgement call, about three voxels; not from any paper
 SKIM_MM = 3
-# why: the falx is a hard barrier unless the FLAIR already crosses the callosum [nrg19]
-CROSSED_ML = 1.0
+# why: the falx is a barrier unless the tumor already crosses [nrg19]; less than
+# this across the midline is taken as registration slop, not crossing. Ours
+CROSSED_ML = 0.1
+
+# voxel-face pairs tested at once when filling a hull
+BATCH = 20_000_000
 
 # the two NRG phases: the 46 Gy volume grows from the whole abnormality, the
 # 60 Gy boost from enhancement and cavity, which on a pre-op scan is the core
@@ -48,10 +52,10 @@ PHASES = (("46", "WT"), ("60", "TC"))
 
 
 class Lines:
-    # every centerline point's voxel on the MNI grid, found once: every patient's
+    # every streamline point's voxel on the MNI grid, found once: every patient's
     # MNI masks share that grid, so a mask lookup is then a single index
     def __init__(self, image, shape):
-        self.lines = tracts.centerlines()
+        self.lines = streamlines.streamlines()
         stacked = np.vstack(self.lines)
         self.cut = np.cumsum([len(l) for l in self.lines])[:-1]
         ijk = np.rint(nib.affines.apply_affine(np.linalg.inv(image.affine), stacked)).astype(int)
@@ -110,8 +114,11 @@ def _hull(points, image, shape, candidates=None):
         window = tuple(slice(a, b) for a, b in zip(low, high))
         box = np.argwhere(candidates[window]) + low
     out = np.zeros(shape, bool)
-    for start in range(0, len(box), 500_000):
-        chunk = box[start:start + 500_000]
+    # each voxel is tested against every face at once, so the batch shrinks as
+    # the hull gains faces, keeping that test near 160 MB
+    batch = max(BATCH // len(hull.equations), 1)
+    for start in range(0, len(box), batch):
+        chunk = box[start:start + batch]
         world = nib.affines.apply_affine(image.affine, chunk)
         keep = np.all(world @ hull.equations[:, :3].T + hull.equations[:, 3] <= 1e-6, axis=1)
         out[tuple(chunk[keep].T)] = True
@@ -119,18 +126,31 @@ def _hull(points, image, shape, candidates=None):
 
 
 def allowed_mni(first):
-    # the brain, minus the other hemisphere unless the tumor already crosses
+    # Where a plan may go, and from what distance. The tumor's own hemisphere is
+    # open; across the midline a voxel may join a target grown d mm only if it is
+    # within d of the part of that phase's tumor already across, so nothing grows
+    # over from the home side. The gate holds that distance, 0 at home and NEVER
+    # where nothing may go, for each phase; every target reads the same gate.
     data, image = measure._seg(first, "mni")
     brain = template_brain()
     x = nib.affines.apply_affine(image.affine, np.indices(data.shape).reshape(3, -1).T)[:, 0]
     left = (x < 0).reshape(data.shape)
     tumor = data > 0
+    home = left if (tumor & left).sum() > (tumor & ~left).sum() else ~left
     ml = ml_per_voxel(image)
-    small = min((tumor & left).sum(), (tumor & ~left).sum()) * ml
-    if small >= CROSSED_ML:
-        return brain, True
-    side = left if (tumor & left).sum() > (tumor & ~left).sum() else ~left
-    return brain & side, False
+    gates, crossed = {}, False
+    for phase, region in PHASES:
+        gtv = measure.mask(first, region, "mni")
+        if not gtv.any():
+            gtv = tumor
+        across = gtv & ~home
+        gate = np.where(home, 0, NEVER).astype(np.uint8)
+        if across.sum() * ml >= CROSSED_ML:
+            far = np.ceil(distance(across, image))
+            gate[~home & (far <= LONGEST_MM)] = far[~home & (far <= LONGEST_MM)]
+            crossed = crossed or phase == "46"
+        gates[phase] = gate
+    return brain & (gates["46"] != NEVER), gates, crossed
 
 
 def reach_mni(first, lines, skim=SKIM_MM):
@@ -138,9 +158,9 @@ def reach_mni(first, lines, skim=SKIM_MM):
     # The target at d is every voxel reached by a walk of d or less, so it can
     # only grow with d; the tumor itself is reached at 0
     data, image = measure._seg(first, "mni")
-    allowed, crossed = allowed_mni(first)
+    allowed, gates, crossed = allowed_mni(first)
     may = lines.lookup(allowed)
-    reach, info = {}, {"crossed": crossed}
+    reach, info = {}, {"crossed": crossed, "gates": gates}
     for phase, region in PHASES:
         gtv = measure.mask(first, region, "mni")
         if not gtv.any():
@@ -154,8 +174,9 @@ def reach_mni(first, lines, skim=SKIM_MM):
         first_in = np.full(gtv.shape, NEVER, np.uint8)
         first_in[gtv] = 0
         for mm in DISTANCES:
-            # only voxels the plan may reach and no shorter walk has reached
-            open_ = allowed & (first_in == NEVER)
+            # only voxels the plan may reach at this distance and no shorter
+            # walk has reached
+            open_ = allowed & (gates[phase] <= mm) & (first_in == NEVER)
             first_in[_hull(np.vstack([edge, _ends(paths, mm)]), image, gtv.shape, open_)] = mm
         if phase == "60":
             # the boost stays inside the 46 Gy volume at the same walk
@@ -175,6 +196,8 @@ def build_mni(first, lines):
         nib.save(nib.Nifti1Image((reach[phase] <= WALK_MM).astype(np.uint8), image.affine),
                  here / f"walk_{phase}_mni.nii.gz")
         np.save(here / f"walk_{phase}_ends.npy", info.pop(f"ends_{phase}"))
+        nib.save(nib.Nifti1Image(info["gates"][phase], image.affine), here / f"walk_gate_{phase}_mni.nii.gz")
+    info.pop("gates")
     nib.save(nib.Nifti1Image(allowed.astype(np.uint8), image.affine), here / "walk_allowed_mni.nii.gz")
     return info
 
@@ -195,21 +218,16 @@ def to_native(first, later, name):
 def score(first, later, space, reach=None, allowed=None):
     # every target at every walk distance, in one space: the walk-down, the plain
     # margin grown the same distance, and a ball of exactly the walk-down's size.
-    # reach and allowed, when given, are MNI maps already in memory
+    # reach and allowed, when given, are MNI maps already in memory. All three
+    # obey the same midline gate
+    if space == "mni":
+        load = lambda name: np.asarray(nib.load(walk_dir(first) / f"{name}_mni.nii.gz").dataobj)
+    else:
+        load = lambda name: to_native(first, later, name)
     if reach is None:
-        if space == "mni":
-            load = lambda name: np.asarray(nib.load(walk_dir(first) / f"{name}_mni.nii.gz").dataobj)
-        else:
-            load = lambda name: to_native(first, later, name)
         reach = {phase: load(f"walk_{phase}_reach") for phase, _ in PHASES}
         allowed = load("walk_allowed") > 0
-        if space == "native":
-            nib.save(nib.Nifti1Image((reach["46"] <= WALK_MM).astype(np.uint8),
-                                     nib.load(walk_dir(later) / "walk_46_reach.nii.gz").affine),
-                     walk_dir(later) / "walk_46.nii.gz")
-            nib.save(nib.Nifti1Image((reach["60"] <= WALK_MM).astype(np.uint8),
-                                     nib.load(walk_dir(later) / "walk_60_reach.nii.gz").affine),
-                     walk_dir(later) / "walk_60.nii.gz")
+    gates = {phase: load(f"walk_gate_{phase}") for phase, _ in PHASES}
     allowed = allowed & measure._brain(first, space)
     _, image = measure._seg(first, space)
     ml = measure.voxel_ml(first, space)
@@ -220,7 +238,8 @@ def score(first, later, space, reach=None, allowed=None):
         if not gtv.any():
             gtv = measure.mask(first, "WT", space)
         first_in = np.where(gtv, 0, np.where(allowed, reach[phase], NEVER))
-        far = np.where(allowed | gtv, distance(gtv, image), np.inf)
+        # across the midline a voxel is only as near as the tumor already there
+        far = np.where(allowed | gtv, np.maximum(distance(gtv, image), gates[phase]), np.inf)
         order = np.argsort(far, axis=None, kind="stable")
         # cumulative catches along the ball's order, so any size is one lookup
         along = {code: np.cumsum(now[code].ravel()[order]) for code in now}
@@ -229,6 +248,13 @@ def score(first, later, space, reach=None, allowed=None):
             iso = far <= mm
             if phase == "60":
                 iso &= iso_46[mm]
+            if mm == WALK_MM:
+                # the NRG volume these tables score, kept so the viewer draws this
+                # one; in patient space the walk-down too, exactly as scored
+                saved = {"nrg": iso} if space == "mni" else {"nrg": iso, "walk": walk}
+                for kind, mask in saved.items():
+                    name = f"{kind}_{phase}_mni.nii.gz" if space == "mni" else f"{kind}_{phase}.nii.gz"
+                    nib.save(nib.Nifti1Image(mask.astype(np.uint8), image.affine), walk_dir(later) / name)
             size = int(walk.sum())
             for kind, target in (("walk", walk), ("iso", iso), ("ball", None)):
                 count = size if target is None else int(target.sum())
@@ -390,7 +416,7 @@ def main():
     from concurrent.futures import ProcessPoolExecutor
     firsts = [first for first, _ in measure.pairs("mni")]
     # one thread each, so the workers share the cores instead of fighting over them
-    with ProcessPoolExecutor(12) as pool:
+    with ProcessPoolExecutor(8) as pool:
         for first, info in pool.map(_build, firsts):
             print(first[-8:-3], info, flush=True)
     for space in measure.SPACES:

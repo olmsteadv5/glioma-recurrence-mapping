@@ -18,7 +18,6 @@ FILES = {
     "YBA_696_LUT.txt": f"{BASE}/YBA_696parcels/YBA_696_LUT.txt",
     "YBA_696_parcel_dict.csv": f"{BASE}/YBA_696parcels/YBA_696_parcel_dict.csv",
     "YBA_696.glb": f"{BASE}/YBA_696parcels/YBA_696.glb",
-    "top5k_tracts_decimated.obj": f"{BASE}/Connectome/top5k_tracts_decimated.obj",
     "parcelsynth_activations_functionalterms.csv":
         f"{BASE}/Parcelsynth/parcelsynth_activations_functionalterms.csv",
     "parcelsynth_activations_allterms.csv":

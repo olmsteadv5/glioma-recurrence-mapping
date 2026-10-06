@@ -75,36 +75,28 @@ pathology of the second resection (see below).
 
 ## Which compartment counts as the recurrence
 
-*The table in this section is from the first 21 pairs. The full 41 are in
-`outputs/results/<space>/tables/overlap_review.csv` and on the summary page.*
+**Open, and for the supervisor to settle before a model is fitted.** The
+compartments of the later tumor behave very differently (all 41 pairs, patient
+space, from `overlap_review.csv` and `capture_curves.csv`):
 
-**Open, and for the supervisor to settle before the model goes further.**
-
-`planeval.coverage` scores a target against the **whole** later segmentation,
-`data > 0`: enhancing tumor, non-enhancing core, and FLAIR hyperintensity together. Every
-coverage number so far, the corridor null included, is therefore mostly a
-measure of catching FLAIR hyperintensity.
-
-`measure.overlap` on the first 21 pairs shows the compartments behave very
-differently:
-
-| later compartment | median share on the first tumor | median share within 2 cm (60 Gy proxy) | margin covering 95% of it | pattern |
+| later compartment | median share on the first tumor | median share inside the NRG 46 Gy volume | margin the median patient needs for 95% | pattern against the 60 Gy volume |
 |---|---|---|---|---|
-| whole (WT) | 0.40 | 0.72 | 20.3 mm | 3 central, 5 in-field, 13 marginal |
-| core (TC) | 0.36 | 0.99 | 4.9 mm | 14 central, 3 in-field, 3 marginal |
-| enhancing (ET) | 0.19 | 0.99 | 5.7 mm | 14 central, 2 in-field, 4 marginal |
+| whole (WT) | 0.46 | 0.97 | 18 mm | 6 central, 10 in-field, 25 marginal |
+| core (TC) | 0.35 | 1.00 | 4 mm | 26 central, 9 in-field, 4 marginal, 1 distant |
+| enhancing (ET) | 0.20 | 1.00 | 5 mm | 24 central, 10 in-field, 5 marginal, 1 distant |
 
-Clinical recurrence is conventionally read from new **enhancement**, and on that
-definition a 2 cm margin already contains essentially all of it in most
-patients. If the endpoint moves to ET, coverage has almost no room to improve
-and the claim becomes volume spared at equal coverage. If it stays on WT, the
-method is being scored on where FLAIR signal spreads, which is partly edema and
-partly infiltration, and the result has to be described that way.
+One patient has no enhancement or core at follow-up. Clinical recurrence is
+conventionally read from new **enhancement**, and on that definition a 2 cm
+margin already contains essentially all of it in most patients. If the endpoint
+is ET, coverage has almost no room to improve and the claim becomes volume
+spared at equal coverage. If it is WT, the method is being scored on where FLAIR
+signal spreads, which is partly edema and partly infiltration, and the result has
+to be described that way. So far every tract effect is in WT and none in ET.
 
 **Caveats on the table itself.** `_11` is pre-operative and `_21` is simply the
 next study, so a later scan is not always a recurrence: 00055 at 31 days is
 untreated growth. Treatment status is not recorded and can only be inferred
-from `kept`. Volumes are in MNI. The 60 Gy proxy is 2 cm from the core with no
+from `kept`. The 60 Gy proxy is 2 cm from the core with no
 PTV margin, so it is smaller than a real 95% isodose and the pattern counts lean
 toward marginal.
 
@@ -183,19 +175,27 @@ cavity contents here are not ventricle-like enough for it to work.
 `walkdown.py` builds a target that follows white matter instead of growing
 evenly, for both NRG phases: from the whole tumor (the 46 Gy volume) and from the
 core (the 60 Gy boost, kept inside the first at the same distance). Every atlas
-tract with a point in the tumor is followed d mm along its own path from each
-place it leaves; one convex hull is wrapped around the tumor's edge and all those
-end points. Walks stop at d, at the end of the tract, at the brain edge, back
-inside the tumor, or at the midline. Nothing goes outside the brain, and nothing
-crosses the falx unless at least 1 mL of the original whole tumor already lies
-past the midline (6 of 41 here, by that cutoff). There is no minimum margin.
+streamline with a point in the tumor is followed d mm along its own path from
+each place it leaves; one convex hull is wrapped around the tumor's edge and all
+those end points. Walks stop at d, at the end of the streamline, at the brain
+edge, back inside the tumor, or where a plan may not go. Nothing goes outside the
+brain. The tumor's own hemisphere is open; across the midline a voxel may join a
+target grown d mm only if it is within d of the part of that phase's tumor
+already across (the whole tumor for 46 Gy, the core for 60 Gy), so nothing grows
+over the falx from the home side. Less than 0.1 mL across counts as registration
+slop, not crossing; 11 of the 41 cross by that measure. The plain margin and the same-size ball obey
+the same rule, so all three are compared on the same terms. There is no minimum
+margin.
+
+The streamlines are the HCP-1065 tract atlas [yeh22]: 77 bundles once the
+cranial nerves are dropped, 479,804 streamlines, of which a fixed 1 in 10 of
+every bundle is used (47,980), resampled at 1 mm and registered from the
+atlas's ICBM152 template onto our MNI brain (`hcp/streamlines.py`).
 
 It is built at every whole mm from 0 to 40, so nothing between two samples goes
-unseen; 20 mm stays the reference, and is the target the viewer draws. Each voxel stores the shortest walk at which it joins the target, and the
-target at d is every voxel reached by d or less, so it only grows with d. At
-20 mm the end points are identical to the first, single-distance run; that run
-also kept a 5 mm minimum margin, which is gone, so its 20 mm target is a little
-smaller (00036: 348 to 329 mL, entirely inside the old one). Even at d = 0 the
+unseen; 20 mm stays the reference, and is the target the viewer draws. Each
+voxel stores the shortest walk at which it joins the target, and the target at d
+is every voxel reached by d or less, so it only grows with d. Even at d = 0 the
 hull is bigger than the tumor, since it fills the tumor's dents, which is why the
 ball of the same size, not the margin of the same distance, is the fair control.
 
@@ -210,58 +210,76 @@ Patient space, at 20 mm:
 
 | | 46 Gy walk | NRG 2 cm | 60 Gy walk | NRG 2 cm |
 |---|---|---|---|---|
-| brain beyond the tumor, median | 138 mL | 289 mL | 57 mL | 180 mL |
-| enhancing recurrence caught, median | 98.5% | 100.0% | 84.2% | 99.8% |
-| whole recurrence caught, median | 81.6% | 96.2% | 41.9% | 74.1% |
+| brain beyond the tumor, median | 167 mL | 289 mL | 76 mL | 180 mL |
+| enhancing recurrence caught, median | 99.0% | 100.0% | 88.5% | 99.8% |
+| whole recurrence caught, median | 83.3% | 96.9% | 48.7% | 74.1% |
 
 Against a ball of exactly its size, the walk catches the same share of the
-enhancing recurrence at every distance (median difference about 0 points; at
-20 mm, 46 Gy: better in 12, worse in 16, p = 0.67) and more of the whole
-recurrence, a gap that grows with distance: about 0 at d = 0, +1.5 points at
-10 mm, +2.2 at 20 mm for 46 Gy (better in 25, worse in 14, p < 0.001), and +2.0
-at 20 mm for 60 Gy (36 against 4). The median patient's walk-down first catches
-95% of the enhancing recurrence at 7 mm, against 5 mm for the plain margin and
-the ball; the 60 Gy walk never gets there. MNI agrees.
+enhancing recurrence (at 20 mm, 46 Gy: better in 11, worse in 17, p = 0.72) and
+more of the whole recurrence: +1.5 points at 10 mm and at 20 mm for 46 Gy
+(better in 27, worse in 12, p < 0.001), and +3.0 at 20 mm for 60 Gy (37 against
+4). The median patient's 46 Gy walk-down first catches 95% of the enhancing
+recurrence at 6 mm, against 5 mm for the plain margin and 4 mm for the ball; the
+60 Gy walk never gets there. MNI agrees (46 Gy, whole recurrence: 27 better, 13
+worse; 60 Gy: 37 against 3).
 
 The 3 mm skim rule (a tract leaving and re-entering within 3 mm is not an exit)
-changes nothing: run again with it off, in MNI, no patient's target moved by
-even 0.1 mL at any distance, because a skimming tract's end points already sit
-inside the hull around the tumor's edge.
+was checked with the earlier tract set: run with it off, no patient's target
+moved by even 0.1 mL at any distance, because a skimming tract's end points
+already sit inside the hull around the tumor's edge. Not yet rechecked with
+the HCP-1065 streamlines.
 
-Past 20 mm the walk-down keeps growing slowly, since tracts end and the midline and
-brain edge stop walks: at 40 mm it still spends less brain than the 2 cm volume
-(46 Gy: median 242 against 289 mL). Its edge over the same-size ball on the whole
-recurrence peaks near 22 mm (+2.3 points) and is gone by about 37 mm for 46 Gy,
-while for 60 Gy it holds at about +2 points out to 40 mm. At equal coverage (the
-shortest walk catching at least as much as the 2 cm volume, in
-`walkdown_matched.csv`), only some patients get there within 40 mm: 19 of 40 for
-the enhancing recurrence, saving a median 198 mL each, and 13 of 41 for the whole
-recurrence, saving 77 mL. The others never catch as much, so those medians
-describe the patients whose tumors suit the walk-down, not everyone.
+Past 20 mm the walk-down keeps growing slowly, since streamlines end and the
+midline and brain edge stop walks: at 40 mm it still spends less brain than the
+2 cm volume (46 Gy: median 286 against 289 mL, by when it catches 97.3% of the
+whole recurrence against the 2 cm volume's 96.9%). Its edge over the same-size
+ball on the whole recurrence peaks near 14 mm (+1.8 points) and is gone by 35 mm
+for 46 Gy, while for 60 Gy it holds at about +3 points out to 40 mm. At equal
+coverage (the shortest walk catching at least as much as the 2 cm volume, in
+`walkdown_matched.csv`), only some patients get there within 40 mm: for 46 Gy,
+20 of 40 for the enhancing recurrence, saving a median 191 mL each, and 20 of 41
+for the whole recurrence, saving 57 mL; for 60 Gy, 13 of 40 (95 mL) and 25 of 41
+(25 mL). The others never catch as much, so those medians describe the patients
+whose tumors suit the walk-down, not everyone.
 
-Open: the 1 mL crossing cutoff is ours, not from a paper. 00354's pre-op scan
+**How many streamlines.** A hull is set by its outermost points, so keeping more
+streamlines makes it bigger. `streamline_sampling.py` rebuilds every patient at
+1/20, 1/10, 1/5, 1/2 and all of the atlas, each share inside the next, plus two
+more random draws at 1/20 and 1/10 (MNI, 46 Gy, 20 mm):
+
+| share kept | 1/20 | 1/10 (used) | 1/5 | 1/2 | all |
+|---|---|---|---|---|---|
+| brain beyond the tumor, median | 179 mL | 184 mL | 188 mL | 192 mL | 194 mL |
+| against all, median patient | -9% | -6% | -4% | -2% | 0 |
+| against all, worst patient | -21% | -17% | -12% | -8% | 0 |
+| whole recurrence, walk minus same-size ball | +3.2 | +3.0 | +3.0 | +3.2 | +3.1 |
+
+Absolute volumes therefore run about 6% below the full atlas, while the
+comparison with the same-size ball, which grows with the walk-down, does not
+move; repeat draws at the same share land within about 2 mL. The 60 Gy target
+behaves the same way (-9% at 1/10).
+
+Open: the midline rule and its 0.1 mL floor are ours, built on the NRG falx rule
+rather than taken from a paper. 00354's pre-op scan
 has no core at all, so its 60 Gy walk falls back to the whole tumor; under NRG it
 would have no boost volume.
 
 ## Recurrence on and off the tracts
 
 `tract_shell.py` asks the tract question without building any target. In 1 mm
-shells around the pre-op whole tumor, white matter a tract through the tumor
-passes is compared with white matter at the same distance that no tract passes
-(SynthSeg white matter only, since tracts only run there and so does swelling;
-MNI, where the atlas is).
+shells around the pre-op whole tumor, white matter a streamline through the
+tumor passes is compared with white matter at the same distance that no such
+streamline passes (SynthSeg white matter only, since tracts only run there and
+so does swelling; MNI, where the atlas is). Streamlines through the tumor touch
+much of the nearby white matter (median 75% of the first shell, 36% at 20 mm),
+but the smallest off-tract shell in any patient still holds 338 voxels.
 
 The whole recurrence is more likely on a tract at every distance out to 20 mm:
-about 6 to 12 percentage points in the median patient, and higher on the tract in
-33 of 41 patients at 1 mm, 35 at 5 mm and 30 at 15 mm. Part of this may be
+about 8 percentage points in the median patient, and higher on the tract in 32
+of 41 patients at 1 mm, 37 at 5 mm and 30 at 15 mm. Part of this may be
 swelling following the tracts rather than tumor.
 
-The enhancing recurrence is also more common on tracts in the first few mm
-(median share 10.7% against 7.8% at 1 mm, 9.5% against 5.3% at 3 mm), and the two
-meet by about 8 mm. Patient by patient it is mixed (higher on the tract in 18 of
-40 at 1 mm), because most patients have little or no enhancing recurrence in any
-one shell; pooled over 0 to 5 mm it is higher on tracts in 24 patients and lower
-in 12 (p = 0.003), about 0.65 points.
-
-The walk-down did not show this because its convex hull fills in everything
-between the walks; a target made of corridors along the tracts would use it.
+The enhancing recurrence shows no difference: higher on the tract in 23 of 40
+patients at 1 mm, 19 at 5 mm and 10 at 15 mm, median difference about 0. (An
+earlier, sparser tract set showed a small on-tract excess in the first 5 mm; it
+did not survive the change to the HCP-1065 streamlines.)

@@ -12,8 +12,10 @@ from paths import MNI, out_dir
 
 # SC_Length is clamped: over half the edges sit at its maximum. SC_EuclDist is
 # the real center to center distance, so that is what sets the drawn lengths.
-# a parcel joins the chart once this many tracts through the tumor reach it
-LEAST = 3
+# a parcel joins the chart once this share of the streamlines through the tumor
+# reach it, and never on fewer than three. A judgement call, not from any paper
+LEAST = 0.005
+FEWEST = 3
 
 
 @functools.lru_cache(maxsize=1)
@@ -66,12 +68,12 @@ def centers(subject):
 
 @functools.lru_cache(maxsize=4)
 def through(subject):
-    # Every centerline that runs through the tumor: which parcels it reaches,
+    # Every streamline that runs through the tumor: which parcels it reaches,
     # how far along itself from the mass to each of them, and which pairs of
     # parcels it therefore joins. This is the whole of what the chart draws.
     import collections
     import itertools
-    from yale import tracts as tractography
+    from hcp import streamlines
 
     labels, names = label_volume(nib.load(MNI))
     seg = nib.load(out_dir(subject) / "seg_in_mni.nii.gz")
@@ -83,7 +85,7 @@ def through(subject):
     joins = collections.defaultdict(list)     # parcel pair -> [(tract, mm apart)]
     skirt = collections.defaultdict(list)     # parcel -> [(tract, mm)] missing the mass
     crossing, stray = 0, []
-    for n, line in enumerate(tractography.centerlines()):
+    for n, line in enumerate(streamlines.streamlines()):
         ijk = np.rint(nib.affines.apply_affine(inverse, line)).astype(int)
         inside = np.all((ijk >= 0) & (ijk < shape), axis=1)
         keep = ijk[inside]
@@ -128,7 +130,8 @@ def build(subject, overlap, least=LEAST):
 
     # a parcel one stray tract grazes is noise on a plan; a parcel a dozen run
     # into is the point of the picture, so a parcel earns its place by count
-    nodes = sorted({p for p, hits in reach.items() if len(hits) >= least} | inside)
+    floor = max(least * crossing, FEWEST)
+    nodes = sorted({p for p, hits in reach.items() if len(hits) >= floor} | inside)
     place = {n: k for k, n in enumerate(nodes)}
     middle, tumor = centers(subject)
 

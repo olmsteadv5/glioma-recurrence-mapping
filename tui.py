@@ -48,20 +48,23 @@ LAYERS = [("shell", "brain surface", "#a89984", 0),
           ("--1", SCANS["1"], "", 0),
           *scan_rows("1"),
           ("--p", "plans from scan 1", "", 0),
-          ("T:margin", "NRG 2 cm (46 Gy)", "#b16286", 0),
+          ("T:46", "NRG 2 cm (46 Gy)", "#%02x%02x%02x" % render.NRG["46"], 0),
+          ("T:60", "NRG 2 cm (60 Gy)", "#%02x%02x%02x" % render.NRG["60"], 0),
           ("W:46", "walk-down 46 Gy", "#%02x%02x%02x" % render.WALK["46"], 0),
           ("W:60", "walk-down 60 Gy", "#%02x%02x%02x" % render.WALK["60"], 0),
-          ("W:ends", "walk endpoints", "#ebdbb2", 1),
+          ("W:ends46", "walk endpoints 46 Gy", "#%02x%02x%02x" % render.WALK["46"], 1),
+          ("W:ends60", "walk endpoints 60 Gy", "#%02x%02x%02x" % render.WALK["60"], 1),
           ("--2", SCANS["2"], "", 0),
           *scan_rows("2"),
           ("C:both", "in both scans", "#ebdbb2", 0),
           ("C:new", "new at follow-up", "#fb4934", 0),
           ("C:gone", "gone at follow-up", "#8ec07c", 0),
-          ("--t", "tracts", "", 0),
-          ("tracts", "through the tumor shown", "#c67c48", 0)]
+          ("--t", "tracts through the tumor shown", "", 0),
+          ("tracts:1", "through pre-op tumor", "#%02x%02x%02x" % render.TRACTS["1"], 0),
+          ("tracts:2", "through follow-up tumor", "#%02x%02x%02x" % render.TRACTS["2"], 0)]
 KEYS = {k for k, *_ in LAYERS if not k.startswith("--")}
 # on the first ever start; after that the viewer remembers
-SHOWN = {"shell", "1:WT", "2:WT", "tracts"}
+SHOWN = {"shell", "1:WT", "2:WT", "tracts:1", "tracts:2"}
 # what the viewer remembers between patients and between runs; a personal
 # setting, so it lives with the user's config rather than with the results
 STATE = Path.home() / ".config" / "brats-tui" / "state.json"
@@ -69,7 +72,7 @@ STATE = Path.home() / ".config" / "brats-tui" / "state.json"
 # uncolored: any class color on them reads as "this row is that tissue"
 ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
                ("YBA_696.glb", "meshes", "glb"),
-               ("top5k_tracts_decimated.obj", "tracts", "3001"),
+               ("hcp1065/trk", "tracts", "HCP-1065"),
                ("parcelsynth_activations_functionalterms.csv", "parcelsynth", "334"),
                ("structuralconnectivity_metrics_mean.csv", "connectivity", "696²")]
 VIEWERS = ("3d", "slices", "graph")
@@ -86,8 +89,9 @@ ABOUT = {
 }
 
 
-def walk_ml(subject, phase):
-    # the walk-down target's patient-space volume, as analysis/walkdown.py scored it
+def target_ml(subject, phase, target="walk"):
+    # a target's patient-space volume, as analysis/walkdown.py scored it: the
+    # walk-down ("walk") or the NRG 2 cm volume it is compared with ("iso")
     path = results_dir("native") / "walkdown.csv"
     if not path.exists():
         return ""
@@ -95,10 +99,10 @@ def walk_ml(subject, phase):
     if _walked.get("stamp") != stamp:
         with open(path) as fh:
             _walked.clear()
-            _walked.update({(r["patient"], r["phase"]): r["volume_ml"]
-                            for r in csv.DictReader(fh) if r["target"] == "walk"})
+            _walked.update({(r["patient"], r["phase"], r["target"]): r["volume_ml"]
+                            for r in csv.DictReader(fh)})
         _walked["stamp"] = stamp
-    value = _walked.get((subject[10:15], phase))
+    value = _walked.get((subject[10:15], phase, target))
     return f"{value} mL" if value else ""
 
 
@@ -434,13 +438,13 @@ class Console(App):
 
     def ensure_layers(self, keys):
         # the layers that are only built when first asked for
-        if "T:margin" in keys:
-            self.scene.ensure_margin()
+        for kind, prefix in render.TARGET_KEY.items():
+            for phase in render.WALK_PHASES:
+                if prefix + phase in keys:
+                    self.scene.ensure_target(kind, phase)
         for phase in render.WALK_PHASES:
-            if "W:" + phase in keys:
-                self.scene.ensure_walk(phase)
-        if "W:ends" in keys:
-            self.scene.ensure_ends()
+            if "W:ends" + phase in keys:
+                self.scene.ensure_ends(phase)
         if self.later and any(k.startswith("C:") for k in keys):
             self.scene.ensure_compare(self.subject, self.later)
 
@@ -450,7 +454,17 @@ class Console(App):
             saved = json.loads(STATE.read_text())
         except (OSError, ValueError):
             return
-        shown = set(saved.get("shown", [])) & KEYS
+        shown = set(saved.get("shown", []))
+        # the tracts were one layer before they were split by scan
+        if "tracts" in shown:
+            shown |= {"tracts:1", "tracts:2"}
+        # and the walk endpoints were one layer before they were split by phase
+        if "W:ends" in shown:
+            shown |= {"W:ends46", "W:ends60"}
+        # and the NRG volume was one layer, the 46 Gy one, before the boost joined it
+        if "T:margin" in shown:
+            shown.add("T:46")
+        shown &= KEYS
         self.hidden_layers = KEYS - shown
         self.mode = saved.get("mode", self.mode) if saved.get("mode") in VIEWERS else self.mode
         self.space = saved.get("space", self.space) if saved.get("space") in ("native", "mni") else self.space
@@ -616,14 +630,17 @@ class Console(App):
         out = []
         self._layers_width = self.query_one("#layers", Rows).size.width
         w = max(self._layers_width, 30) - 4
-        walked = render.walk_file(self.subject, "46", "mni") is not None
+        walked = render.target_file(self.subject, "walk", "46", "mni") is not None
+        scored = render.target_file(self.subject, "nrg", "46", "mni") is not None
 
         def offered(key):
-            if key in ("--2", "C:both", "C:new", "C:gone") or key.startswith("2:"):
+            if key in ("--2", "C:both", "C:new", "C:gone", "tracts:2") or key.startswith("2:"):
                 if not self.later:
                     return False
             if key.startswith("W:"):
                 return walked
+            if key.startswith("T:"):
+                return scored
             if key[:2] in ("1:", "2:") and not key.endswith(":WT"):
                 return key[2:] in self.results[self.scan_subject(key[0])]["labels_ml"]
             return True
@@ -636,17 +653,17 @@ class Console(App):
                            f"[{FAINT}]{'\u2500' * max(w + 2 - len(title), 0)}[/]")
                 continue
             on = key not in self.hidden_layers
-            if key == "tracts":
-                value = str(self.scene.tract_count) if self.scene and on else ""
+            if key.startswith("tracts:"):
+                count = self.scene.tract_count.get(key[7:]) if self.scene else None
+                value = f"{count:,}" if count is not None and on else ""
             elif key.startswith("C:"):
                 value = f"{compare.against(self.subject, self.later)[key[2:]]} mL"
-            elif key == "T:margin":
-                grown = self.results[self.subject].get("margin_ml")
-                value = f"{grown} mL" if grown else "rerun map"
-            elif key == "W:ends":
-                value = str(sum(len(e) for e in render.walk_ends(self.subject).values()))
+            elif key.startswith("T:"):
+                value = target_ml(self.subject, key[2:], "iso")
+            elif key.startswith("W:ends"):
+                value = f"{len(render.walk_ends(self.subject).get(key[6:], ())):,}"
             elif key.startswith("W:"):
-                value = walk_ml(self.subject, key[2:])
+                value = target_ml(self.subject, key[2:])
             elif key.endswith(":WT"):
                 value = f"{self.results[self.scan_subject(key[0])]['regions_ml']['WT']} mL"
             elif key[:2] in ("1:", "2:"):
@@ -679,7 +696,8 @@ class Console(App):
         # the one place that turns the checkbox states into what is drawn
         if not self.scene:
             return
-        self.scene.show_crossing(self.crossing() if "tracts" not in self.hidden_layers else ())
+        tracts = {k for k, *_ in LAYERS if k.startswith("tracts:")}
+        self.scene.show_crossing({k[7:] for k in tracts - self.hidden_layers})
         for key, *_ in LAYERS:
             if key.startswith("--"):
                 continue
@@ -696,16 +714,6 @@ class Console(App):
         return [f"{scan}:{name}" for name, _, deep in SCAN_PARTS
                 if deep and f"{scan}:{name}" not in self.hidden_layers
                 and f"{scan}:{name}" in self.scene.actors]
-
-    def crossing(self):
-        # the tissue on screen, as the (scan, label) pairs the tracts follow
-        out = set()
-        for scan in ("1", "2"):
-            if f"{scan}:WT" not in self.hidden_layers and not self.split(scan):
-                out |= {(scan, value) for value in LABELS}
-            out |= {(scan, value) for value, name in LABELS.items()
-                    if f"{scan}:{name}" not in self.hidden_layers}
-        return out
 
     def click_layer(self, row_index):
         if not (0 <= row_index < len(self.layer_rows) and self.scene):
@@ -748,8 +756,8 @@ class Console(App):
                                         if f"{scan}:{name}" in self.hidden_layers}
             whole = f"{scan}:WT" not in self.hidden_layers and not (self.scene and self.split(scan))
             self.slices.whole[scan] = render.TISSUE[0] if whole else None
-        self.slices.show_margin = "T:margin" not in self.hidden_layers
-        self.slices.show_walk = {p for p in render.WALK_PHASES if "W:" + p not in self.hidden_layers}
+        self.slices.show_targets = {(kind, p) for kind, prefix in render.TARGET_KEY.items()
+                                    for p in render.WALK_PHASES if prefix + p not in self.hidden_layers}
         self.slices.compare = {}
         wanted = [k[2:] for k, *_ in LAYERS
                   if k.startswith("C:") and k not in self.hidden_layers]

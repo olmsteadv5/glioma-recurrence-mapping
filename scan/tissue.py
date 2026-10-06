@@ -9,17 +9,8 @@ from paths import MNI, THREADS, modality, out_dir, raw_dir
 SYNTHSEG = Path("/opt/freesurfer/bin/mri_synthseg")
 FREESURFER_HOME = Path("/opt/freesurfer")
 
-# FreeSurfer label numbers, left then right where the structure is paired.
+# FreeSurfer's cerebral white matter labels, left then right [billot23]
 WM = (2, 41)
-CORTEX = (3, 42)
-VENTRICLE = (4, 5, 43, 44)
-MIDLINE_VENTRICLE = (14, 15)
-CSF = (24,)
-CEREBELLUM = (7, 8, 46, 47)
-BRAINSTEM = (16,)
-HIPPOCAMPUS = (17, 53)
-LEFT = (2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 17, 18, 26, 28)
-RIGHT = (41, 42, 43, 44, 46, 47, 49, 50, 51, 52, 53, 54, 58, 60)
 
 
 def _shell(args, log, env=None):

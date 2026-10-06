@@ -221,7 +221,6 @@ def main():
         by_distance(by, distances, figures / "walkdown_by_distance.png")
         against_volume(by, distances, summary(space), figures / "walkdown_vs_volume.png")
         equal_coverage(space, figures / "walkdown_equal_coverage.png")
-        (figures / "walkdown_compare.png").unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

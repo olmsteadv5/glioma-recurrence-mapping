@@ -3,7 +3,8 @@
 This takes glioblastoma MRI from the UPenn-GBM collection and processes each
 scan: skull strip, tissue labels, tumor segmentation, and registration onto a
 standard brain. From there it works out which Yale Brain Atlas regions the tumor
-sits in and which white matter tracts run through it.
+sits in and which white matter tracts, from the HCP-1065 tract atlas, run
+through it.
 
 41 patients have a scan before surgery and a later follow-up. For those, it
 measures how much of the later tumor overlaps the original one.
@@ -17,6 +18,15 @@ python3 -m venv .venv
 
 You also need Docker (and to be in the docker group), FreeSurfer for SynthStrip
 and SynthSeg, and greedy, which comes with ITK-SNAP.
+
+The tract atlas ([HCP-1065](https://brain.labsolver.org/hcp_trk_atlas.html)) is
+not fetched automatically. Download
+[the tracts](https://github.com/data-others/atlas/releases/download/hcp1065/hcp1065_avg_tracts_trk.zip)
+(unzip into `trk/`), and the template it was made in,
+[ICBM152_adult.T1W.nii.gz](https://github.com/data-others/atlas/releases/download/ICBM152_adult/ICBM152_adult.T1W.nii.gz) and
+[ICBM152_adult.mask.nii.gz](https://github.com/data-others/atlas/releases/download/ICBM152_adult/ICBM152_adult.mask.nii.gz),
+into `inputs/atlas/hcp1065/`; `hcp/streamlines.py` does the rest the first time
+anything asks for tracts.
 
 ## Processing a scan
 
@@ -56,6 +66,7 @@ standard brain the atlas lives in, which stretches volumes a little.
 ./analysis/walkdown.py           # a target 0-40 mm along the tracts leaving the tumor, against plain margins and same-size balls
 ./analysis/walkdown_figures.py   # the walk-down figures: each target by walk distance, catch against brain spent, brain saved at equal coverage
 ./analysis/tract_shell.py        # at the same distance from the tumor, does white matter on a tract recur more often (MNI)
+./analysis/streamline_sampling.py  # does the share of the tract atlas kept change the walk-down (MNI, slow)
 ```
 
 `analysis/COHORT.md` explains how the 41 patients were chosen and checked.
@@ -73,7 +84,8 @@ python -m show.view 55    # 3D view in the browser
 
 ```
 scan/       processing each scan
-yale/       the Yale Brain Atlas
+yale/       the Yale Brain Atlas: parcels, their connectivity and functions
+hcp/        the HCP-1065 white matter tract atlas, moved onto our MNI brain
 analysis/   the overlap results
 show/       the viewers
 inputs/     raw downloads and the release's participants.tsv   (not in git)
@@ -81,7 +93,7 @@ outputs/    everything made from them                           (not in git)
   scans/      one folder per scan: what the pipeline makes, plus cache/ for the viewer
   pairs/      one folder per patient: the rigid fit onto the follow-up, lobes, walkdown/
   results/    native/ and mni/, each with tables/ and figures/; qc/ for hand checks
-  atlas/      the atlas on MNI, shared by every scan
+  atlas/      both atlases on MNI, shared by every scan
   archive/    superseded runs, e.g. the second-place segmentations
   results.json  the pipeline's record of every scan
 ```

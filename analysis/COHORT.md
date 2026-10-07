@@ -179,7 +179,8 @@ streamline with a point in the tumor is followed d mm along its own path from
 each place it leaves; one convex hull is wrapped around the tumor's edge and all
 those end points. Walks stop at d, at the end of the streamline, at the brain
 edge, back inside the tumor, or where a plan may not go. Nothing goes outside the
-brain. The tumor's own hemisphere is open; across the midline a voxel may join a
+brain. The tumor's own hemisphere is open, the midline plane included; across
+the midline a voxel may join a
 target grown d mm only if it is within d of the part of that phase's tumor
 already across (the whole tumor for 46 Gy, the core for 60 Gy), so nothing grows
 over the falx from the home side. Less than 0.1 mL across counts as registration
@@ -210,7 +211,7 @@ Patient space, at 20 mm:
 
 | | 46 Gy walk | NRG 2 cm | 60 Gy walk | NRG 2 cm |
 |---|---|---|---|---|
-| brain beyond the tumor, median | 167 mL | 289 mL | 76 mL | 180 mL |
+| brain beyond the tumor, median | 167 mL | 292 mL | 76 mL | 181 mL |
 | enhancing recurrence caught, median | 99.0% | 100.0% | 88.5% | 99.8% |
 | whole recurrence caught, median | 83.3% | 96.9% | 48.7% | 74.1% |
 
@@ -231,7 +232,7 @@ the HCP-1065 streamlines.
 
 Past 20 mm the walk-down keeps growing slowly, since streamlines end and the
 midline and brain edge stop walks: at 40 mm it still spends less brain than the
-2 cm volume (46 Gy: median 286 against 289 mL, by when it catches 97.3% of the
+2 cm volume (46 Gy: median 288 against 292 mL, by when it catches 97.3% of the
 whole recurrence against the 2 cm volume's 96.9%). Its edge over the same-size
 ball on the whole recurrence peaks near 14 mm (+1.8 points) and is gone by 35 mm
 for 46 Gy, while for 60 Gy it holds at about +3 points out to 40 mm. At equal

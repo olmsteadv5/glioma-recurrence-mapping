@@ -133,10 +133,11 @@ def allowed_mni(first):
     # where nothing may go, for each phase; every target reads the same gate.
     data, image = measure._seg(first, "mni")
     brain = template_brain()
-    x = nib.affines.apply_affine(image.affine, np.indices(data.shape).reshape(3, -1).T)[:, 0]
-    left = (x < 0).reshape(data.shape)
+    x = nib.affines.apply_affine(image.affine, np.indices(data.shape).reshape(3, -1).T)[:, 0].reshape(data.shape)
     tumor = data > 0
-    home = left if (tumor & left).sum() > (tumor & ~left).sum() else ~left
+    # the midline plane itself is home on either side; across means strictly past it
+    mostly_left = (tumor & (x < 0)).sum() >= (tumor & (x > 0)).sum()
+    home = x <= 0 if mostly_left else x >= 0
     ml = ml_per_voxel(image)
     gates, crossed = {}, False
     for phase, region in PHASES:

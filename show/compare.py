@@ -9,7 +9,7 @@ import pyvista as pv
 import subprocess
 
 from geometry import ml_per_voxel
-from paths import THREADS, anatomy, cache_dir, modality, out_dir, stripped_dir
+from paths import THREADS, anatomy, cache_dir, out_dir, stripped_dir
 
 PARTS = ("both", "new", "gone")
 
@@ -70,22 +70,6 @@ def surfaces(first, second):
 
 
 @functools.lru_cache(maxsize=8)
-def parcels_in(first, second, which):
-    # Which parcels each piece of the difference actually touches.
-    import nibabel as nib
-    from yale.atlas import label_volume
-    from paths import MNI
-
-    labels, names = label_volume(nib.load(MNI))
-    parts = _split(first, second)[0]
-    out = set()
-    for name in which:
-        for value in np.unique(labels[parts[name]]):
-            if value > 0:
-                out.add(names[int(value) - 1])
-    return frozenset(out)
-
-
 def _inverse(subject):
     # the way back from MNI, computed once and kept
     warp = out_dir(subject) / "warp.nii.gz"

@@ -6,7 +6,7 @@
 import nibabel as nib
 import numpy as np
 
-from paths import THREADS, anatomy, modality, out_dir, pair_dir, stripped_dir
+from paths import THREADS, anatomy, out_dir, pair_dir, stripped_dir
 from scan.register import _greedy, _metric_mask
 
 

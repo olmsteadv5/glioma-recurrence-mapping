@@ -8,8 +8,8 @@ import time
 import nibabel as nib
 
 from scan import align, evaluate, fetch, register, segment, skullstrip, tissue, verify
-from yale import atlas, function
-from paths import (MNI, OUTPUTS, RESULTS, STAGES, anatomy, external, modality, out_dir, raw_dir,
+from yale import atlas
+from paths import (MNI, OUTPUTS, RESULTS, STAGES, anatomy, external, out_dir, raw_dir,
                    stripped_dir, subject_id)
 
 
@@ -129,13 +129,10 @@ def main(numbers, first="fetch", timepoint=1):
     for subject in results:
         overlap = atlas.overlap(out_dir(subject) / "seg_in_mni.nii.gz", labels, names)
         results[subject]["atlas"] = overlap
-        results[subject]["function"] = function.for_tumor(overlap)
         block = results[subject].setdefault("run", {})
         block["mapped"] = time.time()
         block.setdefault("times", {})["map"] = round(time.time() - clock, 1)
-        top = ", ".join(f["term"] for f in results[subject]["function"][:4])
-        print(f"{subject}: {overlap['in_parcels_ml']} mL in "
-              f"{len(overlap['parcels'])} parcels; {top}")
+        print(f"{subject}: {overlap['in_parcels_ml']} mL in {len(overlap['parcels'])} parcels")
 
     # merge so running one subject doesn't wipe the others
     stored.update(results)

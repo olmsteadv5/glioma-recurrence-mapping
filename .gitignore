@@ -9,8 +9,4 @@ inputs/atlas/*
 !inputs/atlas/YBA_696_Freeview_HighContrast.txt
 outputs/
 
-# editor settings stay local
-.idea/
 
-# local segmentation backups and downloads, kept out of git
-outputs_*/

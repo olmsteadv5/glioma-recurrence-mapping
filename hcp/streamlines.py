@@ -159,11 +159,6 @@ def streamlines():
     return np.split(data["points"].astype(float), data["offsets"][1:-1])
 
 
-def bundles():
-    # which bundle each streamline belongs to, and the bundles' names
-    data = _load()
-    return data["bundle"], list(data["names"])
-
 
 def crossing(lines, seg_img, labels, involved):
     # Lines through the mass, and lines that miss it but clip an involved parcel.

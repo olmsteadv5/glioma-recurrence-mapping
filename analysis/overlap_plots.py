@@ -16,7 +16,7 @@ from scipy.stats import spearmanr
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from analysis import measure
-from analysis.capture_curves import FAINT, INK, PATIENT, SOFT, capture, save, style
+from analysis.capture_curves import FAINT, PATIENT, SOFT, capture, save, style
 from paths import results_dir
 
 BLUE, ORANGE = "#2a78d6", "#eb6834"

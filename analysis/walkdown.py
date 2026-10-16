@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from analysis import measure
 from geometry import MARGIN_MM, distance, ml_per_voxel, outline, template_brain
-from paths import THREADS, anatomy, modality, out_dir, pair_dir, results_dir, stripped_dir, walk_dir
+from paths import THREADS, anatomy, out_dir, pair_dir, results_dir, stripped_dir, walk_dir
 from show.compare import _inverse
 from hcp import streamlines
 

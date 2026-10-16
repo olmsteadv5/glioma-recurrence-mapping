@@ -13,7 +13,7 @@ from scipy import ndimage
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from analysis import measure
-from paths import ATLAS_DIR, MNI, THREADS, anatomy, modality, out_dir, pair_dir, results_dir, stripped_dir
+from paths import ATLAS_DIR, MNI, THREADS, anatomy, out_dir, pair_dir, results_dir, stripped_dir
 from show.compare import _inverse
 from yale import atlas
 

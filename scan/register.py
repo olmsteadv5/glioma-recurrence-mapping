@@ -6,7 +6,7 @@ import nibabel as nib
 import numpy as np
 from scipy import ndimage
 
-from paths import MNI, THREADS, anatomy, modality, out_dir
+from paths import MNI, THREADS, anatomy, out_dir
 
 DILATE_MM = 5
 

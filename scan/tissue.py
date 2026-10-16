@@ -4,13 +4,10 @@ import os
 import subprocess
 from pathlib import Path
 
-from paths import MNI, THREADS, anatomy, modality, out_dir, raw_dir
+from paths import MNI, THREADS, anatomy, out_dir, raw_dir
 
 SYNTHSEG = Path("/opt/freesurfer/bin/mri_synthseg")
 FREESURFER_HOME = Path("/opt/freesurfer")
-
-# FreeSurfer's cerebral white matter labels, left then right
-WM = (2, 41)
 
 
 def _shell(args, log, env=None):

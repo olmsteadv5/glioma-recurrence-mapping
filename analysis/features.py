@@ -46,7 +46,7 @@ THREADS = "4"
 STRUCTURAL = ("T1", "T1GD", "T2", "FLAIR")
 DTI = ("FA", "TR", "AD", "RD")
 DSC = ("ap-rCBV", "PH", "PSR")
-# SynthSeg labels [billot23]
+# SynthSeg labels
 WM, CORTEX, SULCAL_CSF = (2, 41), (3, 42), (24,)
 LATERAL_VENTRICLE, VENTRICLES = (4, 5, 43, 44), (4, 5, 14, 15, 43, 44)
 CLASSES = ("association", "commissural", "projection", "cerebellum")
@@ -122,7 +122,7 @@ def write_spec():
             "inputs": {"segmentation": "BraTS 2025 winner (BraTS25_1), outputs/scans/*/seg_in_mni.nii.gz",
                        "registration": "each scan onto MNI: outputs/scans/*/affine.mat + warp.nii.gz (greedy)",
                        "intensities": "TCIA 16-bit NIfTI, images_structural / images_DTI / images_DSC",
-                       "tracts": "HCP-1065, all 479,804 streamlines of the 77 non-cranial bundles [yeh22]",
+                       "tracts": "HCP-1065, all 479,804 streamlines of the 77 non-cranial bundles",
                        "tissue": "SynthSeg, outputs/scans/*/tissue_in_mni.nii.gz", "lobes": "outputs/atlas/lobes_on_mni.nii.gz",
                        "parcels": "Yale Brain Atlas on MNI, structural connectivity SC_Count"},
             "missing": "NaN in float columns", "columns": columns()}
@@ -450,14 +450,6 @@ def build(first):
         "clinical_optional": clinical,
     }
     (here / "patient.json").write_text(json.dumps(patient, indent=1))
-
-    # a few columns as images, to look at
-    qc = here / "qc"
-    qc.mkdir(exist_ok=True)
-    for name in ("dist_wt", "tract_dist_wt", "tract_n_wt", "layer_wt", "curvature_wt", "depth", "align_wt", "fa", "rcbv", "flair"):
-        volume = np.full(int(np.prod(shape)), np.nan, np.float32)
-        volume[index] = cols[name]
-        nib.save(nib.Nifti1Image(volume.reshape(shape), mni.affine), qc / f"{name}.nii.gz")
 
     tmp = here / "voxels.tmp.npz"
     np.savez_compressed(tmp, index=index, **cols)

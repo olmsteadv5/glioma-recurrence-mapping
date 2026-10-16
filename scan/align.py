@@ -6,7 +6,7 @@
 import nibabel as nib
 import numpy as np
 
-from paths import THREADS, modality, out_dir, pair_dir, stripped_dir
+from paths import THREADS, anatomy, modality, out_dir, pair_dir, stripped_dir
 from scan.register import _greedy, _metric_mask
 
 
@@ -23,8 +23,8 @@ def _brain_dice(a, b):
 def run(later):
     first = first_of(later)
     destination = pair_dir(later)
-    fixed = modality(stripped_dir(later), later, "T1")
-    moving = modality(stripped_dir(first), first, "T1")
+    fixed = anatomy(stripped_dir(later), later)
+    moving = anatomy(stripped_dir(first), first)
     log = destination / "align.log"
     log.write_text("")
     rigid = destination / "rigid_first_to_later.mat"

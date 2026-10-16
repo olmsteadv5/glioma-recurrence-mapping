@@ -8,7 +8,7 @@ from scipy import ndimage
 
 from paths import MNI
 
-# why: RTOG grows the phase-1 volume 2 cm from the whole abnormality [recur21]
+# why: RTOG grows the phase-1 volume 2 cm from the whole abnormality
 MARGIN_MM = 20
 
 

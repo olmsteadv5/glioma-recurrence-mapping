@@ -11,12 +11,11 @@ from vtkmodules.util.numpy_support import vtk_to_numpy
 from vtkmodules.vtkRenderingCore import vtkCellPicker, vtkWindowToImageFilter
 from PIL import Image, ImageDraw
 
-from show import view
-from show.compare import _inverse
+from show.compare import _inverse, tumor_surface
 from yale import atlas
 from hcp import streamlines
 from geometry import outline
-from paths import (LABELS, MNI, MODALITIES, THREADS, cache_dir, modality, out_dir, pair_cache,
+from paths import (LABELS, MNI, MODALITIES, THREADS, anatomy, cache_dir, modality, out_dir, pair_cache,
                    pair_dir, raw_dir, stripped_dir, walk_dir)
 
 pv.OFF_SCREEN = True
@@ -77,7 +76,7 @@ def target_file(subject, kind, phase, space):
     here = cache_dir(subject) / f"{kind}_{phase}.nii.gz"
     if not here.exists() or here.stat().st_mtime < mni.stat().st_mtime:
         # the pre-op scan's own grid, through its own way back from MNI
-        subprocess.run(["greedy", "-d", "3", "-rf", str(modality(stripped_dir(subject), subject, "T1")),
+        subprocess.run(["greedy", "-d", "3", "-rf", str(anatomy(stripped_dir(subject), subject)),
                         "-ri", "LABEL", "0.2vox", "-rm", str(mni), str(here),
                         "-r", str(out_dir(subject) / "affine.mat") + ",-1", str(_inverse(subject)),
                         "-threads", THREADS], capture_output=True)
@@ -176,7 +175,7 @@ class Scene:
         # value 0 is all three classes contoured as one closed surface
         for value, name in list(LABELS.items()) + [(0, WHOLE)]:
             source = (data > 0).astype(np.int16) if value == 0 else data
-            surface = view._tumor_surface(source, image.affine, 1 if value == 0 else value)
+            surface = tumor_surface(source, image.affine, 1 if value == 0 else value)
             if surface:
                 out[value] = (name, surface[0], surface[1])
                 saved["values"].append(value)
@@ -288,7 +287,7 @@ class Scene:
             points, faces = held["vertices"], held["faces"]
         else:
             image = nib.load(source)
-            surface = view._tumor_surface(np.asarray(image.dataobj).astype(np.int16), image.affine, 1)
+            surface = tumor_surface(np.asarray(image.dataobj).astype(np.int16), image.affine, 1)
             if surface is None:
                 return
             points, faces = surface
@@ -371,14 +370,6 @@ class Scene:
         index = {p["name"]: i for i, p in enumerate(atlas.parcels())}
         for name, actor in self.parcel_actors.items():
             actor.prop.color = _hex(colors[index[name]])
-
-    def snapshot(self, width=1600, height=1200):
-        # bigger than the pane, for something you are going to send to someone
-        was = list(self.plotter.window_size)
-        self.resize(width, height)
-        out = self.image()
-        self.resize(*was)
-        return out
 
     def image(self):
         self.plotter.render()
@@ -1166,7 +1157,7 @@ class Slices:
         source = modality(stripped_dir(self.subject), self.subject, name)
         if not dest.exists() and source.exists():
             subprocess.run(["greedy", "-d", "3",
-                            "-rf", str(modality(stripped_dir(self.later), self.later, "T1")),
+                            "-rf", str(anatomy(stripped_dir(self.later), self.later)),
                             "-rm", str(source), str(dest),
                             "-r", str(pair_dir(self.later) / "rigid_first_to_later.mat"),
                             "-threads", THREADS], capture_output=True)
@@ -1360,15 +1351,6 @@ class Slices:
         middle = points.mean(0)
         self.cursor = [int(v) for v in points[np.argmin(((points - middle) ** 2).sum(1))]]
         return True
-
-    def montage(self, cell=700):
-        # the three planes side by side, without disturbing the click mapping
-        held = dict(self.geom)
-        canvas = Image.new("RGB", (cell * len(self.PLANES), cell), PANEL)
-        for n, which in enumerate(self.PLANES):
-            canvas.paste(self.plane(which, (cell, cell)), (n * cell, 0))
-        self.geom = held
-        return canvas
 
     def click(self, which, fx, fy):
         # fx, fy are fractions of the whole pane, letterbox included

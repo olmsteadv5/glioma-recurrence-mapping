@@ -23,11 +23,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from analysis import measure
 from geometry import MARGIN_MM, distance, ml_per_voxel, outline, template_brain
-from paths import THREADS, modality, out_dir, pair_dir, results_dir, stripped_dir, walk_dir
+from paths import THREADS, anatomy, modality, out_dir, pair_dir, results_dir, stripped_dir, walk_dir
 from show.compare import _inverse
 from hcp import streamlines
 
-# why: the NRG margin, 2 cm along the tract instead of in every direction [rtog0825]
+# why: the NRG margin, 2 cm along the tract instead of in every direction
 WALK_MM = MARGIN_MM
 # twice that, so the walk-down can be followed past where it catches as much as
 # the 2 cm volume does, and the brain it saves read off at equal coverage
@@ -39,7 +39,7 @@ NEVER = 255
 # a tract that leaves and comes back within this is running along the edge,
 # not leaving. A judgement call, about three voxels; not from any paper
 SKIM_MM = 3
-# why: the falx is a barrier unless the tumor already crosses [nrg19]; less than
+# why: the falx is a barrier unless the tumor already crosses; less than
 # this across the midline is taken as registration slop, not crossing. Ours
 CROSSED_ML = 0.1
 
@@ -208,7 +208,7 @@ def to_native(first, later, name):
     # takes into patient space, so the two line up
     source = walk_dir(first) / f"{name}_mni.nii.gz"
     dest = walk_dir(later) / f"{name}.nii.gz"
-    subprocess.run(["greedy", "-d", "3", "-rf", str(modality(stripped_dir(later), later, "T1")),
+    subprocess.run(["greedy", "-d", "3", "-rf", str(anatomy(stripped_dir(later), later)),
                     "-ri", "LABEL", "0.2vox", "-rm", str(source), str(dest),
                     "-r", str(pair_dir(later) / "rigid_first_to_later.mat"),
                     str(out_dir(first) / "affine.mat") + ",-1", str(_inverse(first)),

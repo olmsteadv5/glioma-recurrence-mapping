@@ -13,7 +13,7 @@ from scipy import ndimage
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from analysis import measure
-from paths import ATLAS_DIR, MNI, THREADS, modality, out_dir, pair_dir, results_dir, stripped_dir
+from paths import ATLAS_DIR, MNI, THREADS, anatomy, modality, out_dir, pair_dir, results_dir, stripped_dir
 from show.compare import _inverse
 from yale import atlas
 
@@ -64,7 +64,7 @@ def native_lobes(later):
     # own registration, the same way back show.compare takes for the tumor pieces
     dest = pair_dir(later) / "lobes.nii.gz"
     if not dest.exists():
-        subprocess.run(["greedy", "-d", "3", "-rf", str(modality(stripped_dir(later), later, "T1")),
+        subprocess.run(["greedy", "-d", "3", "-rf", str(anatomy(stripped_dir(later), later)),
                         "-ri", "LABEL", "0.2vox", "-rm", str(mni_lobes()), str(dest),
                         "-r", str(out_dir(later) / "affine.mat") + ",-1", str(_inverse(later)),
                         "-threads", THREADS], capture_output=True, check=True)

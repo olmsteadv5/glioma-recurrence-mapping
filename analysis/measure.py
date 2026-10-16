@@ -13,7 +13,7 @@ from geometry import MARGIN_MM, distance, ml_per_voxel, template_brain
 from paths import PARTICIPANTS, REGIONS, SCANS, out_dir, pair_dir
 
 # why: central >95%, in-field 80-95%, marginal 20-80%, distant <20% of the
-#      recurrence inside the high-dose volume [lee99]
+#      recurrence inside the high-dose volume
 PATTERNS = ((0.95, "central"), (0.80, "in-field"), (0.20, "marginal"), (0.0, "distant"))
 
 

@@ -9,12 +9,6 @@ inputs/atlas/*
 !inputs/atlas/YBA_696_Freeview_HighContrast.txt
 outputs/
 
-# scratch mockup for the published artifact
-mockup.html
-
-# derived images kept beside the archive, never committed
-archive/**/*.nii.gz
-
 # editor settings stay local
 .idea/
 

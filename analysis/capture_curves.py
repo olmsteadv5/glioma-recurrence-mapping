@@ -25,7 +25,7 @@ PARTS = (("ET", "enhancing", "Enhancing tumor", "#2a78d6"),
          ("TC", "core", "Tumor core", "#1baf7a"),
          ("WT", "whole", "Whole tumor", "#eb6834"))
 # why: Lee et al.'s class boundaries, the share of the recurrence inside the
-#      high-dose region: central 95% or more, in-field 80, marginal 20 [lee99]
+#      high-dose region: central 95% or more, in-field 80, marginal 20
 LEE = (0.95, 0.80, 0.20)
 
 INK, SOFT, FAINT, RULE, PATIENT = "#1f2328", "#5c636b", "#8a9199", "#e3e6e9", "#c3c8cd"

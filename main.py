@@ -9,7 +9,7 @@ import nibabel as nib
 
 from scan import align, evaluate, fetch, register, segment, skullstrip, tissue, verify
 from yale import atlas, function
-from paths import (MNI, OUTPUTS, RESULTS, STAGES, modality, out_dir, raw_dir,
+from paths import (MNI, OUTPUTS, RESULTS, STAGES, anatomy, external, modality, out_dir, raw_dir,
                    stripped_dir, subject_id)
 
 
@@ -92,7 +92,7 @@ def missing(number, first, timepoint=1):
     at = STAGES.index(first)
     if at >= 1 and not raw_dir(subject).exists():
         return f"{raw_dir(subject)} is missing, start from fetch"
-    if at >= 2 and not modality(stripped_dir(subject), subject, "T1").exists():
+    if at >= 2 and not anatomy(stripped_dir(subject), subject).exists():
         return f"{stripped_dir(subject)} has no T1, start from strip"
     # tissue is deliberately not required here; the 26 subjects segmented before
     # it existed must still reach map
@@ -146,9 +146,6 @@ def main(numbers, first="fetch", timepoint=1):
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    # the terminal UI is its own viewer, it passes --no-view
-    show = "--no-view" not in args
-    args = [a for a in args if a != "--no-view"]
     first, timepoint = "fetch", "1"
     for flag, fallback in (("--from", "fetch"), ("--timepoint", "1")):
         if flag in args:
@@ -162,11 +159,6 @@ if __name__ == "__main__":
     if (not args or not all(a.isdigit() for a in args)
             or first not in STAGES or timepoint not in ("1", "2")):
         sys.exit(f"usage: ./main.py <subject numbers> [--from {'|'.join(STAGES)}] "
-                 f"[--timepoint 1|2] [--no-view]")
+                 f"[--timepoint 1|2]")
 
-    results = main([int(a) for a in args], first, int(timepoint))
-
-    if show:
-        from show import view
-        for subject in results:
-            view.run(subject, results[subject]["atlas"])
+    main([int(a) for a in args], first, int(timepoint))

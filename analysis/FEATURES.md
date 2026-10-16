@@ -74,7 +74,6 @@ outputs/features/
     voxels.npz           one row per brain voxel (~2.1 M): its place on the MNI grid,
                          every variable, the labels
     patient.json         the patient-level values
-    qc/                  key variables as images, to look at
 ```
 
    About 0.55 GB a patient, 23 GB for the 41.

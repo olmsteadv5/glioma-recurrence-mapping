@@ -4,12 +4,12 @@ import os
 import subprocess
 from pathlib import Path
 
-from paths import MNI, THREADS, modality, out_dir, raw_dir
+from paths import MNI, THREADS, anatomy, modality, out_dir, raw_dir
 
 SYNTHSEG = Path("/opt/freesurfer/bin/mri_synthseg")
 FREESURFER_HOME = Path("/opt/freesurfer")
 
-# FreeSurfer's cerebral white matter labels, left then right [billot23]
+# FreeSurfer's cerebral white matter labels, left then right
 WM = (2, 41)
 
 
@@ -25,7 +25,7 @@ def _shell(args, log, env=None):
 
 def run(subject):
     # why: SynthSeg skull-strips and normalizes internally, so it wants the raw
-    #      scan and the stripped one would only take tissue away [billot23]
+    #      scan and the stripped one would only take tissue away
     # Labels inside the lesion are unvalidated: on 00055_11 SynthSeg fills the
     # mass with white matter and a slab of cortex 12 mm deep.
     dest = out_dir(subject) / "tissue.nii.gz"
@@ -34,7 +34,7 @@ def run(subject):
 
     out_dir(subject).mkdir(parents=True, exist_ok=True)
     # --keepgeom holds the labels on the input grid, which the warp below assumes
-    _shell([SYNTHSEG, "--i", modality(raw_dir(subject), subject, "T1"),
+    _shell([SYNTHSEG, "--i", anatomy(raw_dir(subject), subject),
             "--o", dest, "--keepgeom", "--cpu", "--threads", THREADS],
            out_dir(subject) / "tissue.log",
            env={**os.environ, "FREESURFER_HOME": str(FREESURFER_HOME)})

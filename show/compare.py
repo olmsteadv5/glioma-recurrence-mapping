@@ -4,13 +4,29 @@ import functools
 
 import nibabel as nib
 import numpy as np
+import pyvista as pv
 
 import subprocess
 
 from geometry import ml_per_voxel
-from paths import THREADS, cache_dir, modality, out_dir, stripped_dir
+from paths import THREADS, anatomy, cache_dir, modality, out_dir, stripped_dir
 
 PARTS = ("both", "new", "gone")
+
+
+def tumor_surface(data, affine, value):
+    # Surface around one tissue class.
+    binary = (data == value).astype(np.float32)
+    if binary.sum() < 10:
+        return None
+    grid = pv.ImageData(dimensions=np.array(binary.shape) + 1)
+    grid.cell_data["v"] = binary.flatten(order="F")
+    surface = grid.cells_to_points("v").contour([0.5], scalars="v")
+    if surface.n_points == 0:
+        return None
+    surface = surface.smooth(n_iter=30, relaxation_factor=0.1)
+    return (nib.affines.apply_affine(affine, surface.points),
+            np.asarray(surface.faces).reshape(-1, 4)[:, 1:])
 
 
 def _mask(subject):
@@ -44,11 +60,10 @@ def masks(first, second):
 
 @functools.lru_cache(maxsize=4)
 def surfaces(first, second):
-    from show import view
     parts, _, _, image = _split(first, second)
     out = {}
     for name, mask in parts.items():
-        made = view._tumor_surface(mask.astype(np.int16), image.affine, 1)
+        made = tumor_surface(mask.astype(np.int16), image.affine, 1)
         if made:
             out[name] = made
     return out
@@ -83,7 +98,7 @@ def _inverse(subject):
 
 def native(subject, first, second):
     # The three pieces in this subject's own space, not the atlas's.
-    out, reference = {}, modality(stripped_dir(subject), subject, "T1")
+    out, reference = {}, anatomy(stripped_dir(subject), subject)
     if not reference.exists():
         return {}
     back = _inverse(subject)

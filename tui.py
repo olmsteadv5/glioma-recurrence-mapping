@@ -326,7 +326,6 @@ class Console(App):
     BINDINGS = [
         ("q", "quit", "quit"), ("v", "view", "3d/slices"), ("s", "space", "native/mni"),
         ("p", "palette", "colors"), ("n", "background", "scan mri"),
-        ("e", "save", "save image"),
         Binding("a", "show_list('parcels')", "parcels", show=False),
         Binding("b", "show_list('functions')", "functions", show=False),
         Binding("c", "show_list('connectivity')", "connectivity", show=False),
@@ -1377,20 +1376,6 @@ class Console(App):
 
     def show_list(self, which):
         self.action_show_list(which)
-
-    def action_save(self):
-        # whatever the viewer is showing, at a size worth sending to someone
-        if not self.scene:
-            self.say("nothing loaded to save", "error")
-            return
-        stamp = time.strftime("%Y%m%d-%H%M%S")
-        if self.mode == "3d":
-            image, kind = self.scene.snapshot(), "3d"
-        else:
-            image, kind = self.slices.montage(), f"slices-{self.space}"
-        dest = results_dir("screenshots", "") / f"{self.subject[10:15]}_{kind}_{stamp}.png"
-        image.save(dest)
-        self.say(f"wrote {dest.name}, {image.size[0]}x{image.size[1]}")
 
     def on_key(self, event: events.Key):
         if self.mode == "slices" and self.slices:

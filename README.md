@@ -39,7 +39,7 @@ The number is the UPenn-GBM patient number. It runs fetch, strip, tissue,
 segment, register, align and map in that order. Align only does anything for a
 follow-up: it lines the same patient's pre-op scan up with it, rigidly, so
 the two can be compared without leaving the patient's own space. Use `--from segment` (or any stage) to
-redo a scan from that point, and `--no-view` to skip the browser window.
+redo a scan from that point.
 
 Each scan takes about 5 minutes on CPU, mostly segmentation. The first run is
 slower because it downloads a 30 GB Docker image. Segmentation uses the BraTS
@@ -47,8 +47,8 @@ slower because it downloads a 30 GB Docker image. Segmentation uses the BraTS
 
 The 82 segmentations in `outputs/scans/` are from the winning model (BraTS25_1), run
 on a Yale Bouchet GPU because this laptop has none; each scan's
-`segmentation.log` says how. The earlier second-place (CPU) segmentations and
-the results made from them are kept in `outputs/archive/brats25_2/`.
+`segmentation.log` says how. The earlier second-place (CPU) segmentations were
+not kept.
 
 ## The overlap results
 
@@ -65,20 +65,15 @@ standard brain the atlas lives in, which stretches volumes a little.
 ./analysis/lobes.py              # tumor_lobes.csv, the lobes each tumor sits in
 ./analysis/walkdown.py           # a target 0-40 mm along the tracts leaving the tumor, against plain margins and same-size balls
 ./analysis/walkdown_figures.py   # the walk-down figures: each target by walk distance, catch against brain spent, brain saved at equal coverage
-./analysis/tract_shell.py        # at the same distance from the tumor, does white matter on a tract recur more often (MNI)
-./analysis/streamline_sampling.py  # does the share of the tract atlas kept change the walk-down (MNI, slow)
 ```
-
-`analysis/COHORT.md` explains how the 41 patients were chosen and checked.
 
 ## Looking at a patient
 
 ```bash
 ./tui.py                  # terminal app, needs the kitty terminal
-python -m show.view 55    # 3D view in the browser
 ```
 
-`show/README.md` has the details.
+In the app, `v` switches between 3D and slices, and `s` between native and MNI.
 
 ## What's where
 
@@ -92,9 +87,8 @@ inputs/     raw downloads and the release's participants.tsv   (not in git)
 outputs/    everything made from them                           (not in git)
   scans/      one folder per scan: what the pipeline makes, plus cache/ for the viewer
   pairs/      one folder per patient: the rigid fit onto the follow-up, lobes, walkdown/
-  results/    native/ and mni/, each with tables/ and figures/; qc/ for hand checks
+  results/    native/ and mni/, each with tables/ and figures/
   atlas/      both atlases on MNI, shared by every scan
-  archive/    superseded runs, e.g. the second-place segmentations
   results.json  the pipeline's record of every scan
 ```
 

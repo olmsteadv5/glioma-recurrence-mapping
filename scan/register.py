@@ -6,7 +6,7 @@ import nibabel as nib
 import numpy as np
 from scipy import ndimage
 
-from paths import MNI, THREADS, modality, out_dir
+from paths import MNI, THREADS, anatomy, modality, out_dir
 
 DILATE_MM = 5
 
@@ -38,7 +38,7 @@ def _metric_mask(t1_path, seg_path, dest):
 def run(subject, stripped, seg_path):
     # Affine, then deformable with the lesion masked out.
     destination = out_dir(subject)
-    t1 = modality(stripped, subject, "T1")
+    t1 = anatomy(stripped, subject)
     log = destination / "registration.log"
     log.write_text("")
 

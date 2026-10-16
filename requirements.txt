@@ -6,9 +6,9 @@ scipy>=1.11.0
 scikit-fmm>=2025.6.23  # only archive/ uses it
 trimesh>=4.0.0
 pyvista>=0.44.0
-plotly==6.7.0  # matches the other YBA projects
 matplotlib>=3.8  # the analysis figures
 
 # terminal UI (tui.py), needs kitty for the graphics protocol
 textual>=8.0
 textual-image>=0.14
+scikit-learn>=1.9.1  # analysis/risk_model.py

@@ -13,9 +13,8 @@ RESULTS = OUTPUTS / "results.json"
 SCANS = OUTPUTS / "scans"
 # what needs both of a patient's scans: the rigid fit, lobes, the walk-down
 PAIRS = OUTPUTS / "pairs"
-# tables and figures, per space, plus the hand checks
+# tables and figures, per space
 ANALYSIS = OUTPUTS / "results"
-QC_DIR = ANALYSIS / "qc"
 # the release's own table of patients, an input like the scans
 PARTICIPANTS = INPUTS / "participants.tsv"
 
@@ -29,8 +28,26 @@ REGIONS = {"ET": (3,), "TC": (1, 3), "WT": (1, 2, 3), "RC": (4,)}
 THREADS = "12"
 
 
+# PREDICT-GBM patients take numbers by source, so they never meet UPenn's
+# 1-630 and every name keeps the same shape: ten letters, five digits, _11/_21
+COLLECTIONS = {5: "PREDGBM-T-", 6: "PREDGBM-L-", 7: "PREDGBM-R-"}
+PREDICT = INPUTS / "predict_gbm"
+RHUH = INPUTS / "rhuh_gbm"
+
+
 def subject_id(number, timepoint=1):
-    return f"UPENN-GBM-{number:05d}_{timepoint}1"
+    return f"{COLLECTIONS.get(number // 10000, 'UPENN-GBM-')}{number:05d}_{timepoint}1"
+
+
+def external(number):
+    return number // 10000 in COLLECTIONS
+
+
+def anatomy(directory, subject):
+    # the scan registration and SynthSeg read: T1, or T1-Gd where a collection
+    # ships no T1 (PREDICT-GBM has only T1-Gd and FLAIR)
+    t1 = modality(directory, subject, "T1")
+    return t1 if t1.exists() else modality(directory, subject, "T1GD")
 
 
 def raw_dir(subject):
@@ -89,8 +106,8 @@ STAGES = ("fetch", "strip", "tissue", "segment", "register", "align", "map")
 def stage_file(subject, stage):
     # The file whose existence means that stage has run.
     return {
-        "fetch": modality(raw_dir(subject), subject, "T1"),
-        "strip": modality(stripped_dir(subject), subject, "T1"),
+        "fetch": anatomy(raw_dir(subject), subject),
+        "strip": anatomy(stripped_dir(subject), subject),
         "tissue": out_dir(subject) / "tissue.nii.gz",
         "segment": out_dir(subject) / "seg.nii.gz",
         "register": out_dir(subject) / "seg_in_mni.nii.gz",

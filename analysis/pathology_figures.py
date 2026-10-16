@@ -26,7 +26,7 @@ BLUE, ORANGE, RED = "#2a78d6", "#eb6834", "#c8323c"
 PARTS = (("ET", "Enhancing"), ("WT", "Whole tumor"))
 # the dataset's six pathology scores, as the share of tissue with malignant features
 SCORES = ((6, "over 90%"), (5, "75-90%"), (4, "50-75%"), (3, "25-50%"), (2, "10-25%"), (1, "under 10%"))
-# why: Lee et al.'s central class, 95% of the recurrence inside the field [lee99]
+# why: Lee et al.'s central class, 95% of the recurrence inside the field
 LEVEL = 0.95
 MM = np.arange(0, 90.25, 0.25)
 VOLUME = np.arange(0, 601, 1.0)

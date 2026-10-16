@@ -1,4 +1,4 @@
-# White matter streamlines from the HCP-1065 tract atlas [yeh22], moved into our
+# White matter streamlines from the HCP-1065 tract atlas, moved into our
 # MNI brain. The atlas is 503,085 streamlines in 87 named bundles, tracked in
 # 1,065 young adults and averaged in the ICBM152 2009a template, which is a
 # slightly different brain from ours, so it is registered onto it first.
@@ -23,7 +23,7 @@ WARP_INVERSE = ATLAS_DIR / "icbm_to_mni_warp_inverse.nii.gz"
 GROUPS = ("association", "commissural", "projection", "cerebellum")
 # a fixed 1 in 10 of every bundle: 48,000 streamlines, each bundle as dense
 # relative to the others as in the full atlas, and the same ones every run.
-# analysis/streamline_sampling.py checks what the share does to the results
+# checked once against the full atlas: volumes run ~6% smaller, comparisons hold
 KEEP = 10
 SEED = 0
 # one step per voxel, so a line cannot straddle a voxel without landing in it

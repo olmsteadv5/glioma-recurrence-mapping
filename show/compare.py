@@ -1,4 +1,3 @@
-# Two timepoints of one patient, against each other in MNI, the frame they share.
 
 import functools
 
@@ -15,7 +14,6 @@ PARTS = ("both", "new", "gone")
 
 
 def tumor_surface(data, affine, value):
-    # Surface around one tissue class.
     binary = (data == value).astype(np.float32)
     if binary.sum() < 10:
         return None
@@ -43,7 +41,6 @@ def _split(first, second):
 
 @functools.lru_cache(maxsize=8)
 def against(first, second):
-    # first is the earlier scan, second the later one
     parts, a, b, image = _split(first, second)
     ml = ml_per_voxel(image)
     shared = float(parts["both"].sum())
@@ -71,7 +68,7 @@ def surfaces(first, second):
 
 @functools.lru_cache(maxsize=8)
 def _inverse(subject):
-    # the way back from MNI, computed once and kept
+    # decision: inverse warp made once and kept
     warp = out_dir(subject) / "warp.nii.gz"
     back = out_dir(subject) / "warp_inverse.nii.gz"
     if not back.exists():
@@ -81,7 +78,6 @@ def _inverse(subject):
 
 
 def native(subject, first, second):
-    # The three pieces in this subject's own space, not the atlas's.
     out, reference = {}, anatomy(stripped_dir(subject), subject)
     if not reference.exists():
         return {}

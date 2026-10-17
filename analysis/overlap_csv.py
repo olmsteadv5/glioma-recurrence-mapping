@@ -1,5 +1,4 @@
 #!/home/vilem/Projects/brats-upenn-gbm/.venv/bin/python
-# One row per patient: how much of the later tumor sits on, and near, the first.
 
 import csv
 import sys
@@ -25,7 +24,6 @@ def rows(review):
                 row += [round(x["first_ml"], 1), round(x["later_ml"], 1), round(100 * x["inside"], 1),
                         round(100 * x["in_4600"], 1), x["pattern"]]
             else:
-                # nothing of this part came back, so there is nothing to place
                 row += [round(x.get("first_ml", 0), 1), 0.0, "", "", "none at follow-up"]
         yield row
 

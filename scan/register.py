@@ -1,4 +1,4 @@
-# Register SRI24 -> MNI152 (the YBA reference space), carrying the tumor along.
+# explainer: SRI24 -> MNI152 (the YBA space), tumor carried along
 
 import subprocess
 
@@ -22,7 +22,7 @@ def _greedy(args, log):
 
 
 def _metric_mask(t1_path, seg_path, dest):
-    # Brain minus the tumor, so the lesion cannot drive the alignment.
+    # decision: mask out the tumor so the lesion can't drive the fit
     image = nib.load(t1_path)
     brain = np.asarray(image.dataobj) > 0
     lesion = np.asarray(nib.load(seg_path).dataobj) > 0
@@ -36,7 +36,6 @@ def _metric_mask(t1_path, seg_path, dest):
 
 
 def run(subject, stripped, seg_path):
-    # Affine, then deformable with the lesion masked out.
     destination = out_dir(subject)
     t1 = anatomy(stripped, subject)
     log = destination / "registration.log"
@@ -49,13 +48,11 @@ def run(subject, stripped, seg_path):
 
     kept = _metric_mask(t1, seg_path, mask)
 
-    # -mm crashes in affine mode; a global transform cannot warp locally anyway
+    # decision: no mask in the affine step, -mm crashes there and an affine can't warp locally anyway
     _greedy(["-d", 3, "-a", "-m", "NMI", "-i", MNI, t1, "-o", affine,
              "-ia-image-centers", "-n", "100x100x50", "-threads", THREADS], log)
 
-    # -mm only works with NCC. this is the stage mass effect actually breaks.
-    # -oinv gets the way back for free, which is what puts MNI work in this
-    # subject's own space later
+    # decision: -mm needs NCC. -oinv gives the way back to native for free
     _greedy(["-d", 3, "-m", "NCC", "2x2x2", "-i", MNI, t1, "-mm", mask,
              "-it", affine, "-o", warp, "-oinv", destination / "warp_inverse.nii.gz",
              "-n", "100x50x20", "-threads", THREADS], log)

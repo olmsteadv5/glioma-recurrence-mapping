@@ -1,5 +1,4 @@
 #!/home/vilem/Projects/brats-upenn-gbm/.venv/bin/python
-# Which lobes each patient's original and recurring tumors sit in, in both spaces.
 
 import csv
 import subprocess
@@ -18,15 +17,12 @@ from show.compare import _inverse
 from yale import atlas
 
 LOBE_MAP = ATLAS_DIR / "lobes_on_mni.nii.gz"
-# a lobe counts toward a tumor once it holds this share of it
 FLOOR = 0.05
 PARTS = (("WT", "whole"), ("ET", "enhancing"))
 
 
 def lobe(parcel):
-    # the nearest-parcel fill hands the deep gray and ventricles to the callosum
-    # parcels, so that class is everything central, not the callosum alone. The
-    # cerebellum ends up temporal or occipital, which this cohort barely reaches
+    # decision: deep gray and ventricles get lumped into the callosum class, so it means everything central
     name = "deep / callosal" if parcel["lobe"] == "Corpus callosum" else parcel["lobe"].lower()
     return f"{parcel['hemisphere']} {name}"
 
@@ -36,8 +32,7 @@ def names():
 
 
 def mni_lobes():
-    # the atlas only labels cortex, so every other voxel takes the lobe of the
-    # nearest parcel on its own side of the brain
+    # explainer: atlas only labels cortex, every other voxel takes the nearest parcel's lobe on its own side
     if LOBE_MAP.exists():
         return LOBE_MAP
     template = nib.load(MNI)
@@ -60,8 +55,6 @@ def mni_lobes():
 
 
 def native_lobes(later):
-    # the MNI lobe map pulled back into the follow-up scan, through that scan's
-    # own registration, the same way back show.compare takes for the tumor pieces
     dest = pair_dir(later) / "lobes.nii.gz"
     if not dest.exists():
         subprocess.run(["greedy", "-d", "3", "-rf", str(anatomy(stripped_dir(later), later)),

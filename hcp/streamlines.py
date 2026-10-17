@@ -1,7 +1,4 @@
-# White matter streamlines from the HCP-1065 tract atlas, moved into our
-# MNI brain. The atlas is 503,085 streamlines in 87 named bundles, tracked in
-# 1,065 young adults and averaged in the ICBM152 2009a template, which is a
-# slightly different brain from ours, so it is registered onto it first.
+# explainer: HCP-1065 streamlines, made in ICBM152 so they get registered onto our MNI brain first
 
 import functools
 import subprocess
@@ -19,14 +16,12 @@ AFFINE = ATLAS_DIR / "icbm_to_mni_affine.mat"
 WARP = ATLAS_DIR / "icbm_to_mni_warp.nii.gz"
 WARP_INVERSE = ATLAS_DIR / "icbm_to_mni_warp_inverse.nii.gz"
 
-# cranial nerves run outside the brain, where no plan grows
+# decision: skip cranial nerves, they run outside the brain where no plan grows
 GROUPS = ("association", "commissural", "projection", "cerebellum")
-# a fixed 1 in 10 of every bundle: 48,000 streamlines, each bundle as dense
-# relative to the others as in the full atlas, and the same ones every run.
-# checked once against the full atlas: volumes run ~6% smaller, comparisons hold
+# decision: fixed 1 in 10 of every bundle, same ones every run. checked against the full atlas, comparisons hold
 KEEP = 10
 SEED = 0
-# one step per voxel, so a line cannot straddle a voxel without landing in it
+# decision: one step per voxel so a line can't skip a voxel
 STEP_MM = 1.0
 
 
@@ -40,13 +35,11 @@ def _need(path):
 
 
 def template():
-    # the ICBM152 brain the atlas was made in, skull removed with its own mask
     if TEMPLATE.exists():
         return TEMPLATE
     from nibabel.processing import resample_from_to
 
     t1 = nib.load(_need(SOURCE / "ICBM152_adult.T1W.nii.gz"))
-    # the mask comes on a finer grid than the T1
     mask = resample_from_to(nib.load(_need(SOURCE / "ICBM152_adult.mask.nii.gz")), t1, order=0)
     brain = np.asarray(t1.dataobj) * (np.asarray(mask.dataobj) > 0)
     ATLAS_DIR.mkdir(parents=True, exist_ok=True)
@@ -55,8 +48,7 @@ def template():
 
 
 def register():
-    # ICBM onto our MNI brain: affine, then deformable, the same two steps every
-    # scan takes onto MNI
+    # decision: same affine + deformable steps every scan takes onto MNI
     if WARP_INVERSE.exists():
         return
     common = ["-d", "3", "-i", str(MNI), str(template()), "-n", "100x50x20", "-threads", THREADS]
@@ -67,7 +59,6 @@ def register():
 
 
 def _resample(line, step=STEP_MM):
-    # even steps along the path, so measuring and voxel lookups both walk it
     walked = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(line, axis=0), axis=1))])
     if walked[-1] < step:
         return line
@@ -76,9 +67,7 @@ def _resample(line, step=STEP_MM):
 
 
 def _to_mni(points, chunk=5_000_000):
-    # greedy moves points the opposite way to images, so the inverse chain takes
-    # them from ICBM to MNI. Checked: the ICBM brain's outline lands on ours,
-    # median 0 mm off, against 1.7 mm with no transform
+    # explainer: greedy moves points the opposite way to images, so points need the inverse chain
     work = ATLAS_DIR / "hcp1065_points"
     work.mkdir(parents=True, exist_ok=True)
     source, dest = work / "icbm.vtk", work / "mni.vtk"
@@ -102,10 +91,7 @@ def _to_mni(points, chunk=5_000_000):
 
 
 def everything():
-    # every streamline of every bundle used, resampled and in MNI. Big, so only
-    # the sampling check reads it; everything else reads the kept share
-    # read into memory once: indexing an npz file rereads the array from disk
-    # every time, and doing that per streamline fills the memory
+    # decision: load into memory once, indexing the npz rereads from disk every time
     if EVERY.exists():
         with np.load(EVERY) as held:
             return {k: held[k] for k in held.files}
@@ -113,7 +99,6 @@ def everything():
     lines, bundle, names = [], [], []
     for group in GROUPS:
         for path in sorted((SOURCE / "trk" / group).glob("*.trk.gz")):
-            # the TRK points are already in the template's RAS millimetres
             every = nib.streamlines.load(path).streamlines
             lines += [_resample(np.asarray(line, float)).astype(np.float32) for line in every]
             bundle += [len(names)] * len(every)
@@ -126,9 +111,7 @@ def everything():
 
 
 def pick(bundle, share, seed=SEED):
-    # the same share of every bundle. Each bundle is shuffled once per seed and
-    # the share taken from the front, so a smaller share is always inside a
-    # larger one and the two differ only in how many streamlines they keep
+    # explainer: each bundle shuffled once per seed and taken from the front, so a smaller share is always inside a bigger one
     rng = np.random.default_rng(seed)
     out = []
     for b in range(int(bundle.max()) + 1):
@@ -153,15 +136,14 @@ def _load():
 
 @functools.lru_cache(maxsize=1)
 def streamlines():
-    # every kept streamline, as an array of points in MNI millimetres. Shared,
-    # so callers must not write into them
+    # explainer: shared, don't write into these
     data = _load()
     return np.split(data["points"].astype(float), data["offsets"][1:-1])
 
 
 
 def crossing(lines, seg_img, labels, involved):
-    # Lines through the mass, and lines that miss it but clip an involved parcel.
+    # explainer: lines through the mass, plus lines that miss it but clip an involved parcel
     tumor = np.asarray(seg_img.dataobj) > 0
     shape = np.array(tumor.shape)
     inverse = np.linalg.inv(seg_img.affine)

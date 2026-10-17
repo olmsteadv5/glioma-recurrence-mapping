@@ -1,6 +1,4 @@
 #!/home/vilem/Projects/brats-upenn-gbm/.venv/bin/python
-# How much of the recurrence lands on the original tumor, against its size and
-# the pathology of the second resection, in both spaces.
 
 import sys
 from pathlib import Path
@@ -42,7 +40,7 @@ def collect(space):
 
 
 def boxes(ax, groups, color):
-    # boxes for the spread, every patient on top since some scores hold 3
+    # decision: every patient drawn over the boxes, some scores have very few patients
     keep = [i for i, g in enumerate(groups) if len(g)]
     ax.boxplot([groups[i] for i in keep], positions=[SCORES[i] for i in keep], widths=0.55,
                showfliers=False, patch_artist=True,
@@ -121,7 +119,6 @@ def margin_by_score(rows, path, absolute):
                 ax.set_ylim(0, 102)
                 ax.yaxis.set_major_formatter(PercentFormatter(100, decimals=0))
         if absolute:
-            # the row shares one scale, so it has to reach the largest patient in it
             top = max(r[code]["ml"] for r in rows if r[code])
             axes[i, 0].set_ylim(0, 1.04 * top)
     label = "Recurrence inside the margin (mL)" if absolute else "Recurrence inside the margin (% of volume)"

@@ -1,4 +1,3 @@
-# Offscreen rendering for the terminal UI: 3D scenes and slice planes, PIL images out.
 
 import os
 import subprocess
@@ -22,9 +21,7 @@ pv.OFF_SCREEN = True
 
 
 def _panel(base=(40, 40, 40)):
-    # kitty draws cell backgrounds at background_opacity but graphics fully
-    # opaque, so an image painted #282828 comes out lighter than the panels
-    # around it. paint it the color those panels actually composite to.
+    # explainer: kitty draws cell backgrounds at background_opacity but images opaque, so paint what the panels composite to
     where = os.environ.get("KITTY_CONFIG_DIRECTORY", os.path.expanduser("~/.config/kitty"))
     opacity = 1.0
     try:
@@ -33,35 +30,28 @@ def _panel(base=(40, 40, 40)):
                 opacity = min(max(float(line.split()[1]), 0.0), 1.0)
     except (OSError, ValueError, IndexError):
         pass
-    # the compositor behind the window is black, so the blend is a plain scale
+    # explainer: compositor behind is black, so it's a plain scale
     return tuple(round(c * opacity) for c in base)
 
 
 PANEL = _panel()
 BG = "#%02x%02x%02x" % PANEL
 SHELL = (168, 153, 132)
-# tracts through the pre-op tumor, the follow-up's, and both; both is the cream
-# the compare layers use for tissue in both scans
 TRACTS = {"1": (198, 124, 72), "2": (211, 134, 155), "both": (235, 219, 178)}
 TISSUE = {1: (242, 193, 78), 2: (63, 167, 214), 3: (228, 87, 46), 4: (142, 125, 190),
-          0: (214, 200, 175)}  # 0 is the three of them as one shape
+          0: (214, 200, 175)}
 CROSS = (250, 189, 47)
 WHOLE = "WT"
 COMPARE = {"both": (235, 219, 178), "new": (251, 73, 52), "gone": (142, 192, 124)}
-# the targets from analysis/walkdown.py, one per NRG phase: the walk-down, and the
-# NRG 2 cm volume it is scored against, exactly as the tables score it
 WALK = {"46": (131, 165, 152), "60": (215, 153, 33)}
 NRG = {"46": (177, 98, 134), "60": (126, 108, 204)}
 WALK_PHASES = tuple(WALK)
 TARGETS = {"walk": WALK, "nrg": NRG}
-# the layer key each kind of target goes by
 TARGET_KEY = {"walk": "W:", "nrg": "T:"}
 
 
 def target_file(subject, kind, phase, space):
-    # where a target sits for this scan in this space. Both scans of a pair show
-    # the one target, which is built from the pre-op tumor. None if
-    # analysis/walkdown.py has not been run for this patient
+    # explainer: both scans show the one pre-op target. None if walkdown.py hasn't run
     mni = walk_dir(subject) / f"{kind}_{phase}_mni.nii.gz"
     if not mni.exists():
         return None
@@ -69,11 +59,10 @@ def target_file(subject, kind, phase, space):
         return mni
     if subject.endswith("_21"):
         here = walk_dir(subject) / f"{kind}_{phase}.nii.gz"
-        # walkdown.py writes the follow-up's copy itself
         return here if here.exists() else None
     here = cache_dir(subject) / f"{kind}_{phase}.nii.gz"
     if not here.exists() or here.stat().st_mtime < mni.stat().st_mtime:
-        # the pre-op scan's own grid, through its own way back from MNI
+        # explainer: back to the pre-op grid through its own inverse
         subprocess.run(["greedy", "-d", "3", "-rf", str(anatomy(stripped_dir(subject), subject)),
                         "-ri", "LABEL", "0.2vox", "-rm", str(mni), str(here),
                         "-r", str(out_dir(subject) / "affine.mat") + ",-1", str(_inverse(subject)),
@@ -82,7 +71,6 @@ def target_file(subject, kind, phase, space):
 
 
 def walk_ends(subject):
-    # where each walk stopped, both phases, in MNI mm
     out = {}
     for phase in WALK_PHASES:
         path = walk_dir(subject) / f"walk_{phase}_ends.npy"
@@ -93,7 +81,7 @@ _hex = lambda t: "#%02x%02x%02x" % tuple(t)
 
 
 def fit(image, size, background=PANEL):
-    # Always hand back exactly the requested box, so the widget never shows dead space.
+    # decision: always return the exact box asked for, so the widget never shows dead space
     w, h = max(size[0], 8), max(size[1], 8)
     scale = min(w / image.width, h / image.height)
     scaled = image.resize((max(int(image.width * scale), 1), max(int(image.height * scale), 1)),
@@ -104,11 +92,9 @@ def fit(image, size, background=PANEL):
 
 
 class Scene:
-    # One plotter per subject; between frames only the camera moves.
+    # decision: one plotter per subject, only the camera moves between frames
 
     def __init__(self, subject, size=(700, 540), later=None):
-        # subject is the scan plans are made from; later, when given, is the same
-        # patient's follow-up, drawn alongside it
         self.subject, self.later = subject, later
         self.plotter = pv.Plotter(off_screen=True, window_size=list(size))
         self.plotter.set_background(BG)
@@ -116,7 +102,7 @@ class Scene:
 
         self.actors["shell"] = self._mesh(*atlas.brain(), _hex(SHELL), 0.15)
 
-        # the follow-up sees through, so the pre-op tumor shows under it
+        # decision: follow-up is see-through so the pre-op tumor shows under it
         self.segs = {}
         for scan, who in (("1", subject), ("2", later)):
             if who is None:
@@ -133,13 +119,10 @@ class Scene:
 
         self.plotter.show(auto_close=False)
 
-        # nothing is watching this window, so never wait on its vertical blank.
-        # pyvista's own screenshot reads the front buffer, which only updates on
-        # the swap, so read the back buffer instead: 17 ms a frame down to 3.
+        # decision: nobody watches this window, so skip vsync and read the back buffer, much faster
         window = self.plotter.ren_win
         window.SetSwapBuffers(0)
-        # multisampling off: VTK only resolves the back buffer to match the
-        # front one when it is off, and the edges look the same at this size
+        # explainer: VTK only resolves the back buffer when multisampling is off
         window.SetMultiSamples(0)
         self.grab = vtkWindowToImageFilter()
         self.grab.SetInput(window)
@@ -150,8 +133,7 @@ class Scene:
 
     @staticmethod
     def _tumor(subject, image):
-        # contouring the four labels is half a second, and it only changes
-        # when the registration does
+        # decision: contouring is slow, cache until the registration changes
         cache = cache_dir(subject) / "tumor_surfaces.npz"
         if cache.exists() and cache.stat().st_mtime >= os.path.getmtime(image.get_filename()):
             held = np.load(cache)
@@ -159,7 +141,6 @@ class Scene:
                              held[f"v{v}"], held[f"f{v}"]) for v in held["values"]}
         data = np.asarray(image.dataobj).astype(np.int16)
         out, saved = {}, {"values": []}
-        # value 0 is all three classes contoured as one closed surface
         for value, name in list(LABELS.items()) + [(0, WHOLE)]:
             source = (data > 0).astype(np.int16) if value == 0 else data
             surface = tumor_surface(source, image.affine, 1 if value == 0 else value)
@@ -177,8 +158,7 @@ class Scene:
         return self.plotter.add_mesh(poly, color=color, opacity=opacity, smooth_shading=True)
 
     def _through(self):
-        # for each scan and tissue class, the tracts with a point in it, so the
-        # tracts drawn can follow whatever tumor is on without a fresh search
+        # decision: precompute which tracts hit each scan and class, so toggling tissue doesn't redo the search
         lines = streamlines.streamlines()
         stacked = np.vstack(lines)
         owner = np.repeat(np.arange(len(lines)), [len(l) for l in lines])
@@ -194,9 +174,7 @@ class Scene:
         return out
 
     def show_crossing(self, scans):
-        # the streamlines through each chosen scan's whole tumor, whatever tissue
-        # is on screen. With both scans chosen, a streamline through both is
-        # drawn once, in its own color, so the two never fight over one place
+        # decision: a streamline through both scans is drawn once in its own color
         scans = frozenset(scans)
         if scans == self.tract_keys:
             return
@@ -233,7 +211,7 @@ class Scene:
             self.plotter.window_size = size
 
     def rotate(self, azimuth, elevation):
-        # the camera.azimuth property does not rotate; these VTK methods do
+        # explainer: camera.azimuth doesn't actually rotate, these VTK calls do
         self.plotter.camera.Azimuth(azimuth)
         self.plotter.camera.Elevation(elevation)
         self.plotter.camera.OrthogonalizeViewUp()
@@ -252,8 +230,7 @@ class Scene:
             actor.prop.opacity = float(value)
 
     def ensure_target(self, kind, phase):
-        # built the first time it is asked for, and cached on the mask's own date
-        # so a rebuilt target never shows the old shape
+        # decision: cached on the mask's mtime so a rebuilt target never shows the old shape
         key = TARGET_KEY[kind] + phase
         if key in self.actors:
             return
@@ -274,7 +251,6 @@ class Scene:
         self.actors[key] = self._mesh(points, faces, _hex(TARGETS[kind][phase]), 0.22)
 
     def ensure_ends(self, phase):
-        # one dot where each walk of this phase stopped, in its walk-down's color
         key = "W:ends" + phase
         if key in self.actors:
             return
@@ -285,7 +261,6 @@ class Scene:
                                                  point_size=4, render_points_as_spheres=True)
 
     def ensure_compare(self, first, second):
-        # the two timepoints against each other, built the first time it is asked for
         if "C:both" in self.actors:
             return
         from show import compare
@@ -303,28 +278,22 @@ class Scene:
 
 
 class Slices:
-    # Orthogonal planes. Volumes are reoriented to RAS so plane logic is uniform.
+    # decision: reorient to RAS so the plane logic is the same everywhere
 
     PLANES = ("axial", "coronal", "sagittal")
     MARKS = {"axial": ("R", "L", "A", "P"), "coronal": ("R", "L", "S", "I"),
              "sagittal": ("A", "P", "S", "I")}
 
     def __init__(self, subject, space="native", later=None, background="1"):
-        # subject is the scan plans come from; later, the same patient's follow-up.
-        # With both, patient space is the follow-up's grid, where the pre-op scan
-        # already sits after its rigid fit, so the two tumors overlay directly
+        # explainer: with both scans, native means the follow-up's grid, the pre-op scan is already rigidly on it
         self.subject, self.later, self.background = subject, later, background
         self.geom = {}
-        # per scan: the classes left out, and the fill used when the whole tumor
-        # stands in for its parts
         self.hidden, self.whole = {"1": set(), "2": set(LABELS)}, {"1": None, "2": None}
-        # (kind, phase) pairs shown, and the masks loaded for them
         self.targets, self.show_targets = {}, set()
         self.compare, self.pair = {}, None
         self.load(space)
 
     def _grid(self):
-        # whose grid the native planes use
         return self.later if self.later and self.space == "native" else self.subject
 
     def _seg_path(self, scan):
@@ -336,9 +305,7 @@ class Slices:
         return out_dir(who) / "seg.nii.gz"
 
     def _first_on_later(self, name):
-        # a pre-op sequence moved onto the follow-up's grid by the same rigid fit
-        # the tumor took, made once and kept
-        # align already made the T1; the others are only ever wanted here
+        # explainer: pre-op sequence moved onto the follow-up grid by the same rigid fit as the tumor
         dest = (pair_dir(self.later) / "first_t1_in_later.nii.gz" if name == "T1"
                 else pair_cache(self.later) / f"first_{name}_in_later.nii.gz")
         source = modality(stripped_dir(self.subject), self.subject, name)
@@ -353,7 +320,7 @@ class Slices:
     def load(self, space):
         self.space = space
         self.volumes, self.stripped = {}, True
-        self.compare = {}   # a different grid needs different ones
+        self.compare = {}
         self.targets = {}
         shown = self.later if self.background == "2" and self.later else self.subject
         if space == "native":
@@ -363,7 +330,7 @@ class Slices:
                     if p.exists():
                         self.volumes[m] = self._canon(nib.load(p))
             else:
-                # fall back to the raw scans, so a subject mid-pipeline still draws
+                # decision: fall back to raw scans so a half-processed subject still draws
                 d = stripped_dir(shown)
                 if not modality(d, shown, "T1").exists():
                     d, self.stripped = raw_dir(shown), False
@@ -396,7 +363,7 @@ class Slices:
         return self.volumes[self.modality][1]
 
     def _slab(self, which):
-        # radiological: patient left on the viewer's right. RAS x increases right, so flip it.
+        # decision: radiological view, patient left on the viewer's right, so flip RAS x
         x, y, z = self.cursor
         planes = []
         later = self.segs.get("2", np.zeros_like(self.seg))
@@ -410,7 +377,6 @@ class Slices:
         return planes
 
     def _marker(self, which):
-        # where the crosshair sits inside the slab, in slab pixel coordinates
         x, y, z = self.cursor
         nx, ny, nz = self.shape
         if which == "axial":
@@ -420,13 +386,11 @@ class Slices:
         return ny - 1 - y, nz - 1 - z
 
     def canon_mask(self, mask):
-        # someone else's array on this space's grid, reoriented the way these are
         name = "seg_in_mni.nii.gz" if self.space == "mni" else "seg.nii.gz"
         reference = nib.load(out_dir(self._grid()) / name)
         return self._canon(nib.Nifti1Image(mask.astype(np.uint8), reference.affine))[1] > 0
 
     def _target(self, kind, phase):
-        # a target on this space's grid, loaded the first time it is shown
         if (kind, phase) not in self.targets:
             source = target_file(self._grid(), kind, phase, self.space)
             self.targets[kind, phase] = (self._canon(nib.load(source))[1] > 0) if source else None
@@ -438,7 +402,6 @@ class Slices:
         rgb = np.repeat((np.clip(gray / max(top, 1) * 255, 0, 255)
                          ).astype(np.uint8)[:, :, None], 3, axis=2)
 
-        # the timepoint comparison, which only mni can line up
         for name, mask in self.compare.items():
             if which == "axial":
                 slab = mask[::-1, ::-1, self.cursor[2]].T
@@ -450,7 +413,7 @@ class Slices:
                 rgb[slab] = (rgb[slab] * 0.45
                              + np.array(COMPARE[name]) * 0.55).astype(np.uint8)
 
-        # every target as an outline, since a fill would hide what it was grown from
+        # decision: targets as outlines, a fill hides what they grew from
         for kind, phase in sorted(self.show_targets):
             mask = self._target(kind, phase)
             if mask is None:
@@ -465,7 +428,6 @@ class Slices:
             if ring.any():
                 rgb[ring] = np.array(TARGETS[kind][phase], dtype=np.uint8)
 
-        # the pre-op tumor as fills: the whole one under its parts
         if self.whole["1"] is not None:
             every = lab > 0
             if every.any():
@@ -479,7 +441,7 @@ class Slices:
             if m.any():
                 rgb[m] = (rgb[m] * 0.55 + np.array(color) * 0.45).astype(np.uint8)
 
-        # the follow-up as outlines in the same colors, so both can be read at once
+        # decision: follow-up as outlines so both scans read at once
         if self.whole["2"] is not None:
             ring = outline(lab2 > 0)
             rgb[ring] = np.array(self.whole["2"], dtype=np.uint8)
@@ -500,14 +462,13 @@ class Slices:
         w, h = max(size[0], 8), max(size[1], 8)
         scale = min(w / im.width, h / im.height)
         out = fit(im, (w, h))
-        # the click mapping has to know about the letterbox offsets
+        # explainer: click mapping needs the letterbox offsets
         self.geom[which] = (scale, im.width, im.height,
                             (w - int(im.width * scale)) // 2, (h - int(im.height * scale)) // 2,
                             w, h)
         return out
 
     def click(self, which, fx, fy):
-        # fx, fy are fractions of the whole pane, letterbox included
         if which not in self.geom:
             return
         scale, iw, ih, ox, oy, bw, bh = self.geom[which]
@@ -527,8 +488,7 @@ class Slices:
             self.cursor[2] = max(0, min(nz - 1, nz - 1 - py))
 
     def readout(self):
-        # only MNI has an anatomical origin; the SRI24 affine is a corner offset,
-        # so reporting it as coordinates would be misleading
+        # decision: coords only in MNI, SRI24's affine is a corner offset not a real origin
         x, y, z = self.cursor
         label = int(self.seg[x, y, z])
         later = int(self.segs["2"][x, y, z]) if "2" in self.segs else None

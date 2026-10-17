@@ -1,8 +1,4 @@
 #!/home/vilem/Projects/brats-upenn-gbm/.venv/bin/python
-# The walk-down figures for sending: what each target costs and catches at every
-# walk distance from 0 to 40 mm, next to a plain margin grown the same distance
-# and a ball of exactly the walk-down's size, and the brain the walk-down saves
-# once it catches as much as the NRG 2 cm volume. Run walkdown.py first.
 
 import csv
 import sys
@@ -20,7 +16,7 @@ from analysis import measure
 from analysis.capture_curves import FAINT, INK, save, style
 from paths import results_dir
 
-# drawn in this order, so the walk-down sits on top of the ball it matches in size
+# decision: draw order puts the walk-down on top of its same-size ball
 TARGETS = (("iso", "Plain margin, same distance", "#8f6aa8"),
            ("ball", "Ball of the walk-down's size", "#eb6834"),
            ("walk", "Walk-down", "#2a78d6"))
@@ -30,12 +26,10 @@ MEASURES = (("beyond_gtv_ml", "Brain irradiated beyond the tumor (mL)"),
             ("ET_pct", "Enhancing recurrence caught (%)"),
             ("WT_pct", "Whole-tumor recurrence caught (%)"))
 LABELED = (0, 10, 20, 30, 40)
-# the NRG margin, marked on every distance axis
 NRG_MM = 20
 
 
 def load(space):
-    # per phase and target, one array per measure: rows are patients, columns mm
     with open(results_dir(space) / "walkdown_curves.csv") as fh:
         rows = list(csv.DictReader(fh))
     distances = sorted({int(r["walk_mm"]) for r in rows})
@@ -56,13 +50,11 @@ def summary(space):
 
 
 def reaches(curve, distances, share=95):
-    # the first distance at which a median curve gets to share, or None
     hit = np.flatnonzero(curve >= share)
     return int(distances[hit[0]]) if hit.size else None
 
 
 def end_labels(ax, ends, unit):
-    # the value of each curve at 20 mm, nudged apart so none sit on another
     span = np.diff(ax.get_ylim())[0]
     placed = []
     for value, color in sorted(ends):
@@ -74,7 +66,6 @@ def end_labels(ax, ends, unit):
 
 
 def by_distance(by, distances, path):
-    # one row per phase, each measure against walk distance, median and middle half
     fig, axes = plt.subplots(2, 3, figsize=(14, 8.8))
     for i, (phase, title) in enumerate(PHASES):
         for j, (key, label) in enumerate(MEASURES):
@@ -86,7 +77,6 @@ def by_distance(by, distances, path):
                 ax.fill_between(distances, low, high, color=color, alpha=0.12, lw=0)
                 same = kind == "walk" and key == "beyond_gtv_ml"
                 ax.plot(distances, mid, color=color, lw=2.2, label=name, ls=(0, (5, 3)) if same else "-")
-                # the walk-down and its ball are one size by construction, so one label
                 if not same:
                     ends.append((mid[-1], color))
                 if key == "ET_pct":
@@ -118,15 +108,13 @@ def by_distance(by, distances, path):
 
 
 def against_volume(by, distances, rows, path):
-    # the fair comparison: catch against brain spent, and walk-down minus the
-    # same-size ball at each distance
+    # decision: the fair comparison is catch against brain spent
     fig, axes = plt.subplots(2, 3, figsize=(14, 8.8))
     for i, (phase, title) in enumerate(PHASES):
         for j, (key, label) in enumerate(MEASURES[1:]):
             ax = axes[i, j]
             for kind in ("iso", "ball", "walk"):
-                # the ball is placed at the walk-down's own volume, which it equals
-                # patient by patient, so blue against orange is a like-for-like gap
+                # decision: ball matches the walk-down's volume per patient, so the gap is like-for-like
                 size = "iso" if kind == "iso" else "walk"
                 spend = np.nanmedian(by[(phase, size)]["beyond_gtv_ml"], axis=0)
                 caught = np.nanmedian(by[(phase, kind)][key], axis=0)
@@ -176,8 +164,6 @@ def against_volume(by, distances, rows, path):
 
 
 def equal_coverage(space, path):
-    # per patient: how much brain the walk-down saves once it catches as much as
-    # the NRG 2 cm volume, so nothing is traded and no weighting is needed
     with open(results_dir(space) / "walkdown_matched.csv") as fh:
         rows = list(csv.DictReader(fh))
     fig, axes = plt.subplots(1, 4, figsize=(14, 5.4), sharey=True)

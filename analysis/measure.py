@@ -1,6 +1,4 @@
-# Where the recurrence sits relative to the first tumor, in either space a pair can
-# be compared in: MNI, where the atlas lives, or the patient's own follow-up scan,
-# which the pre-op scan reaches by a rigid fit that leaves every volume as scanned.
+# explainer: where the recurrence sits relative to the first tumor, in MNI or the follow-up's own space
 
 import csv
 import functools
@@ -12,8 +10,7 @@ from scipy import ndimage
 from geometry import MARGIN_MM, distance, ml_per_voxel, template_brain
 from paths import PARTICIPANTS, REGIONS, SCANS, out_dir, pair_dir
 
-# why: central >95%, in-field 80-95%, marginal 20-80%, distant <20% of the
-#      recurrence inside the high-dose volume
+# decision: Lee pattern classes, by share of the recurrence inside the high-dose volume
 PATTERNS = ((0.95, "central"), (0.80, "in-field"), (0.20, "marginal"), (0.0, "distant"))
 
 
@@ -40,8 +37,7 @@ def _seg(subject, space):
 
 @functools.lru_cache(maxsize=4)
 def _brain(first, space):
-    # where a plan can reach: the template brain, or the follow-up scan's own.
-    # shared and cached, so callers must not write into it
+    # explainer: cached and shared, don't write into it
     if space == "mni":
         return template_brain()
     return np.asarray(nib.load(out_dir(later_of(first)) / "brainmask.nii.gz").dataobj) > 0
@@ -53,7 +49,6 @@ def _in(data, region):
 
 @functools.lru_cache(maxsize=16)
 def _far(subject, region, space):
-    # millimeters from the nearest voxel of the first tumor's region
     data, image = _seg(subject, space)
     seed = _in(data, region)
     return distance(seed if seed.any() else data > 0, image)
@@ -69,7 +64,6 @@ def pattern(share):
 
 
 def overlap(first, later, region, space):
-    # the same compartment at both timepoints, and how far the later one reaches
     a, _ = _seg(first, space)
     b, image = _seg(later, space)
     ml = ml_per_voxel(image)
@@ -81,9 +75,7 @@ def overlap(first, later, region, space):
 
     shared = float((was & now).sum())
     brain = _brain(first, space)
-    # no dose is available, so the two NRG volumes stand in for it: 2 cm from the
-    # whole tumor is the 46 Gy one, 2 cm from the core the 60 Gy one, and the
-    # literature's pattern classes are defined against the 60 Gy volume
+    # decision: no dose data, so the NRG volumes stand in for dose. pattern classes use the 60 Gy one
     whole = _far(first, "WT", space)[now]
     core = _far(first, "TC", space)[now]
     inside = brain[now]
@@ -95,17 +87,13 @@ def overlap(first, later, region, space):
                 "in_4600": round(float(((whole <= MARGIN_MM) & inside).mean()), 4),
                 "in_6000": round(high, 4),
                 "pattern": pattern(high),
-                # the margin grown from the whole first tumor that would have
-                # covered 95% of this, and all of it
                 "margin_95_mm": round(float(np.percentile(whole, 95)), 1),
                 "margin_max_mm": round(float(whole.max()), 1)})
     return out
 
 
 def reach(first, later, region, space):
-    # how far each voxel of the later tumor sits from the whole first tumor,
-    # sorted. Outside the brain counts as never reached, since a plan stops
-    # at the brain edge. None when that part is absent at the later scan
+    # decision: outside the brain counts as never reached, plans stop at the brain edge
     b, _ = _seg(later, space)
     now = _in(b, region)
     if not now.any():
@@ -115,9 +103,7 @@ def reach(first, later, region, space):
 
 @functools.lru_cache(maxsize=1)
 def _participants():
-    # the dataset's own record for each scan. Its interval beats one rebuilt from
-    # TCIA study dates, which is wrong for 00130: that patient has an extra study
-    # 11 days before the one the release curated as its follow-up
+    # decision: interval from the dataset's table, TCIA study dates can pick the wrong study
     path = PARTICIPANTS
     if not path.exists():
         return {}
@@ -135,8 +121,6 @@ def interval(first):
 
 
 def pathology(first):
-    # the second resection's share of tissue with malignant features,
-    # 1 = under 10% up to 6 = over 90%
     return _followup(first, "PsP_TP_score")
 
 
@@ -145,7 +129,6 @@ def voxel_ml(first, space):
 
 
 def margin_ml(first, mm, space):
-    # brain added by growing the whole first tumor mm millimeters, in mL
     _, image = _seg(first, space)
     far = np.sort(_far(first, "WT", space)[_brain(first, space)])
     grown = np.searchsorted(far, mm, side="right") - np.searchsorted(far, 0, side="right")
@@ -153,9 +136,7 @@ def margin_ml(first, mm, space):
 
 
 def zones(first, later, region, space):
-    # mL of the later tumor inside the whole first tumor, within the margin of it,
-    # past the margin but joined to tumor within it, and in separate lesions lying
-    # wholly past it. None when that part is absent at the later scan
+    # explainer: four buckets: inside the first tumor, within the margin, past it but connected, separate lesions past it
     b, image = _seg(later, space)
     now = _in(b, region)
     if not now.any():
@@ -172,9 +153,7 @@ def zones(first, later, region, space):
 
 
 def pairs(space, tissue=False):
-    # every patient with both timepoints segmented and in that space. Anything
-    # that builds a target needs the first scan's tissue map too, and asking for
-    # one that is missing quietly runs SynthSeg, so those callers pass tissue=True
+    # explainer: pass tissue=True when building a target, a missing tissue map would quietly run SynthSeg
     have = {d.name for d in SCANS.iterdir() if _seg_file(d.name, space).exists()
             and (not tissue or not d.name.endswith("_11")
                  or (d / "tissue_in_mni.nii.gz").exists())}
@@ -193,7 +172,7 @@ def review(pairs, space, regions=("WT", "TC", "ET")):
 
 
 def forget():
-    # each cached distance map is a whole volume, so drop them between patients
+    # explainer: each cached map is a whole volume, clear between patients or memory fills up
     _seg.cache_clear()
     _far.cache_clear()
     _brain.cache_clear()

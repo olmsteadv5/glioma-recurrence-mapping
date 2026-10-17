@@ -1,9 +1,5 @@
 #!/home/vilem/Projects/brats-upenn-gbm/.venv/bin/python
-# A target that follows white matter instead of growing evenly: walk d mm along
-# every atlas tract that leaves the tumor, then wrap one convex hull around the
-# tumor and where the walks ended. Built for every d from 0 to 40 mm, for both
-# NRG phases, in MNI where the tracts are, and pulled into each follow-up scan
-# for patient space.
+# explainer: walk d mm along every tract leaving the tumor, then hull the tumor plus where the walks ended
 
 import csv
 import os
@@ -11,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# set before numpy loads, or each worker starts its own pool of threads
+# decision: must be set before numpy loads or every worker starts its own thread pool
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 
@@ -27,33 +23,25 @@ from paths import THREADS, anatomy, out_dir, pair_dir, results_dir, stripped_dir
 from show.compare import _inverse
 from hcp import streamlines
 
-# why: the NRG margin, 2 cm along the tract instead of in every direction
+# decision: same 2 cm as NRG, measured along the tract instead of in every direction
 WALK_MM = MARGIN_MM
-# twice that, so the walk-down can be followed past where it catches as much as
-# the 2 cm volume does, and the brain it saves read off at equal coverage
+# decision: run to double so we can see past where it matches the 2 cm volume
 LONGEST_MM = 2 * WALK_MM
-# every whole mm up to it, so nothing between two samples goes unseen
 DISTANCES = tuple(range(LONGEST_MM + 1))
-# a voxel no walk ever reaches
 NEVER = 255
-# a tract that leaves and comes back within this is running along the edge,
-# not leaving. A judgement call, about three voxels; not from any paper
+# decision: a tract that leaves and comes back this soon is skimming the edge, not leaving. judgement call
 SKIM_MM = 3
-# why: the falx is a barrier unless the tumor already crosses; less than
-# this across the midline is taken as registration slop, not crossing. Ours
+# decision: falx is a barrier unless the tumor already crosses, less than this across is registration slop. our number
 CROSSED_ML = 0.1
 
-# voxel-face pairs tested at once when filling a hull
 BATCH = 20_000_000
 
-# the two NRG phases: the 46 Gy volume grows from the whole abnormality, the
-# 60 Gy boost from enhancement and cavity, which on a pre-op scan is the core
+# decision: NRG phases: 46 Gy from the whole abnormality, 60 Gy from enhancement + cavity (the core, pre-op)
 PHASES = (("46", "WT"), ("60", "TC"))
 
 
 class Lines:
-    # every streamline point's voxel on the MNI grid, found once: every patient's
-    # MNI masks share that grid, so a mask lookup is then a single index
+    # explainer: every patient shares the MNI grid, so each point's voxel is looked up once
     def __init__(self, image, shape):
         self.lines = streamlines.streamlines()
         stacked = np.vstack(self.lines)
@@ -69,10 +57,7 @@ class Lines:
 
 
 def _walk(line, inside, allowed, skim=SKIM_MM):
-    # one path for every place this line leaves the tumor, in both directions
-    # along it, as its points and the distance walked to each. A path stops at
-    # the longest walk, at the line's end, at the edge of where a plan may go, or where it
-    # comes back into the tumor
+    # explainer: a path stops at the max walk, the line's end, the allowed edge, or back inside the tumor
     paths = []
     for points, gtv, ok in ((line, inside, allowed), (line[::-1], inside[::-1], allowed[::-1])):
         step = np.linalg.norm(np.diff(points, axis=0), axis=1)
@@ -90,7 +75,6 @@ def _walk(line, inside, allowed, skim=SKIM_MM):
 
 
 def _ends(paths, mm):
-    # where each path stands after mm of walking, or where it stopped if sooner
     out = []
     for points, walked in paths:
         at = min(mm, walked[-1])
@@ -99,9 +83,7 @@ def _ends(paths, mm):
 
 
 def _hull(points, image, shape, candidates=None):
-    # every voxel whose center is inside the convex hull of the points. With
-    # candidates, a boolean volume, only those voxels are tested, which is all a
-    # caller growing a target needs: the rest are settled already
+    # explainer: only candidate voxels get tested, the rest are already settled
     hull = ConvexHull(points)
     inverse = np.linalg.inv(image.affine)
     corners = nib.affines.apply_affine(inverse, points[hull.vertices])
@@ -114,8 +96,7 @@ def _hull(points, image, shape, candidates=None):
         window = tuple(slice(a, b) for a, b in zip(low, high))
         box = np.argwhere(candidates[window]) + low
     out = np.zeros(shape, bool)
-    # each voxel is tested against every face at once, so the batch shrinks as
-    # the hull gains faces, keeping that test near 160 MB
+    # explainer: the batch shrinks as the hull gains faces, keeps memory flat
     batch = max(BATCH // len(hull.equations), 1)
     for start in range(0, len(box), batch):
         chunk = box[start:start + batch]
@@ -126,16 +107,12 @@ def _hull(points, image, shape, candidates=None):
 
 
 def allowed_mni(first):
-    # Where a plan may go, and from what distance. The tumor's own hemisphere is
-    # open; across the midline a voxel may join a target grown d mm only if it is
-    # within d of the part of that phase's tumor already across, so nothing grows
-    # over from the home side. The gate holds that distance, 0 at home and NEVER
-    # where nothing may go, for each phase; every target reads the same gate.
+    # decision: across the midline a voxel joins at d only if it's within d of tumor already across
     data, image = measure._seg(first, "mni")
     brain = template_brain()
     x = nib.affines.apply_affine(image.affine, np.indices(data.shape).reshape(3, -1).T)[:, 0].reshape(data.shape)
     tumor = data > 0
-    # the midline plane itself is home on either side; across means strictly past it
+    # decision: voxels on the plane count as home, across means strictly past it
     mostly_left = (tumor & (x < 0)).sum() >= (tumor & (x > 0)).sum()
     home = x <= 0 if mostly_left else x >= 0
     ml = ml_per_voxel(image)
@@ -155,9 +132,7 @@ def allowed_mni(first):
 
 
 def reach_mni(first, lines, skim=SKIM_MM):
-    # for both phases, the shortest walk at which each voxel joins the target.
-    # The target at d is every voxel reached by a walk of d or less, so it can
-    # only grow with d; the tumor itself is reached at 0
+    # explainer: stores the shortest walk at which each voxel joins, so target(d) is reach <= d and only grows
     data, image = measure._seg(first, "mni")
     allowed, gates, crossed = allowed_mni(first)
     may = lines.lookup(allowed)
@@ -175,12 +150,10 @@ def reach_mni(first, lines, skim=SKIM_MM):
         first_in = np.full(gtv.shape, NEVER, np.uint8)
         first_in[gtv] = 0
         for mm in DISTANCES:
-            # only voxels the plan may reach at this distance and no shorter
-            # walk has reached
             open_ = allowed & (gates[phase] <= mm) & (first_in == NEVER)
             first_in[_hull(np.vstack([edge, _ends(paths, mm)]), image, gtv.shape, open_)] = mm
         if phase == "60":
-            # the boost stays inside the 46 Gy volume at the same walk
+            # decision: boost stays inside the 46 Gy volume, NRG cone-down
             first_in = np.where(gtv, 0, np.maximum(first_in, reach["46"])).astype(np.uint8)
         reach[phase] = first_in
         info[phase] = {"tracts": used, "exits": len(paths)}
@@ -189,7 +162,6 @@ def reach_mni(first, lines, skim=SKIM_MM):
 
 
 def build_mni(first, lines):
-    # the reach maps, the 20 mm targets the viewer draws, and their end points
     reach, allowed, image, info = reach_mni(first, lines)
     here = walk_dir(first)
     for phase, _ in PHASES:
@@ -204,8 +176,7 @@ def build_mni(first, lines):
 
 
 def to_native(first, later, name):
-    # MNI -> the pre-op scan -> the follow-up scan, the same road the pre-op tumor
-    # takes into patient space, so the two line up
+    # decision: same route the pre-op tumor takes into patient space, so they line up
     source = walk_dir(first) / f"{name}_mni.nii.gz"
     dest = walk_dir(later) / f"{name}.nii.gz"
     subprocess.run(["greedy", "-d", "3", "-rf", str(anatomy(stripped_dir(later), later)),
@@ -217,10 +188,7 @@ def to_native(first, later, name):
 
 
 def score(first, later, space, reach=None, allowed=None):
-    # every target at every walk distance, in one space: the walk-down, the plain
-    # margin grown the same distance, and a ball of exactly the walk-down's size.
-    # reach and allowed, when given, are MNI maps already in memory. All three
-    # obey the same midline gate
+    # explainer: walk-down, plain margin at the same d, and a ball the walk-down's size, all under the same midline gate
     if space == "mni":
         load = lambda name: np.asarray(nib.load(walk_dir(first) / f"{name}_mni.nii.gz").dataobj)
     else:
@@ -239,10 +207,9 @@ def score(first, later, space, reach=None, allowed=None):
         if not gtv.any():
             gtv = measure.mask(first, "WT", space)
         first_in = np.where(gtv, 0, np.where(allowed, reach[phase], NEVER))
-        # across the midline a voxel is only as near as the tumor already there
         far = np.where(allowed | gtv, np.maximum(distance(gtv, image), gates[phase]), np.inf)
         order = np.argsort(far, axis=None, kind="stable")
-        # cumulative catches along the ball's order, so any size is one lookup
+        # explainer: cumulative catches in ball order, so any ball size is one lookup
         along = {code: np.cumsum(now[code].ravel()[order]) for code in now}
         for mm in DISTANCES:
             walk = first_in <= mm
@@ -250,8 +217,7 @@ def score(first, later, space, reach=None, allowed=None):
             if phase == "60":
                 iso &= iso_46[mm]
             if mm == WALK_MM:
-                # the NRG volume these tables score, kept so the viewer draws this
-                # one; in patient space the walk-down too, exactly as scored
+                # decision: save the exact NRG volume we scored so the viewer draws that one
                 saved = {"nrg": iso} if space == "mni" else {"nrg": iso, "walk": walk}
                 for kind, mask in saved.items():
                     name = f"{kind}_{phase}_mni.nii.gz" if space == "mni" else f"{kind}_{phase}.nii.gz"
@@ -277,7 +243,6 @@ def score(first, later, space, reach=None, allowed=None):
 
 
 def write(space):
-    # every distance into walkdown_curves.csv, and 20 mm alone into walkdown.csv
     rows = []
     for first, later in measure.pairs(space):
         rows += score(first, later, space)
@@ -305,7 +270,6 @@ def _num(value):
 
 
 def summarize(space):
-    # medians per target, and the walk against the other two, patient by patient
     from scipy.stats import wilcoxon
     by = _rows(space)
     path = results_dir(space) / "walkdown_summary.csv"
@@ -337,8 +301,6 @@ def summarize(space):
 
 
 def summarize_curves(space):
-    # at every distance: the median of each target, and how far the walk-down
-    # beats a ball of its own size, with a bootstrap 95% interval on that median
     with open(results_dir(space) / "walkdown_curves.csv") as fh:
         rows = list(csv.DictReader(fh))
     cell = {}
@@ -375,9 +337,7 @@ def summarize_curves(space):
 
 
 def matched(space):
-    # the walk-down at equal coverage: for each patient, the shortest walk that
-    # catches at least as much as the NRG 2 cm volume, and the brain that saves.
-    # No weighting of misses against brain is needed, since none are traded
+    # decision: compare at equal coverage, nothing is traded so misses and brain never need weighting
     with open(results_dir(space) / "walkdown_curves.csv") as fh:
         rows = list(csv.DictReader(fh))
     cell = {(r["patient"], r["phase"], int(r["walk_mm"]), r["target"]): r for r in rows}
@@ -408,7 +368,6 @@ def matched(space):
 
 
 def _build(first):
-    # one patient's MNI maps; a process of its own so patients run side by side
     data, image = measure._seg(first, "mni")
     return first, build_mni(first, Lines(image, data.shape))
 
@@ -416,7 +375,7 @@ def _build(first):
 def main():
     from concurrent.futures import ProcessPoolExecutor
     firsts = [first for first, _ in measure.pairs("mni")]
-    # one thread each, so the workers share the cores instead of fighting over them
+    # decision: one thread per worker so they share the cores instead of fighting
     with ProcessPoolExecutor(8) as pool:
         for first, info in pool.map(_build, firsts):
             print(first[-8:-3], info, flush=True)

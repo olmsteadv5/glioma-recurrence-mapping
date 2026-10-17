@@ -1,4 +1,3 @@
-# Tumor volumes, and Dice against reference labels where they exist.
 
 import nibabel as nib
 import numpy as np
@@ -6,7 +5,7 @@ import numpy as np
 from geometry import MARGIN_MM, grow, ml_per_voxel
 from paths import LABELS, REFERENCE_SEG, REGIONS, out_dir
 
-# old BraTS used 4 for enhancing, 2025 uses 3
+# explainer: old BraTS used 4 for enhancing, 2025 uses 3
 LEGACY = {0: 0, 1: 1, 2: 2, 4: 3}
 
 
@@ -26,7 +25,6 @@ def _dice(a, b):
 
 
 def run(subject, seg_path):
-    # Volumes in mL, and Dice if this subject has reference labels.
     image = nib.load(seg_path)
     data = np.asarray(image.dataobj).astype(np.int16)
     voxel_ml = ml_per_voxel(image)
@@ -39,8 +37,7 @@ def run(subject, seg_path):
                        for name, values in REGIONS.items()},
     }
 
-    # the planning margin. SynthStrip's own mask, not T1 > 0, which drops the
-    # dark CSF inside the brain and loses several millilitres of it
+    # decision: SynthStrip's mask not T1 > 0, which drops dark CSF inside the brain
     brain_path = out_dir(subject) / "brainmask.nii.gz"
     if brain_path.exists():
         brain = np.asarray(nib.load(brain_path).dataobj) > 0

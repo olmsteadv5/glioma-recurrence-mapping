@@ -1,5 +1,5 @@
 #!/home/vilem/Projects/brats-upenn-gbm/.venv/bin/python
-# Terminal UI for the segmentation pipeline. Needs kitty for the graphics protocol.
+# explainer: needs kitty for the graphics protocol
 
 import csv
 import json
@@ -22,14 +22,11 @@ from paths import (ATLAS_INPUT, LABELS, MODALITIES, REGIONS, RESULTS, results_di
                    STAGES, out_dir, raw_dir, stage_file, stripped_dir)
 
 
-# gruvbox dark, the same values btop reads out of gruvbox_dark_v2.theme
 FG, DIM, FAINT = "#ebdbb2", "#a89984", "#7c6f64"
 WARN, BAD, GONE = "#fabd2f", "#fb4934", "#504945"
 SHELL_OPACITY = 0.15
 
-# the renderer's colors as hex for the text panels; 0 is the whole tumor
 TISSUE = {LABELS.get(k, "WT"): "#%02x%02x%02x" % rgb for k, rgb in render.TISSUE.items()}
-# each scan's tumor as one shape, with its parts under it
 SCAN_PARTS = (("WT", "tumor", 0), ("SNFH", "FLAIR hyperintense", 1), ("ET", "enhancing", 1),
               ("NETC", "non-enhancing core", 1), ("RC", "cavity", 1))
 SCANS = {"1": "scan 1 \u00b7 pre-op", "2": "scan 2 \u00b7 follow-up"}
@@ -39,8 +36,7 @@ def scan_rows(scan):
     return [(f"{scan}:{name}", label, TISSUE[name], deep) for name, label, deep in SCAN_PARTS]
 
 
-# a key starting -- is a heading. Plans are always built from scan 1, the scan a
-# plan is drawn on, whichever scan is in the background
+# decision: plans always come from scan 1, whatever scan is in the background
 LAYERS = [("shell", "brain surface", "#a89984", 0),
           ("--1", SCANS["1"], "", 0),
           *scan_rows("1"),
@@ -60,19 +56,14 @@ LAYERS = [("shell", "brain surface", "#a89984", 0),
           ("tracts:1", "through pre-op tumor", "#%02x%02x%02x" % render.TRACTS["1"], 0),
           ("tracts:2", "through follow-up tumor", "#%02x%02x%02x" % render.TRACTS["2"], 0)]
 KEYS = {k for k, *_ in LAYERS if not k.startswith("--")}
-# on the first ever start; after that the viewer remembers
 SHOWN = {"shell", "1:WT", "2:WT", "tracts:1", "tracts:2"}
-# what the viewer remembers between patients and between runs; a personal
-# setting, so it lives with the user's config rather than with the results
+# decision: personal setting, so it lives in ~/.config not with the results
 STATE = Path.home() / ".config" / "brats-tui" / "state.json"
-# WT, TC and ET are unions of the tissue classes, so they are deliberately left
-# uncolored: any class color on them reads as "this row is that tissue"
+# decision: WT/TC/ET are unions, left uncolored so they don't read as one tissue
 ATLAS_FILES = [("YBA_696.nii", "volume", "696"),
                ("hcp1065/trk", "tracts", "HCP-1065")]
 VIEWERS = ("3d", "slices")
 def target_ml(subject, phase, target="walk"):
-    # a target's patient-space volume, as analysis/walkdown.py scored it: the
-    # walk-down ("walk") or the NRG 2 cm volume it is compared with ("iso")
     path = results_dir("native") / "walkdown.csv"
     if not path.exists():
         return ""
@@ -94,7 +85,6 @@ NAMED = {"esc", "enter"}
 
 
 def keyed(text):
-    # the key carries the brightness, the words behind it stay quiet
     parts = []
     for part in text.split(" · "):
         key, _, rest = part.partition(" ")
@@ -106,7 +96,7 @@ def keyed(text):
 
 
 def ago(when):
-    # "4m", "2d", coarse on purpose, this is freshness not a timestamp
+    # decision: coarse on purpose, freshness not a timestamp
     gap = max(time.time() - when, 0)
     for size, mark in ((86400, "d"), (3600, "h"), (60, "m")):
         if gap >= size:
@@ -119,13 +109,11 @@ def spell(seconds):
 
 
 def row(left, right, width=30):
-    # One list line with the right column flush to the edge.
     room = width - len(right)
     return f"{left[:room]:<{room}}{right}"
 
 
 class Canvas(ImageWidget, Renderable=Renderable):
-    # 3D view: drag to rotate, scroll to zoom.
 
     dragged = False
 
@@ -154,7 +142,6 @@ class Canvas(ImageWidget, Renderable=Renderable):
 
 
 class Pane(ImageWidget, Renderable=Renderable):
-    # One slice plane: click or drag to move the crosshair.
 
     def __init__(self, which, **kwargs):
         super().__init__(**kwargs)
@@ -182,7 +169,6 @@ class Pane(ImageWidget, Renderable=Renderable):
 
 
 class Rows(Static):
-    # Click-addressable list; the app decides what a row click means.
 
     def __init__(self, handler=None, **kwargs):
         super().__init__("", **kwargs)
@@ -194,11 +180,11 @@ class Rows(Static):
 
 
 class Bordered(VerticalScroll):
-    # A strip is drawn into the bottom border, so its clicks land here.
+    # explainer: the strip is drawn into the bottom border, so its clicks land here
     MARGIN, SPACING = 3, 2
 
     def on_click(self, event):
-        # clicks arrive in outer coordinates, so the bottom border is the last row
+        # explainer: outer coords, the bottom border is the last row
         if event.y == self.outer_size.height - 1:
             self.app.click_strip(self.id, event.x)
 
@@ -254,8 +240,6 @@ class Console(App):
         self.strip_spans = {}
         self._panel_width = self._layers_width = 0
 
-    # ---------------------------------------------------------------- compose
-
     def compose(self) -> ComposeResult:
         with Horizontal(id="top"):
             with VerticalScroll(id="inputs", classes="box"):
@@ -287,27 +271,22 @@ class Console(App):
             self.say("nothing segmented yet, run ./main.py 36 in a terminal", "warning")
 
     def say(self, text, severity="information"):
-        # the pipeline runs in a terminal of its own now, so only a few things
-        # are ever worth saying here, and a toast is enough for them
+        # decision: pipeline runs in its own terminal, a toast is enough
         self.notify(text, severity=severity)
 
     def schedule_draw(self):
-        # resizing fires a burst of events; only redraw once it settles
+        # decision: resizing fires a burst, redraw once it settles
         if self._timer is not None:
             self._timer.stop()
         self._timer = self.set_timer(0.06, self.draw)
 
-    # ---------------------------------------------------------------- subject
-
     def scans_of(self, subject):
-        # the patient's pre-op scan, and the follow-up when there is one
         group = [s for s in self.subjects if s[10:15] == subject[10:15]]
         return group[0], (group[1] if len(group) > 1 else None)
 
     def load_subject(self, subject):
-        # any scan of a patient loads the patient: both scans, side by side
         first, later = self.scans_of(subject)
-        # results.json can outlive the files it describes, and that is not fatal
+        # decision: results.json can outlive its files, warn instead of crashing
         for who in (first, later):
             missing = [name for name in ("seg.nii.gz", "seg_in_mni.nii.gz")
                        if who and not (out_dir(who) / name).exists()]
@@ -319,7 +298,6 @@ class Console(App):
         self.scene = render.Scene(first, later=later)
         self.scene.set_opacity("shell", SHELL_OPACITY)
         self.slices = render.Slices(first, self.space, later=later, background=self.background)
-        # the layers kept on from the last patient are built for this one too
         self.ensure_layers(KEYS - self.hidden_layers)
         self.apply_layers()
         self.refresh_inputs()
@@ -329,7 +307,7 @@ class Console(App):
         return True
 
     def ensure_layers(self, keys):
-        # the layers that are only built when first asked for
+        # decision: lazy layers, built when first switched on
         for kind, prefix in render.TARGET_KEY.items():
             for phase in render.WALK_PHASES:
                 if prefix + phase in keys:
@@ -341,19 +319,18 @@ class Console(App):
             self.scene.ensure_compare(self.subject, self.later)
 
     def restore_state(self):
-        # the last session's layers and views, so nothing resets between runs
         try:
             saved = json.loads(STATE.read_text())
         except (OSError, ValueError):
             return
         shown = set(saved.get("shown", []))
-        # the tracts were one layer before they were split by scan
+        # explainer: old state files, tracts used to be one layer
         if "tracts" in shown:
             shown |= {"tracts:1", "tracts:2"}
-        # and the walk endpoints were one layer before they were split by phase
+        # explainer: same for walk endpoints
         if "W:ends" in shown:
             shown |= {"W:ends46", "W:ends60"}
-        # and the NRG volume was one layer, the 46 Gy one, before the boost joined it
+        # explainer: and T:margin was the 46 Gy volume before the boost existed
         if "T:margin" in shown:
             shown.add("T:46")
         shown &= KEYS
@@ -375,7 +352,7 @@ class Console(App):
             pass
 
     def panel_width(self):
-        # The panel loses a column whenever its scrollbar appears.
+        # explainer: loses a column when the scrollbar shows up
         width = self.query_one("#stats", Rows).size.width
         return width if width > 12 else 30
 
@@ -391,7 +368,6 @@ class Console(App):
             self.subject_rows[n] = scans[0]
             sizes = [self.results[s]["regions_ml"]["WT"] for s in scans]
             right = " \u2192 ".join(f"{v:.0f}" for v in sizes) + " mL"
-            # days between the scans, from the release's own table
             days = measure.interval(scans[0]) if len(scans) > 1 else None
             left = ("\u203a " if here else "  ") + patient + (f" {days:>4}d" if days else "")
             out.append(f"[{FG if here else DIM}]{row(left, right, w)}[/]")
@@ -408,7 +384,6 @@ class Console(App):
             for name in ("WT", "TC", "ET", "RC"):
                 if not r.get(name):
                     continue
-                # each token names exactly one class, so it can carry that color
                 parts = [LABELS[v] for v in REGIONS[name]]
                 made = "" if len(parts) == 1 else " " + "+".join(parts)
                 painted = "" if len(parts) == 1 else " " + f"[{FAINT}]+[/]".join(
@@ -456,7 +431,6 @@ class Console(App):
         self.query_one("#stats", Rows).update("\n".join(out))
 
     def stage_checks(self, subject, d, run):
-        # name, what it says, and what is wrong if anything
         times, stamps, out = run.get("times", {}), {}, []
         for stage in STAGES:
             if stage == "align" and subject.endswith("_11"):
@@ -477,7 +451,6 @@ class Console(App):
         return out
 
     def gap(self, subject, stage, d):
-        # the specific thing missing, which is what the red sub row says
         if stage == "fetch":
             short = [m for m in MODALITIES
                      if not (raw_dir(subject) / f"{subject}_{m}.nii.gz").exists()]
@@ -499,8 +472,6 @@ class Console(App):
         chosen = self.subject_rows.get(row_index)
         if chosen and chosen != self.subject:
             self.load_subject(chosen)
-
-    # ----------------------------------------------------------------- layers
 
     def scan_subject(self, scan):
         return self.subject if scan == "1" else self.later
@@ -556,7 +527,7 @@ class Console(App):
         self.query_one("#layers", Rows).update("\n".join(out))
 
     def apply_layers(self):
-        # the one place that turns the checkbox states into what is drawn
+        # decision: only place checkbox state turns into what's drawn
         if not self.scene:
             return
         tracts = {k for k, *_ in LAYERS if k.startswith("tracts:")}
@@ -565,7 +536,7 @@ class Console(App):
             if key.startswith("--"):
                 continue
             on = key not in self.hidden_layers
-            # the combined shape stands in for the parts when none of them is on
+            # explainer: whole shape stands in when none of its parts are on
             if key.endswith(":WT"):
                 on = on and not self.split(key[0])
             if key in self.scene.actors:
@@ -573,7 +544,6 @@ class Console(App):
         self.sync_overlay()
 
     def split(self, scan):
-        # that scan's parts that are on and have something to draw
         return [f"{scan}:{name}" for name, _, deep in SCAN_PARTS
                 if deep and f"{scan}:{name}" not in self.hidden_layers
                 and f"{scan}:{name}" in self.scene.actors]
@@ -588,7 +558,6 @@ class Console(App):
         tumor = {f"{t}:{name}" for t in ("1", "2") for name, *_ in SCAN_PARTS}
         change = {k for k, *_ in LAYERS if k.startswith("C:")}
         if scan and key.endswith(":WT"):
-            # the parent carries its parts with it
             family = {f"{scan}:{name}" for name, *_ in SCAN_PARTS}
             self.hidden_layers = (self.hidden_layers - family if key in self.hidden_layers
                                   else self.hidden_layers | family)
@@ -596,8 +565,7 @@ class Console(App):
             self.hidden_layers ^= {key}
             if scan and key not in self.hidden_layers:
                 self.hidden_layers.discard(f"{scan}:WT")
-        # the comparison redraws the same tissue, so it and the tumors take turns.
-        # nothing else is a rival: plans, tracts and the shell sit over any of it
+        # decision: comparison redraws the same tissue, so it and the tumors take turns
         if key not in self.hidden_layers:
             if key in tumor:
                 self.hidden_layers |= change
@@ -610,7 +578,6 @@ class Console(App):
         self.save_state()
 
     def sync_overlay(self):
-        # the same checkbox hides a class in the slices as in the 3d
         if not self.slices:
             return
         for scan in ("1", "2"):
@@ -624,14 +591,12 @@ class Console(App):
         wanted = [k[2:] for k, *_ in LAYERS
                   if k.startswith("C:") and k not in self.hidden_layers]
         if self.later and wanted:
-            # in mni the pieces are already on the grid; in native they go onto the follow-up's
+            # explainer: mni pieces are already on the grid, native ones go onto the follow-up's
             source = (compare.masks(self.subject, self.later) if self.space == "mni"
                       else compare.native(self.later, self.subject, self.later))
             for name in wanted:
                 if name in source:
                     self.slices.compare[name] = self.slices.canon_mask(source[name])
-
-    # ----------------------------------------------------------------- render
 
     def draw(self):
         if not self.scene:
@@ -682,7 +647,6 @@ class Console(App):
             if not ready:
                 lines.append(f"[{WARN}]{row('', note, w)}[/]")
 
-        # every sequence at this voxel, which is the comparison you actually make
         lines += ["", f"[{FAINT}]signal[/]"]
         for name, value in r["signal"].items():
             style = FG if name == r["modality"] else FAINT
@@ -691,7 +655,6 @@ class Console(App):
         self.query_one("#readout", Static).update("\n".join(lines))
 
     def strip(self, which, entries, chosen, absent=()):
-        # key bright when it is the one you are on, grayed when it is not offered
         out, x, spans = [], Bordered.MARGIN, []
         for key, name in entries:
             if out:
@@ -713,14 +676,13 @@ class Console(App):
                 return
 
     def slice_hints(self):
-        # each key names what it gives you, not what you are looking at
+        # decision: keys say what you get, not where you are
         core = f"v 3d · s {'native' if self.space == 'mni' else 'mni'}"
         if self.later:
             core += f" · n scan {'1' if self.slices.background == '2' else '2'} mri"
         return [core]
 
     def band(self, widget, left, taken, choices):
-        # one border line, a label at each end, the line itself drawn between
         room = widget.outer_size.width - 6 - taken
         for text in choices:
             if len(text) + 5 <= room:
@@ -733,8 +695,7 @@ class Console(App):
             self.draw()
 
     def queue_view(self, azimuth=0.0, elevation=0.0, zoom=1.0):
-        # the terminal sends a move event per pixel; rendering one frame each
-        # puts the view seconds behind the mouse, so collect and draw on a clock
+        # decision: one move event per pixel, rendering each lags badly, so batch on a clock
         if self.mode != "3d" or not self.scene:
             return
         self.pending[0] += azimuth
@@ -756,7 +717,6 @@ class Console(App):
         self.draw()
 
     def settle_view(self):
-        # one full resolution frame once the camera stops
         if self._spin is None:
             return
         self._spin.stop()
@@ -770,12 +730,10 @@ class Console(App):
             self.slices.click(which, fx, fy)
             self.draw()
 
-    # ---------------------------------------------------------------- actions
-
     VIEW_ACTIONS = ("view", "space", "background")
 
     def check_action(self, action, parameters):
-        # gray a key out rather than let it look like it did nothing
+        # decision: gray the key out instead of letting it do nothing
         if action in self.VIEW_ACTIONS and not self.scene:
             return None
         if action == "space":
@@ -805,7 +763,6 @@ class Console(App):
             self.draw()
 
     def action_background(self):
-        # which scan's MRI the slices are drawn on; the tumors stay where they are
         self.background = "2" if self.background == "1" else "1"
         self.slices.background = self.background
         self.slices.load(self.space)

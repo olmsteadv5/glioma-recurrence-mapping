@@ -1,4 +1,3 @@
-# Run the BraTS adult-glioma segmenter in Docker.
 
 import shutil
 import subprocess
@@ -8,7 +7,7 @@ from brats.constants import AdultGliomaPreAndPostTreatmentAlgorithms as Algorith
 
 from paths import modality, out_dir
 
-# BraTS25_1 won the challenge but needs CUDA; BraTS25_2 is the best CPU one
+# decision: BraTS25_1 won but needs CUDA, BraTS25_2 is the best CPU one
 GPU_ALGORITHM = Algorithms.BraTS25_1
 CPU_ALGORITHM = Algorithms.BraTS25_2
 
@@ -23,7 +22,7 @@ def cuda_available():
 
 
 def stop():
-    # brats detaches its container, so killing python leaves inference running
+    # explainer: brats detaches its container, killing python leaves inference running
     listed = subprocess.run(["docker", "ps", "--format", "{{.ID}} {{.Image}}"],
                             capture_output=True, text=True)
     running = [line.split()[0] for line in listed.stdout.splitlines()
@@ -34,7 +33,6 @@ def stop():
 
 
 def run(subject, stripped):
-    # About 3 minutes per subject on CPU.
     gpu = cuda_available()
     algorithm = GPU_ALGORITHM if gpu else CPU_ALGORITHM
     if not gpu:

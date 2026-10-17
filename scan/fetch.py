@@ -1,4 +1,3 @@
-# Download UPenn-GBM structural scans from the public TCIA mirror.
 
 import urllib.request
 
@@ -6,7 +5,6 @@ from paths import MODALITIES, REFERENCE_SEG, modality, raw_dir, subject_id
 
 BASE = "https://github.com/data-nih/tcia/releases/download/upenn-gbm"
 
-# mirror asset suffix -> our modality name
 ASSETS = {"T1w.nii.gz": "T1", "ce-gd_T1w.nii.gz": "T1GD",
           "T2w.nii.gz": "T2", "FLAIR.nii.gz": "FLAIR"}
 
@@ -25,13 +23,12 @@ def _download(url, dest):
 
 
 def get(number, timepoint=1):
-    # Four modalities, plus reference labels if this subject has them.
     subject = subject_id(number, timepoint)
     prefix = f"sub-{number:03d}" if timepoint == 1 else f"sub-{number:03d}_2"
 
     for suffix, name in ASSETS.items():
         dest = modality(raw_dir(subject), subject, name)
-        # skip what we already have, no point hammering the mirror
+        # decision: skip what we have, don't hammer the mirror
         if not dest.exists():
             _download(f"{BASE}/{prefix}_{suffix}", dest)
 
@@ -40,7 +37,7 @@ def get(number, timepoint=1):
         try:
             _download(f"{BASE}/sub-{number:03d}_seg.nii.gz", reference)
         except Exception:
-            pass  # only 147 of 630 subjects have labels
+            pass  # explainer: most subjects have no labels
 
     missing = [n for n in MODALITIES
                if not modality(raw_dir(subject), subject, n).exists()]

@@ -1,6 +1,5 @@
 #!/home/vilem/Projects/brats-upenn-gbm/.venv/bin/python
-# How much of the later tumor a uniform margin around the first would catch,
-# out to the farthest recurrence any plan could reach.
+# explainer: share of the recurrence a uniform margin catches at each mm, out to the farthest reachable voxel
 
 import csv
 import sys
@@ -20,12 +19,10 @@ from analysis import measure
 from geometry import MARGIN_MM
 from paths import results_dir
 
-# code, name in the csv, name on the figure, color
 PARTS = (("ET", "enhancing", "Enhancing tumor", "#2a78d6"),
          ("TC", "core", "Tumor core", "#1baf7a"),
          ("WT", "whole", "Whole tumor", "#eb6834"))
-# why: Lee et al.'s class boundaries, the share of the recurrence inside the
-#      high-dose region: central 95% or more, in-field 80, marginal 20
+# decision: Lee pattern cutoffs as the reference lines, central 95, in-field 80, marginal 20
 LEE = (0.95, 0.80, 0.20)
 
 INK, SOFT, FAINT, RULE, PATIENT = "#1f2328", "#5c636b", "#8a9199", "#e3e6e9", "#c3c8cd"
@@ -46,7 +43,6 @@ def collect(space):
 
 
 def far_end(reach):
-    # the axis runs to the next 10 mm past the farthest voxel any plan can reach
     last = max(float(far[np.isfinite(far)].max()) for part in reach.values() for far in part.values())
     return int(np.ceil(last / 10) * 10)
 
@@ -85,9 +81,7 @@ def figure(reach, top, path):
         ax.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
         ax.yaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
         ax.axvline(MARGIN_MM, color=SOFT, lw=0.9, ls=(0, (4, 3)), zorder=1)
-        # the Lee cutoffs stand in for gridlines; the right edge says where the
-        # median reaches each one
-        # found on a finer grid than the drawing, so the label is not the grid's step
+        # explainer: crossings found on a finer grid than the plot, so labels aren't stuck to the step
         exact = np.arange(0, top + 0.05, 0.05)
         middle = np.median([capture(far, exact) for far in reach[code].values()], axis=0)
         for share in LEE:
@@ -98,7 +92,6 @@ def figure(reach, top, path):
             ax.text(top * 1.012, share, f"{100 * share:.0f}% at {mm:g} mm", color=SOFT,
                     fontsize=8.5, va="center")
         ax.text(MARGIN_MM + 0.6, 0.05, f"{MARGIN_MM} mm", color=SOFT, fontsize=8.5)
-        # the median patient's capture where the median crosses the 20 mm line
         at = float(np.median([capture(far, MARGIN_MM) for far in reach[code].values()]))
         ax.plot(MARGIN_MM, at, "o", ms=5.5, color=color, mec="white", mew=1.2, zorder=5)
         ax.text(MARGIN_MM + 0.8, at - 0.1, f"{100 * at:.1f}%".replace(".0%", "%"), color=INK,
@@ -117,7 +110,7 @@ def figure(reach, top, path):
 def save(fig, path):
     fig.savefig(path, facecolor="white", transparent=False)
     plt.close(fig)
-    # no alpha channel at all, since some viewers paint a checkerboard for one
+    # decision: no alpha channel, some viewers draw a checkerboard behind it
     Image.open(path).convert("RGB").save(path)
 
 

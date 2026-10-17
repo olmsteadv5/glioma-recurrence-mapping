@@ -1,4 +1,3 @@
-# Growing and outlining masks. Shared, because two packages were doing it twice.
 
 import functools
 
@@ -8,7 +7,7 @@ from scipy import ndimage
 
 from paths import MNI
 
-# why: RTOG grows the phase-1 volume 2 cm from the whole abnormality
+# decision: RTOG/NRG phase 1 is the whole abnormality plus 2 cm
 MARGIN_MM = 20
 
 
@@ -17,24 +16,22 @@ def ml_per_voxel(image):
 
 
 def distance(mask, image):
-    # millimeters from every voxel to the nearest voxel of the mask
     return ndimage.distance_transform_edt(~mask, sampling=image.header.get_zooms()[:3])
 
 
 @functools.lru_cache(maxsize=1)
 def template_brain():
-    # shared and cached, so callers must not write into it
+    # explainer: cached and shared, don't write into it
     return np.asarray(nib.load(MNI).dataobj) > 0
 
 
 def grow(seg_image, brain, mm=MARGIN_MM):
-    # the planning margin, clipped to the brain because a fifth of a raw
-    # expansion lands in skull and air
+    # decision: clip to the brain, a raw expansion spills into skull and air
     return (distance(np.asarray(seg_image.dataobj) != 0, seg_image) <= mm) & brain
 
 
 def outline(mask):
-    # the boundary only, so a 2 cm envelope does not swamp the slice
+    # decision: outline only, a filled 2 cm margin swamps the slice
     inner = mask.copy()
     inner[1:] &= mask[:-1]
     inner[:-1] &= mask[1:]

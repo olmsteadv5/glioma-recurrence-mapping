@@ -1,7 +1,5 @@
 #!/home/vilem/Projects/brats-upenn-gbm/.venv/bin/python
-# Where the part of the later tumor a 2 cm margin misses ends up, and how much
-# brain the margin spends compared with a plan that knew where the tumor would
-# return, both split by the pathology of the second resection.
+# explainer: where tumor past the 2 cm margin goes, and what the margin costs vs a perfect plan, by pathology score
 
 import sys
 from pathlib import Path
@@ -24,9 +22,7 @@ from paths import results_dir
 
 BLUE, ORANGE, RED = "#2a78d6", "#eb6834", "#c8323c"
 PARTS = (("ET", "Enhancing"), ("WT", "Whole tumor"))
-# the dataset's six pathology scores, as the share of tissue with malignant features
 SCORES = ((6, "over 90%"), (5, "75-90%"), (4, "50-75%"), (3, "25-50%"), (2, "10-25%"), (1, "under 10%"))
-# why: Lee et al.'s central class, 95% of the recurrence inside the field
 LEVEL = 0.95
 MM = np.arange(0, 90.25, 0.25)
 VOLUME = np.arange(0, 601, 1.0)
@@ -103,7 +99,7 @@ def curves(rows, code):
             continue
         far = r[code]["far"]
         uniform.append(np.interp(VOLUME, r["extra"], capture(far, MM)))
-        # the best plan adds only brain the tumor came back in, nearest first
+        # explainer: the perfect plan adds only brain the tumor came back in, nearest first
         inside, outside = int((far == 0).sum()), int((np.isfinite(far) & (far > 0)).sum())
         best.append((inside + np.minimum(VOLUME / r["ml"], outside)) / far.size)
         points.append((r["extra_20"], capture(far, MARGIN_MM)))

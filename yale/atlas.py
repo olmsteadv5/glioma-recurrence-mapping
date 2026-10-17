@@ -1,4 +1,3 @@
-# Yale Brain Atlas: official parcel volume, metadata and overlap.
 
 import csv
 import functools
@@ -21,7 +20,6 @@ RESAMPLED = ATLAS_DIR / "yba_on_mni.nii.gz"
 
 
 def ensure(name):
-    # Download an official atlas file if we don't have it yet.
     path = ATLAS_INPUT / name
     if path.exists():
         return path
@@ -37,7 +35,7 @@ def ensure(name):
 
 @functools.lru_cache(maxsize=4)
 def parcels():
-    # Label value i is parcels()[i-1].
+    # explainer: label i is parcels()[i-1]
     with open(ensure("YBA_696_parcel_dict.csv")) as fh:
         rows = list(csv.DictReader(fh))
     return [{
@@ -52,8 +50,7 @@ def parcels():
 
 
 def brain():
-    # One closed MNI surface. The 696 parcel meshes are 754 separate bodies, so
-    # stacking them as a shell piles up alpha until nothing inside shows through.
+    # decision: one closed surface, stacking the parcel meshes piles up alpha until nothing shows through
     cache = ATLAS_DIR / "brain_surface.npz"
     if cache.exists():
         held = np.load(cache)
@@ -75,7 +72,6 @@ def brain():
 
 
 def label_volume(reference):
-    # Atlas labels resampled onto the reference grid.
     names = [p["name"] for p in parcels()]
     if RESAMPLED.exists():
         return np.asarray(nib.load(RESAMPLED).dataobj).astype(np.int32), names
@@ -99,7 +95,6 @@ def label_volume(reference):
 
 
 def overlap(seg_mni, labels, names):
-    # How much of each parcel the tumor occupies.
     meta = {p["name"]: p for p in parcels()}
     image = nib.load(seg_mni)
     tumor = np.asarray(image.dataobj).astype(np.int16)
@@ -131,7 +126,7 @@ def overlap(seg_mni, labels, names):
     rows.sort(key=lambda r: (-r["fraction"], -r["in_tumor_ml"]))
     return {
         "tumor_ml": round(float(hit.sum()) * voxel_ml, 2),
-        # gray matter only, so this is well under the tumor volume
+        # explainer: gray matter only, so well under the tumor volume
         "in_parcels_ml": round(sum(r["in_tumor_ml"] for r in rows), 2),
         "parcels": rows,
     }

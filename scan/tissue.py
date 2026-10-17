@@ -1,4 +1,3 @@
-# Tissue labels from SynthSeg; nothing upstream tells white matter from CSF.
 
 import os
 import subprocess
@@ -21,16 +20,13 @@ def _shell(args, log, env=None):
 
 
 def run(subject):
-    # why: SynthSeg skull-strips and normalizes internally, so it wants the raw
-    #      scan and the stripped one would only take tissue away
-    # Labels inside the lesion are unvalidated: on 00055_11 SynthSeg fills the
-    # mass with white matter and a slab of cortex 12 mm deep.
+    # decision: raw scan on purpose, SynthSeg strips itself. labels inside the lesion aren't trustworthy
     dest = out_dir(subject) / "tissue.nii.gz"
     if dest.exists():
         return dest
 
     out_dir(subject).mkdir(parents=True, exist_ok=True)
-    # --keepgeom holds the labels on the input grid, which the warp below assumes
+    # explainer: --keepgeom keeps the input grid, the warp below relies on it
     _shell([SYNTHSEG, "--i", anatomy(raw_dir(subject), subject),
             "--o", dest, "--keepgeom", "--cpu", "--threads", THREADS],
            out_dir(subject) / "tissue.log",
@@ -41,7 +37,6 @@ def run(subject):
 
 
 def to_mni(subject):
-    # The same reslice chain register.py uses, since the grid is the same.
     dest = out_dir(subject) / "tissue_in_mni.nii.gz"
     if dest.exists():
         return dest
@@ -51,7 +46,7 @@ def to_mni(subject):
     if not (warp.exists() and affine.exists()):
         raise RuntimeError(f"{subject} is not registered, start from register")
 
-    # LABEL, never linear: interpolating label numbers invents structures
+    # decision: LABEL interp, linear invents label values
     _shell(["greedy", "-d", 3, "-rf", MNI, "-ri", "LABEL", "0.2vox",
             "-rm", source, dest, "-r", warp, affine, "-threads", THREADS],
            destination / "tissue.log")

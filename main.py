@@ -1,5 +1,4 @@
 #!/home/vilem/Projects/brats-upenn-gbm/.venv/bin/python
-# Run the whole pipeline for chosen UPenn-GBM subjects.
 
 import json
 import sys
@@ -14,12 +13,12 @@ from paths import (MNI, OUTPUTS, RESULTS, STAGES, anatomy, external, out_dir, ra
 
 
 def mark(stage):
-    # the terminal UI reads these to follow along, they are not chatter
+    # decision: the tui parses these lines, don't remove
     print(f"* {stage}", flush=True)
 
 
 def process(number, first="fetch", timepoint=1, was=None):
-    # Stages are sequential, so starting at one means running all the later ones.
+    # explainer: starting at a stage runs every stage after it too
     started = time.time()
     at = STAGES.index(first)
     subject = subject_id(number, timepoint)
@@ -63,7 +62,7 @@ def process(number, first="fetch", timepoint=1, was=None):
         mark("register")
         clock = time.time()
         _, run["kept"] = register.run(subject, stripped, seg)
-        # the reslice needs the warp, so it cannot happen back at the tissue stage
+        # explainer: reslice needs the warp, so it can't run in the tissue stage
         tissue.to_mni(subject)
         took("register", clock)
 
@@ -76,7 +75,7 @@ def process(number, first="fetch", timepoint=1, was=None):
     run["finished"], run["seconds"] = time.time(), round(time.time() - started)
     scores["run"] = run
 
-    # printed here because the segmenter's progress spinner erases the line above it
+    # decision: print here, the segmenter's spinner overwrites the line above
     r = scores["regions_ml"]
     print(f"  WT {r['WT']} mL, TC {r['TC']} mL, ET {r['ET']} mL, "
           f"{time.time() - started:.0f}s")
@@ -87,15 +86,13 @@ def process(number, first="fetch", timepoint=1, was=None):
 
 
 def missing(number, first, timepoint=1):
-    # What a later starting point assumes is already on disk.
     subject = subject_id(number, timepoint)
     at = STAGES.index(first)
     if at >= 1 and not raw_dir(subject).exists():
         return f"{raw_dir(subject)} is missing, start from fetch"
     if at >= 2 and not anatomy(stripped_dir(subject), subject).exists():
         return f"{stripped_dir(subject)} has no T1, start from strip"
-    # tissue is deliberately not required here; the 26 subjects segmented before
-    # it existed must still reach map
+    # decision: tissue isn't required, scans segmented before that stage existed still need to reach map
     if at >= 4 and not (out_dir(subject) / "seg.nii.gz").exists():
         return f"{subject} has no segmentation, start from segment"
     if at >= 6 and not (out_dir(subject) / "seg_in_mni.nii.gz").exists():
@@ -134,7 +131,7 @@ def main(numbers, first="fetch", timepoint=1):
         block.setdefault("times", {})["map"] = round(time.time() - clock, 1)
         print(f"{subject}: {overlap['in_parcels_ml']} mL in {len(overlap['parcels'])} parcels")
 
-    # merge so running one subject doesn't wipe the others
+    # decision: merge so running one subject doesn't wipe the rest
     stored.update(results)
     RESULTS.write_text(json.dumps(stored, indent=2))
     print(f"wrote {RESULTS}")

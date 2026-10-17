@@ -1,4 +1,4 @@
-# Check the BraTS preprocessing assumptions before spending compute.
+# decision: check BraTS input assumptions before spending compute
 
 import nibabel as nib
 import numpy as np
@@ -12,7 +12,6 @@ BRAIN_ML = (900.0, 2000.0)
 
 
 def run(subject, directory):
-    # Raise if anything BraTS assumes about the input is not true.
     problems, affines = [], {}
 
     for name in MODALITIES:
@@ -34,13 +33,12 @@ def run(subject, directory):
 
         affines[name] = image.affine
 
-    # same affine everywhere, or the modalities are not co-registered
     reference = affines[MODALITIES[0]]
     for name, affine in affines.items():
         if not np.allclose(affine, reference, atol=1e-4):
             problems.append(f"{name}: affine differs - not co-registered")
 
-    # written before raising, so the panel can say what was wrong afterwards
+    # decision: write before raising so the tui can show what failed
     out_dir(subject).mkdir(parents=True, exist_ok=True)
     (out_dir(subject) / "verify.txt").write_text("\n".join(problems))
     if problems:

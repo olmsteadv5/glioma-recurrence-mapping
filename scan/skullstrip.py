@@ -1,4 +1,3 @@
-# Skull-strip with SynthStrip; the mirror ships unstripped scans.
 
 import subprocess
 
@@ -19,7 +18,7 @@ def _volume_ml(path):
 
 
 def run(subject):
-    # One mask off the T1, applied to all four so they agree on which voxels exist.
+    # decision: one mask from the T1 for all four, so they agree on which voxels exist
     source, dest = raw_dir(subject), stripped_dir(subject)
     dest.mkdir(parents=True, exist_ok=True)
     mask_path = out_dir(subject) / "brainmask.nii.gz"

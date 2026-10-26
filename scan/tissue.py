@@ -1,4 +1,5 @@
 
+import fcntl
 import os
 import subprocess
 from pathlib import Path
@@ -19,16 +20,19 @@ def _shell(args, log, env=None):
         raise RuntimeError(f"{args[0]} failed ({result.returncode}), see {log}")
 
 
-def run(subject):
+def run(subject, fast=False):
     # decision: raw scan on purpose, SynthSeg strips itself. labels inside the lesion aren't trustworthy
     dest = out_dir(subject) / "tissue.nii.gz"
     if dest.exists():
         return dest
 
     out_dir(subject).mkdir(parents=True, exist_ok=True)
-    # explainer: --keepgeom keeps the input grid, the warp below relies on it
+    # decision: one SynthSeg at a time across processes, two at once don't fit in memory
+    lock = open(out_dir(subject).parent / ".synthseg.lock", "w")
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    # decision: --keepgeom keeps the input grid for the warp below, --fast for imported scans since full mode needs ~25 GB there
     _shell([SYNTHSEG, "--i", anatomy(raw_dir(subject), subject),
-            "--o", dest, "--keepgeom", "--cpu", "--threads", THREADS],
+            "--o", dest, "--keepgeom", "--cpu", "--threads", THREADS] + (["--fast"] if fast else []),
            out_dir(subject) / "tissue.log",
            env={**os.environ, "FREESURFER_HOME": str(FREESURFER_HOME)})
     if not dest.exists():

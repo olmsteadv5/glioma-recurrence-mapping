@@ -1,13 +1,15 @@
 #!/home/vilem/Projects/brats-upenn-gbm/.venv/bin/python
 
+import fcntl
 import json
 import sys
 import time
 
 import nibabel as nib
 
-from scan import align, evaluate, fetch, register, segment, skullstrip, tissue, verify
-from yale import atlas
+from scan import align, evaluate, fetch, ingest, register, segment, skullstrip, tissue, verify
+from datasets import adapter
+from yale import atlas, function
 from paths import (MNI, OUTPUTS, RESULTS, STAGES, anatomy, external, out_dir, raw_dir,
                    stripped_dir, subject_id)
 
@@ -24,6 +26,9 @@ def process(number, first="fetch", timepoint=1, was=None):
     subject = subject_id(number, timepoint)
     run = dict(was or {})
     times = dict(run.get("times", {}))
+    # decision: outside datasets come stripped and segmented, so fetch is an import and strip/segment are skipped
+    shipped = external(number)
+    on_preop_grid = shipped and adapter(number).FOLLOWUP_ON_PREOP_GRID
 
     def took(stage, since):
         times[stage] = round(time.time() - since, 1)
@@ -31,13 +36,16 @@ def process(number, first="fetch", timepoint=1, was=None):
     if at == 0:
         mark("fetch")
         clock = time.time()
-        subject = fetch.get(number, timepoint)
+        if shipped:
+            subject, run["labels"] = ingest.run(number, timepoint)
+        else:
+            subject = fetch.get(number, timepoint)
         took("fetch", clock)
     print(subject)
     out_dir(subject).mkdir(parents=True, exist_ok=True)
 
     stripped = stripped_dir(subject)
-    if at <= 1:
+    if at <= 1 and not shipped:
         mark("strip")
         clock = time.time()
         stripped = skullstrip.run(subject)
@@ -47,11 +55,13 @@ def process(number, first="fetch", timepoint=1, was=None):
     if at <= 2:
         mark("tissue")
         clock = time.time()
-        tissue.run(subject)
+        tissue.run(subject, fast=shipped)
         took("tissue", clock)
 
     seg = out_dir(subject) / "seg.nii.gz"
-    if at <= 3:
+    if at <= 3 and shipped:
+        run["algorithm"] = f"{adapter(number).__name__.split('.')[-1]}, {run.get('labels', 'auto')} labels"
+    elif at <= 3:
         mark("segment")
         clock = time.time()
         seg, run["algorithm"], run["device"] = segment.run(subject, stripped)
@@ -61,7 +71,10 @@ def process(number, first="fetch", timepoint=1, was=None):
     if at <= 4:
         mark("register")
         clock = time.time()
-        _, run["kept"] = register.run(subject, stripped, seg)
+        if on_preop_grid and timepoint == 2:
+            _, run["kept"] = ingest.reuse_registration(subject, seg)
+        else:
+            _, run["kept"] = register.run(subject, stripped, seg)
         # explainer: reslice needs the warp, so it can't run in the tissue stage
         tissue.to_mni(subject)
         took("register", clock)
@@ -69,7 +82,7 @@ def process(number, first="fetch", timepoint=1, was=None):
     if at <= 5 and timepoint == 2:
         mark("align")
         clock = time.time()
-        align.run(subject)
+        ingest.identity_align(subject) if on_preop_grid else align.run(subject)
         took("align", clock)
     run["times"] = times
     run["finished"], run["seconds"] = time.time(), round(time.time() - started)
@@ -126,14 +139,21 @@ def main(numbers, first="fetch", timepoint=1):
     for subject in results:
         overlap = atlas.overlap(out_dir(subject) / "seg_in_mni.nii.gz", labels, names)
         results[subject]["atlas"] = overlap
+        results[subject]["function"] = function.for_tumor(overlap)
         block = results[subject].setdefault("run", {})
         block["mapped"] = time.time()
         block.setdefault("times", {})["map"] = round(time.time() - clock, 1)
-        print(f"{subject}: {overlap['in_parcels_ml']} mL in {len(overlap['parcels'])} parcels")
+        top = ", ".join(f["term"] for f in results[subject]["function"][:4])
+        print(f"{subject}: {overlap['in_parcels_ml']} mL in {len(overlap['parcels'])} parcels; {top}")
 
-    # decision: merge so running one subject doesn't wipe the rest
-    stored.update(results)
-    RESULTS.write_text(json.dumps(stored, indent=2))
+    # decision: merge so running one subject doesn't wipe the rest. re-read under a lock, parallel runs would drop each other's results
+    with open(RESULTS.with_suffix(".lock"), "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        stored = json.loads(RESULTS.read_text()) if RESULTS.exists() else {}
+        stored.update(results)
+        partial = RESULTS.with_suffix(".tmp")
+        partial.write_text(json.dumps(stored, indent=2))
+        partial.replace(RESULTS)
     print(f"wrote {RESULTS}")
     return results
 

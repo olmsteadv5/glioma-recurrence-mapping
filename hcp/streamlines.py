@@ -141,7 +141,6 @@ def streamlines():
     return np.split(data["points"].astype(float), data["offsets"][1:-1])
 
 
-
 def crossing(lines, seg_img, labels, involved):
     # explainer: lines through the mass, plus lines that miss it but clip an involved parcel
     tumor = np.asarray(seg_img.dataobj) > 0

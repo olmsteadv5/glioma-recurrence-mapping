@@ -6,6 +6,7 @@ scipy>=1.11.0
 trimesh>=4.0.0
 pyvista>=0.44.0
 matplotlib>=3.8  # the analysis figures
+dcm2niix>=1.0.20250506  # diffusion dicom to nifti
 
 # terminal UI (tui.py), needs kitty for the graphics protocol
 textual>=8.0

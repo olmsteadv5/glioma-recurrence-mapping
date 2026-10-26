@@ -16,6 +16,9 @@ PARTICIPANTS = INPUTS / "participants.tsv"
 
 MNI = Path("/home/vilem/Documents/SeizureAnalysis/from_downloads/MNI152_T1_1mm_Brain.nii.gz")
 SYNTHSTRIP = Path("/opt/freesurfer/bin/mri_synthstrip")
+# explainer: the official linux cpu build, unzipped into tools/ (not in git)
+DSI_STUDIO = ROOT / "tools" / "dsi-studio" / "dsi_studio"
+DCM2NIIX = ROOT / ".venv" / "bin" / "dcm2niix"
 
 MODALITIES = ("T1", "T1GD", "T2", "FLAIR")
 LABELS = {1: "NETC", 2: "SNFH", 3: "ET", 4: "RC"}

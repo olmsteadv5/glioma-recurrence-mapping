@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from analysis import measure
 from geometry import MARGIN_MM, distance, ml_per_voxel, outline, template_brain
-from paths import THREADS, anatomy, out_dir, pair_dir, results_dir, stripped_dir, walk_dir
+from paths import REGIONS, THREADS, anatomy, out_dir, pair_dir, results_dir, stripped_dir, walk_dir
 from show.compare import _inverse
 from hcp import streamlines
 
@@ -41,9 +41,9 @@ PHASES = (("46", "WT"), ("60", "TC"))
 
 
 class Lines:
-    # explainer: every patient shares the MNI grid, so each point's voxel is looked up once
-    def __init__(self, image, shape):
-        self.lines = streamlines.streamlines()
+    # explainer: each point's voxel is looked up once per grid
+    def __init__(self, lines, image, shape):
+        self.lines = lines
         stacked = np.vstack(self.lines)
         self.cut = np.cumsum([len(l) for l in self.lines])[:-1]
         ijk = np.rint(nib.affines.apply_affine(np.linalg.inv(image.affine), stacked)).astype(int)
@@ -106,11 +106,36 @@ def _hull(points, image, shape, candidates=None):
     return out
 
 
-def allowed_mni(first):
+def world_x(image, shape):
+    return nib.affines.apply_affine(image.affine, np.indices(shape).reshape(3, -1).T)[:, 0].reshape(shape)
+
+
+def grid(first, source):
+    # explainer: the atlas walk is built on MNI with x = 0 as midline, the patient walk on the pre-op grid with the patient's own midline
+    if source == "atlas":
+        data, image = measure._seg(first, "mni")
+        return data, image, template_brain(), world_x(image, data.shape)
+    here = out_dir(first)
+    image = nib.load(here / "seg.nii.gz")
+    data = np.asarray(image.dataobj).astype(np.int16)
+    brain = np.asarray(nib.load(here / "brainmask.nii.gz").dataobj) > 0
+    return data, image, brain, np.asarray(nib.load(here / "midline" / "lateral.nii.gz").dataobj)
+
+
+def tracts(first, source):
+    if source == "atlas":
+        return streamlines.streamlines()
+    saved = np.load(out_dir(first) / "diffusion" / "tracts_native.npz")
+    return np.split(saved["points"].astype(float), saved["offsets"][1:-1])
+
+
+def _gtv(data, region):
+    gtv = np.isin(data, REGIONS[region])
+    return gtv if gtv.any() else data > 0
+
+
+def allowed_region(data, image, brain, x):
     # decision: across the midline a voxel joins at d only if it's within d of tumor already across
-    data, image = measure._seg(first, "mni")
-    brain = template_brain()
-    x = nib.affines.apply_affine(image.affine, np.indices(data.shape).reshape(3, -1).T)[:, 0].reshape(data.shape)
     tumor = data > 0
     # decision: voxels on the plane count as home, across means strictly past it
     mostly_left = (tumor & (x < 0)).sum() >= (tumor & (x > 0)).sum()
@@ -118,9 +143,7 @@ def allowed_mni(first):
     ml = ml_per_voxel(image)
     gates, crossed = {}, False
     for phase, region in PHASES:
-        gtv = measure.mask(first, region, "mni")
-        if not gtv.any():
-            gtv = tumor
+        gtv = _gtv(data, region)
         across = gtv & ~home
         gate = np.where(home, 0, NEVER).astype(np.uint8)
         if across.sum() * ml >= CROSSED_ML:
@@ -131,16 +154,13 @@ def allowed_mni(first):
     return brain & (gates["46"] != NEVER), gates, crossed
 
 
-def reach_mni(first, lines, skim=SKIM_MM):
+def walk_reach(data, image, brain, x, lines, skim=SKIM_MM):
     # explainer: stores the shortest walk at which each voxel joins, so target(d) is reach <= d and only grows
-    data, image = measure._seg(first, "mni")
-    allowed, gates, crossed = allowed_mni(first)
+    allowed, gates, crossed = allowed_region(data, image, brain, x)
     may = lines.lookup(allowed)
     reach, info = {}, {"crossed": crossed, "gates": gates}
     for phase, region in PHASES:
-        gtv = measure.mask(first, region, "mni")
-        if not gtv.any():
-            gtv = data > 0
+        gtv = _gtv(data, region)
         paths, used = [], 0
         for line, inside, ok in zip(lines.lines, lines.lookup(gtv), may):
             if inside.any():
@@ -161,38 +181,46 @@ def reach_mni(first, lines, skim=SKIM_MM):
     return reach, allowed, image, info
 
 
-def build_mni(first, lines):
-    reach, allowed, image, info = reach_mni(first, lines)
-    here = walk_dir(first)
+# explainer: file tags for the build grid and for the follow-up grid
+BUILT = {"atlas": "_mni", "dti": "_preop"}
+SCORED = {"atlas": "", "dti": "_dti"}
+
+
+def build(first, source="atlas"):
+    data, image, brain, x = grid(first, source)
+    reach, allowed, image, info = walk_reach(data, image, brain, x, Lines(tracts(first, source), image, data.shape))
+    here, tag = walk_dir(first), BUILT[source]
+    ends = "" if source == "atlas" else tag
     for phase, _ in PHASES:
-        nib.save(nib.Nifti1Image(reach[phase], image.affine), here / f"walk_{phase}_reach_mni.nii.gz")
+        nib.save(nib.Nifti1Image(reach[phase], image.affine), here / f"walk_{phase}_reach{tag}.nii.gz")
         nib.save(nib.Nifti1Image((reach[phase] <= WALK_MM).astype(np.uint8), image.affine),
-                 here / f"walk_{phase}_mni.nii.gz")
-        np.save(here / f"walk_{phase}_ends.npy", info.pop(f"ends_{phase}"))
-        nib.save(nib.Nifti1Image(info["gates"][phase], image.affine), here / f"walk_gate_{phase}_mni.nii.gz")
+                 here / f"walk_{phase}{tag}.nii.gz")
+        np.save(here / f"walk_{phase}_ends{ends}.npy", info.pop(f"ends_{phase}"))
+        nib.save(nib.Nifti1Image(info["gates"][phase], image.affine), here / f"walk_gate_{phase}{tag}.nii.gz")
     info.pop("gates")
-    nib.save(nib.Nifti1Image(allowed.astype(np.uint8), image.affine), here / "walk_allowed_mni.nii.gz")
+    nib.save(nib.Nifti1Image(allowed.astype(np.uint8), image.affine), here / f"walk_allowed{tag}.nii.gz")
     return info
 
 
-def to_native(first, later, name):
+def to_native(first, later, name, source="atlas"):
     # decision: same route the pre-op tumor takes into patient space, so they line up
-    source = walk_dir(first) / f"{name}_mni.nii.gz"
-    dest = walk_dir(later) / f"{name}.nii.gz"
+    moving = walk_dir(first) / f"{name}{BUILT[source]}.nii.gz"
+    dest = walk_dir(later) / f"{name}{SCORED[source]}.nii.gz"
+    chain = [str(pair_dir(later) / "rigid_first_to_later.mat")]
+    if source == "atlas":
+        chain += [str(out_dir(first) / "affine.mat") + ",-1", str(_inverse(first))]
     subprocess.run(["greedy", "-d", "3", "-rf", str(anatomy(stripped_dir(later), later)),
-                    "-ri", "LABEL", "0.2vox", "-rm", str(source), str(dest),
-                    "-r", str(pair_dir(later) / "rigid_first_to_later.mat"),
-                    str(out_dir(first) / "affine.mat") + ",-1", str(_inverse(first)),
+                    "-ri", "LABEL", "0.2vox", "-rm", str(moving), str(dest), "-r", *chain,
                     "-threads", THREADS], capture_output=True, check=True)
     return np.asarray(nib.load(dest).dataobj)
 
 
-def score(first, later, space, reach=None, allowed=None):
+def score(first, later, space, reach=None, allowed=None, source="atlas"):
     # explainer: walk-down, plain margin at the same d, and a ball the walk-down's size, all under the same midline gate
     if space == "mni":
         load = lambda name: np.asarray(nib.load(walk_dir(first) / f"{name}_mni.nii.gz").dataobj)
     else:
-        load = lambda name: to_native(first, later, name)
+        load = lambda name: to_native(first, later, name, source)
     if reach is None:
         reach = {phase: load(f"walk_{phase}_reach") for phase, _ in PHASES}
         allowed = load("walk_allowed") > 0
@@ -220,7 +248,7 @@ def score(first, later, space, reach=None, allowed=None):
                 # decision: save the exact NRG volume we scored so the viewer draws that one
                 saved = {"nrg": iso} if space == "mni" else {"nrg": iso, "walk": walk}
                 for kind, mask in saved.items():
-                    name = f"{kind}_{phase}_mni.nii.gz" if space == "mni" else f"{kind}_{phase}.nii.gz"
+                    name = f"{kind}_{phase}{'_mni' if space == 'mni' else SCORED[source]}.nii.gz"
                     nib.save(nib.Nifti1Image(mask.astype(np.uint8), image.affine), walk_dir(later) / name)
             size = int(walk.sum())
             for kind, target in (("walk", walk), ("iso", iso), ("ball", None)):
@@ -242,22 +270,36 @@ def score(first, later, space, reach=None, allowed=None):
     return rows
 
 
-def write(space):
+def table(space, source, kind=""):
+    # decision: the patient-tract walk gets its own tables so the atlas ones are never overwritten
+    return results_dir(space) / f"walkdown{SCORED[source]}{kind}.csv"
+
+
+def has_tracts(first):
+    here = out_dir(first)
+    return (here / "diffusion" / "tracts_native.npz").exists() and (here / "midline" / "lateral.nii.gz").exists()
+
+
+def pairs(space, source):
+    found = measure.pairs(space)
+    return found if source == "atlas" else [(a, b) for a, b in found if has_tracts(a)]
+
+
+def write(space, source="atlas"):
     rows = []
-    for first, later in measure.pairs(space):
-        rows += score(first, later, space)
+    for first, later in pairs(space, source):
+        rows += score(first, later, space, source=source)
         measure.forget()
-    for name, keep in (("walkdown_curves.csv", rows),
-                       ("walkdown.csv", [r for r in rows if r["walk_mm"] == WALK_MM])):
-        with open(results_dir(space) / name, "w", newline="") as fh:
+    for kind, keep in (("_curves", rows), ("", [r for r in rows if r["walk_mm"] == WALK_MM])):
+        with open(table(space, source, kind), "w", newline="") as fh:
             out = csv.DictWriter(fh, fieldnames=list(keep[0]))
             out.writeheader()
             out.writerows(keep)
-    return results_dir(space) / "walkdown_curves.csv"
+    return table(space, source, "_curves")
 
 
-def _rows(space):
-    with open(results_dir(space) / "walkdown.csv") as fh:
+def _rows(space, source):
+    with open(table(space, source)) as fh:
         rows = list(csv.DictReader(fh))
     by = {}
     for r in rows:
@@ -269,10 +311,10 @@ def _num(value):
     return None if value in ("", "None") else float(value)
 
 
-def summarize(space):
+def summarize(space, source="atlas"):
     from scipy.stats import wilcoxon
-    by = _rows(space)
-    path = results_dir(space) / "walkdown_summary.csv"
+    by = _rows(space, source)
+    path = table(space, source, "_summary")
     with open(path, "w", newline="") as fh:
         out = csv.writer(fh)
         out.writerow(["phase", "target", "n", "median_volume_ml", "median_beyond_gtv_ml",
@@ -300,14 +342,14 @@ def summarize(space):
     return path
 
 
-def summarize_curves(space):
-    with open(results_dir(space) / "walkdown_curves.csv") as fh:
+def summarize_curves(space, source="atlas"):
+    with open(table(space, source, "_curves")) as fh:
         rows = list(csv.DictReader(fh))
     cell = {}
     for r in rows:
         cell.setdefault((r["phase"], int(r["walk_mm"]), r["target"]), {})[r["patient"]] = r
     rng = np.random.default_rng(0)
-    path = results_dir(space) / "walkdown_curves_summary.csv"
+    path = table(space, source, "_curves_summary")
     with open(path, "w", newline="") as fh:
         out = csv.writer(fh)
         out.writerow(["phase", "walk_mm", "target", "median_beyond_gtv_ml", "median_ET_pct",
@@ -336,9 +378,9 @@ def summarize_curves(space):
     return path
 
 
-def matched(space):
+def matched(space, source="atlas"):
     # decision: compare at equal coverage, nothing is traded so misses and brain never need weighting
-    with open(results_dir(space) / "walkdown_curves.csv") as fh:
+    with open(table(space, source, "_curves")) as fh:
         rows = list(csv.DictReader(fh))
     cell = {(r["patient"], r["phase"], int(r["walk_mm"]), r["target"]): r for r in rows}
     out = []
@@ -359,7 +401,7 @@ def matched(space):
                             "walk_beyond_gtv_ml": _num(walk["beyond_gtv_ml"]) if walk else None,
                             "saved_ml": (round(_num(nrg["beyond_gtv_ml"]) - _num(walk["beyond_gtv_ml"]), 1)
                                          if walk else None)})
-    path = results_dir(space) / "walkdown_matched.csv"
+    path = table(space, source, "_matched")
     with open(path, "w", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=list(out[0]))
         writer.writeheader()
@@ -367,21 +409,24 @@ def matched(space):
     return path
 
 
-def _build(first):
-    data, image = measure._seg(first, "mni")
-    return first, build_mni(first, Lines(image, data.shape))
+def _build(job):
+    first, source = job
+    return first, build(first, source)
 
 
-def main():
+def main(source="atlas"):
     from concurrent.futures import ProcessPoolExecutor
-    firsts = [first for first, _ in measure.pairs("mni")]
+    # decision: the patient-tract walk lives on the pre-op grid, so it's only scored in the follow-up's own space
+    spaces = measure.SPACES if source == "atlas" else ("native",)
+    firsts = [first for first, _ in pairs(spaces[-1], source)]
     # decision: one thread per worker so they share the cores instead of fighting
     with ProcessPoolExecutor(8) as pool:
-        for first, info in pool.map(_build, firsts):
+        for first, info in pool.map(_build, [(first, source) for first in firsts]):
             print(first[-8:-3], info, flush=True)
-    for space in measure.SPACES:
-        print(write(space), summarize(space), summarize_curves(space), matched(space), flush=True)
+    for space in spaces:
+        print(write(space, source), summarize(space, source), summarize_curves(space, source),
+              matched(space, source), flush=True)
 
 
 if __name__ == "__main__":
-    main()
+    main(*sys.argv[1:])

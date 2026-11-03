@@ -2,12 +2,15 @@
 # explainer: needs kitty for the graphics protocol
 
 import csv
+import functools
 import json
 import os
 import textwrap
 import time
 from pathlib import Path
 
+import nibabel as nib
+import numpy as np
 from textual import events, on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -98,6 +101,17 @@ def target_ml(subject, phase, target="walk"):
 
 
 _walked = {}
+
+
+@functools.lru_cache(maxsize=64)
+def _mask_ml(path, stamp):
+    image = nib.load(path)
+    return float((np.asarray(image.dataobj) > 0).sum() * np.prod(image.header.get_zooms()[:3]) / 1000)
+
+
+def patient_ml(subject, phase):
+    path = render.patient_target(subject, phase)
+    return f"{_mask_ml(str(path), path.stat().st_mtime):.1f} mL" if path else ""
 
 
 def bar(fraction, n=10):
@@ -329,6 +343,8 @@ class Console(App):
         self.subjects = sorted(self.results)
         self.subject = self.subjects[0] if self.subjects else None
         self.mode, self.space, self.palette, self.listing = "3d", "native", "contrast", "parcels"
+        # decision: the 3d keeps its own space, mni by default since the parcels only exist there
+        self.scene_space = "mni"
         self.scene = self.slices = self.chart = None
         self.later, self.background = None, "1"
         self._timer = None
@@ -406,7 +422,7 @@ class Console(App):
                 return False
         self.subject, self.later = first, later
         overlap = self.results[first]["atlas"]
-        self.scene = render.Scene(first, overlap, palette=self.palette, later=later)
+        self.scene = render.Scene(first, overlap, palette=self.palette, later=later, space=self.scene_space)
         self.scene.set_opacity("shell", SHELL_OPACITY)
         self.slices = render.Slices(first, self.space, later=later, background=self.background)
         self.chart = None
@@ -450,6 +466,7 @@ class Console(App):
         self.hidden_layers = KEYS - shown
         self.mode = saved.get("mode", self.mode) if saved.get("mode") in VIEWERS else self.mode
         self.space = saved.get("space", self.space) if saved.get("space") in ("native", "mni") else self.space
+        self.scene_space = saved.get("scene_space") if saved.get("scene_space") in ("native", "mni") else self.scene_space
         self.palette = saved.get("palette", self.palette)
         self.listing = saved.get("listing", self.listing)
         self.background = saved.get("background", self.background)
@@ -461,7 +478,7 @@ class Console(App):
             STATE.parent.mkdir(parents=True, exist_ok=True)
             STATE.write_text(json.dumps({
                 "shown": sorted(KEYS - self.hidden_layers), "mode": self.mode,
-                "space": self.space, "palette": self.palette, "listing": self.listing,
+                "space": self.space, "scene_space": self.scene_space, "palette": self.palette, "listing": self.listing,
                 "background": self.background, "subject": self.subject}, indent=1))
         except OSError:
             pass
@@ -605,13 +622,19 @@ class Console(App):
         out = []
         self._layers_width = self.query_one("#layers", Rows).size.width
         w = max(self._layers_width, 30) - 4
-        walked = render.target_file(self.subject, "walk", "46", "mni") is not None
-        scored = render.target_file(self.subject, "nrg", "46", "mni") is not None
+        native = self.scene_space == "native"
+        if native:
+            walked, scored = render.patient_target(self.subject, "46") is not None, False
+        else:
+            walked = render.target_file(self.subject, "walk", "46", "mni") is not None
+            scored = render.target_file(self.subject, "nrg", "46", "mni") is not None
 
         def offered(key):
             if key in ("--2", "C:both", "C:new", "C:gone", "tracts:2") or key.startswith("2:"):
                 if not self.later:
                     return False
+            if native and key.startswith("C:"):
+                return False
             if key.startswith("W:"):
                 return walked
             if key.startswith("T:"):
@@ -636,9 +659,9 @@ class Console(App):
             elif key.startswith("T:"):
                 value = target_ml(self.subject, key[2:], "iso")
             elif key.startswith("W:ends"):
-                value = f"{len(render.walk_ends(self.subject).get(key[6:], ())):,}"
+                value = f"{len(render.walk_ends(self.subject, self.scene_space).get(key[6:], ())):,}"
             elif key.startswith("W:"):
-                value = target_ml(self.subject, key[2:])
+                value = patient_ml(self.subject, key[2:]) if native else target_ml(self.subject, key[2:])
             elif key.endswith(":WT"):
                 value = f"{self.results[self.scan_subject(key[0])]['regions_ml']['WT']} mL"
             elif key[:2] in ("1:", "2:"):
@@ -997,10 +1020,11 @@ class Console(App):
             w, h = max(size.width * cell.width, 64), max(size.height * cell.height, 64)
             self.scene.resize(w, h)
             widget.image = self.scene.image()
-            viewer.border_title = f"3d · {self.palette} colors"
+            native = self.scene_space == "native"
+            viewer.border_title = "3d · patient's own tracts" if native else f"3d · atlas · {self.palette} colors"
             viewer.styles.border_subtitle_align = "right"
             other = "yba" if self.palette == "contrast" else "contrast"
-            viewer.border_subtitle = keyed(f"v slices · p {other} colors")
+            viewer.border_subtitle = keyed(f"v slices · s {'atlas' if native else 'patient'} · p {other} colors")
         elif self.mode == "graph":
             if self.chart is None:
                 self.ensure_chart()
@@ -1264,7 +1288,7 @@ class Console(App):
             # decision: slices only show parcels in mni, where the colors mean something
             return (self.mode == "3d" or (self.mode == "slices" and self.space == "mni")) or None
         if action == "space":
-            return self.mode == "slices" or None
+            return self.mode in ("slices", "3d") or None
         if action == "background":
             return (self.mode == "slices" and self.later is not None) or None
         if action == "show_list":
@@ -1289,6 +1313,13 @@ class Console(App):
         self.call_after_refresh(self.draw)
 
     def action_space(self):
+        if self.mode == "3d":
+            self.scene_space = "mni" if self.scene_space == "native" else "native"
+            self.load_subject(self.subject)
+            if self.scene_space == "native" and not self.scene.lines:
+                self.say("no pre-op diffusion scan for this patient, so no tracts of its own")
+            self.refresh_bindings()
+            return
         self.space = "mni" if self.space == "native" else "native"
         self.slices.load(self.space)
         self.sync_overlay()

@@ -72,10 +72,37 @@ def target_file(subject, kind, phase, space):
     return here if here.exists() else None
 
 
-def walk_ends(subject):
+def patient_target(subject, phase):
+    # explainer: the walk-down built from the patient's own tracts, on the pre-op grid
+    path = walk_dir(subject) / f"walk_{phase}_preop.nii.gz"
+    return path if path.exists() else None
+
+
+def patient_tracts(subject):
+    path = out_dir(subject) / "diffusion" / "tracts_native.npz"
+    if not path.exists():
+        return []
+    saved = np.load(path)
+    return np.split(saved["points"].astype(float), saved["offsets"][1:-1])
+
+
+def follow_up_on_first(first, later):
+    # explainer: the follow-up tumor moved back onto the pre-op grid through the inverse of the pair's rigid fit
+    seg = out_dir(later) / "seg.nii.gz"
+    here = cache_dir(later) / "seg_on_first.nii.gz"
+    if not here.exists() or here.stat().st_mtime < seg.stat().st_mtime:
+        subprocess.run(["greedy", "-d", "3", "-rf", str(out_dir(first) / "seg.nii.gz"),
+                        "-ri", "LABEL", "0.2vox", "-rm", str(seg), str(here),
+                        "-r", str(pair_dir(first) / "rigid_first_to_later.mat") + ",-1",
+                        "-threads", THREADS], capture_output=True, check=True)
+    return nib.load(here)
+
+
+def walk_ends(subject, space="mni"):
     out = {}
+    tag = "" if space == "mni" else "_preop"
     for phase in WALK_PHASES:
-        path = walk_dir(subject) / f"walk_{phase}_ends.npy"
+        path = walk_dir(subject) / f"walk_{phase}_ends{tag}.npy"
         if path.exists():
             out[phase] = np.load(path)
     return out
@@ -96,8 +123,11 @@ def fit(image, size, background=PANEL):
 class Scene:
     # decision: one plotter per subject, only the camera moves between frames
 
-    def __init__(self, subject, overlap, palette="contrast", size=(700, 540), later=None):
+    def __init__(self, subject, overlap, palette="contrast", size=(700, 540), later=None, space="mni"):
         self.subject, self.later, self.overlap, self.palette = subject, later, overlap, palette
+        # decision: native is the patient's own head with their own tracts, so no atlas parcels there
+        self.space = space
+        self.lines = streamlines.streamlines() if space == "mni" else patient_tracts(subject)
         self.plotter = pv.Plotter(off_screen=True, window_size=list(size))
         self.plotter.set_background(BG)
         self.actors, self.parcel_actors = {}, {}
@@ -107,9 +137,10 @@ class Scene:
         colors = atlas.colors(palette)
         involved = [r["parcel"] for r in overlap["parcels"]]
 
-        self.actors["shell"] = self._mesh(*atlas.brain(), _hex(SHELL), 0.15)
+        shell = atlas.brain() if space == "mni" else self._brain(subject)
+        self.actors["shell"] = self._mesh(*shell, _hex(SHELL), 0.15)
 
-        for name in involved:
+        for name in involved if space == "mni" else ():
             i = index[name]
             actor = self._mesh(surf[i].vertices, surf[i].faces, _hex(colors[i]), 1.0)
             self.parcel_actors[name] = actor
@@ -119,9 +150,12 @@ class Scene:
         for scan, who in (("1", subject), ("2", later)):
             if who is None:
                 continue
-            image = nib.load(out_dir(who) / "seg_in_mni.nii.gz")
+            if space == "mni":
+                image = nib.load(out_dir(who) / "seg_in_mni.nii.gz")
+            else:
+                image = nib.load(out_dir(who) / "seg.nii.gz") if scan == "1" else follow_up_on_first(subject, who)
             self.segs[scan] = image
-            for value, (name, points, faces) in self._tumor(who, image).items():
+            for value, (name, points, faces) in self._tumor(who, image, space).items():
                 solid = 0.5 if value == 0 else 1.0
                 self.actors[f"{scan}:{name}"] = self._mesh(points, faces, _hex(TISSUE[value]),
                                                            solid if scan == "1" else solid * 0.4)
@@ -148,9 +182,20 @@ class Scene:
         self.grab.ReadFrontBufferOff()
 
     @staticmethod
-    def _tumor(subject, image):
+    def _brain(subject):
+        cache = cache_dir(subject) / "brain_surface.npz"
+        if cache.exists():
+            held = np.load(cache)
+            return held["vertices"], held["faces"]
+        image = nib.load(out_dir(subject) / "brainmask.nii.gz")
+        points, faces = tumor_surface((np.asarray(image.dataobj) > 0).astype(np.int16), image.affine, 1)
+        np.savez_compressed(cache, vertices=points, faces=faces)
+        return points, faces
+
+    @staticmethod
+    def _tumor(subject, image, space="mni"):
         # decision: contouring is slow, cache until the registration changes
-        cache = cache_dir(subject) / "tumor_surfaces.npz"
+        cache = cache_dir(subject) / ("tumor_surfaces.npz" if space == "mni" else "tumor_surfaces_native.npz")
         if cache.exists() and cache.stat().st_mtime >= os.path.getmtime(image.get_filename()):
             held = np.load(cache)
             return {int(v): (WHOLE if int(v) == 0 else LABELS[int(v)],
@@ -175,7 +220,9 @@ class Scene:
 
     def _through(self):
         # decision: precompute which tracts hit each scan and class, so toggling tissue doesn't redo the search
-        lines = streamlines.streamlines()
+        lines = self.lines
+        if not lines:
+            return {}
         stacked = np.vstack(lines)
         owner = np.repeat(np.arange(len(lines)), [len(l) for l in lines])
         out = {}
@@ -200,7 +247,7 @@ class Scene:
         shared = through["1"] & through["2"]
         groups = {"1": through["1"] - shared, "2": through["2"] - shared, "both": shared}
         self.tract_count = {"1": len(through["1"]), "2": len(through["2"]), "both": len(shared)}
-        lines = streamlines.streamlines()
+        lines = self.lines
         for group, ids in groups.items():
             key = f"tracts:{group}"
             if key in self.actors:
@@ -257,10 +304,13 @@ class Scene:
         key = TARGET_KEY[kind] + phase
         if key in self.actors:
             return
-        source = target_file(self.subject, kind, phase, "mni")
+        if self.space == "mni":
+            source = target_file(self.subject, kind, phase, "mni")
+        else:
+            source = patient_target(self.subject, phase) if kind == "walk" else None
         if source is None:
             return
-        cache = pair_cache(self.subject) / f"{kind}_{phase}_surface.npz"
+        cache = pair_cache(self.subject) / f"{kind}_{phase}_surface{'' if self.space == 'mni' else '_native'}.npz"
         if cache.exists() and cache.stat().st_mtime >= source.stat().st_mtime:
             held = np.load(cache)
             points, faces = held["vertices"], held["faces"]
@@ -277,14 +327,14 @@ class Scene:
         key = "W:ends" + phase
         if key in self.actors:
             return
-        ends = walk_ends(self.subject).get(phase)
+        ends = walk_ends(self.subject, self.space).get(phase)
         if ends is None or not len(ends):
             return
         self.actors[key] = self.plotter.add_mesh(pv.PolyData(ends), color=_hex(WALK[phase]),
                                                  point_size=4, render_points_as_spheres=True)
 
     def ensure_compare(self, first, second):
-        if "C:both" in self.actors:
+        if "C:both" in self.actors or self.space != "mni":
             return
         from show import compare
         for name, (points, faces) in compare.surfaces(first, second).items():
@@ -303,9 +353,10 @@ class Scene:
         # decision: dim the rest of the bundle so the picked ones read
         for group in TRACTS:
             self.set_opacity(f"tracts:{group}", self.TRACT_DIM if ids else 0.55)
-        if ids is None:
+        # decision: the chart's tract ids are atlas tracts, they mean nothing against the patient's own
+        if ids is None or self.space != "mni":
             return
-        lines = streamlines.streamlines()
+        lines = self.lines
         mesh = self._lines([lines[n] for n in sorted(ids) if n < len(lines)])
         if mesh is None:
             return

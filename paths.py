@@ -19,6 +19,11 @@ SYNTHSTRIP = Path("/opt/freesurfer/bin/mri_synthstrip")
 # explainer: the official linux cpu build, unzipped into tools/ (not in git)
 DSI_STUDIO = ROOT / "tools" / "dsi-studio" / "dsi_studio"
 DCM2NIIX = ROOT / ".venv" / "bin" / "dcm2niix"
+# explainer: FSL, MRtrix3 and ANTs live in their own micromamba env, kept apart from the project venv
+DMRI_ENV = Path.home() / "micromamba" / "envs" / "dmri"
+SYNB0 = "leonyichencai/synb0-disco:v3.1"
+FREESURFER_LICENSE = Path("/opt/freesurfer/license.txt")
+FERNET = ROOT / "tools" / "fernet"
 
 MODALITIES = ("T1", "T1GD", "T2", "FLAIR")
 LABELS = {1: "NETC", 2: "SNFH", 3: "ET", 4: "RC"}

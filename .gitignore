@@ -8,6 +8,9 @@ inputs/*
 inputs/atlas/*
 !inputs/atlas/YBA_696_Freeview_HighContrast.txt
 outputs/
-tools/
+tools/*
+!tools/bouchet/
+tools/bouchet/*
+!tools/bouchet/*.sbatch
 
 

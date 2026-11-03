@@ -18,21 +18,27 @@ from scipy import ndimage
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from hcp.streamlines import _resample
 from scan.register import _greedy, _metric_mask
-from paths import DCM2NIIX, DSI_STUDIO, INPUTS, PAIRS, THREADS, modality, out_dir, stripped_dir, subject_id
+from paths import (DCM2NIIX, DMRI_ENV, DSI_STUDIO, FERNET, FREESURFER_LICENSE, INPUTS, PAIRS, SYNB0, THREADS, modality,
+                   out_dir, stripped_dir, subject_id)
 
 DTI = INPUTS / "upenn_dti"
+PREP = INPUTS / "upenn_dti_prep"
 SERIES = DTI / "series.json"
 API = "https://services.cancerimagingarchive.net/nbia-api/services/v1/getImage?SeriesInstanceUID="
 # decision: same streamline count as the atlas walk-down uses, so the two compare like for like
 TRACTS = 48000
 
 
+# explainer: set by --prep, then every stage reads the corrected scan and writes beside the uncorrected one
+PREPPED = False
+
+
 def raw(subject):
-    return DTI / subject
+    return (PREP if PREPPED else DTI) / subject
 
 
 def work(subject):
-    path = out_dir(subject) / "diffusion"
+    path = out_dir(subject) / ("diffusion_prep" if PREPPED else "diffusion")
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -58,10 +64,139 @@ def pick(subject):
     return found[0] if found else None
 
 
+def _env(args, log):
+    env = {**os.environ, "PATH": f"{DMRI_ENV / 'bin'}:{os.environ['PATH']}", "FSLDIR": str(DMRI_ENV),
+           "FSLOUTPUTTYPE": "NIFTI_GZ", "PYTHONPATH": str(FERNET), "TMPDIR": os.environ.get("TMPDIR", "/tmp")}
+    with open(log, "a") as fh:
+        fh.write(f"\n$ {' '.join(str(a) for a in args)}\n")
+        fh.flush()
+        done = subprocess.run([str(a) for a in args], stdout=fh, stderr=subprocess.STDOUT, env=env)
+    if done.returncode != 0:
+        raise RuntimeError(f"{args[0]} failed, see {log}")
+
+
+def _to_dwi(subject, image, ref, dest, log, label=False):
+    # explainer: a pre-op structural image into the diffusion scan's own space, through the inverse of the checked diffusion to T2 fit
+    back = out_dir(subject) / "diffusion" / "to_t2.mat"
+    _greedy(["-d", 3, "-rf", ref, *(["-ri", "LABEL", "0.2vox"] if label else []), "-rm", image, dest,
+             "-r", f"{back},-1", "-threads", THREADS], log)
+    return np.asarray(nib.load(dest).dataobj)
+
+
+def _save(data, image, dest):
+    # explainer: keep both qform and sform, synb0's FSL steps read the qform
+    out = nib.Nifti1Image(data, image.affine)
+    out.set_qform(image.affine, 1)
+    out.set_sform(image.affine, 1)
+    nib.save(out, dest)
+
+
+def preprocess(subject):
+    # explainer: denoise, unring, then motion, eddy and distortion correction, the raw scan has no reverse phase-encode so synb0 stands in
+    source, d = DTI / subject, PREP / subject
+    if (d / "dwi.nii.gz").exists():
+        return
+    d.mkdir(parents=True, exist_ok=True)
+    log = d / "prep.log"
+    threads = os.environ.get("DMRI_THREADS", "12")
+    # decision: denoising has to come first, before anything interpolates the noise
+    if not (d / "unrung.nii.gz").exists():
+        _env(["dwidenoise", source / "dwi.nii.gz", d / "denoised.nii.gz", "-noise", d / "noise.nii.gz", "-nthreads", threads, "-force"], log)
+        _env(["mrdegibbs", d / "denoised.nii.gz", d / "unrung.tmp.nii.gz", "-nthreads", threads, "-force"], log)
+        os.replace(d / "unrung.tmp.nii.gz", d / "unrung.nii.gz")
+    bvals = np.loadtxt(source / "dwi.bval")
+    readout = json.loads((source / "dwi.json").read_text())["TotalReadoutTime"]
+    image = nib.load(d / "unrung.nii.gz")
+    _save(np.asarray(image.dataobj)[..., bvals < 50].mean(-1).astype(np.float32), image, d / "b0.nii.gz")
+    # decision: UPenn's T1 sits in SRI24 space far from the scanner frame, so it goes into the b0's frame first or synb0 misregisters
+    zooms = np.array(image.header.get_zooms()[:3])
+    fine = image.affine.copy()
+    fine[:3, :3] = image.affine[:3, :3] / zooms
+    grid = nib.Nifti1Image(np.zeros(np.ceil(np.array(image.shape[:3]) * zooms).astype(int), np.float32), fine)
+    _save(grid.get_fdata(dtype=np.float32), grid, d / "grid_1mm.nii.gz")
+    inputs, outputs = d / "synb0_in", d / "synb0_out"
+    inputs.mkdir(exist_ok=True)
+    if not (inputs / "acqparams.txt").exists():
+        t1 = _to_dwi(subject, modality(stripped_dir(subject), subject, "T1"), d / "grid_1mm.nii.gz", inputs / "T1.nii.gz", log)
+        _save(t1.astype(np.float32), nib.load(d / "grid_1mm.nii.gz"), inputs / "T1.nii.gz")
+        shutil.copyfile(d / "b0.nii.gz", inputs / "b0.nii.gz")
+        # decision: the sign of the phase-encode axis isn't in the header, either sign works since topup and eddy read the same line
+        (inputs / "acqparams.txt").write_text(f"0 1 0 {readout}\n0 1 0 0\n")
+    if not (outputs / "topup_movpar.txt").exists():
+        # decision: synb0's cpu inference needs more memory than the laptop spares, so by default it runs on the cluster from synb0_in
+        if os.environ.get("SYNB0_LOCAL") != "1":
+            raise RuntimeError(f"{subject}: synb0 inputs are ready in {inputs}, run tools/bouchet/synb0.sbatch and copy synb0_out back")
+        shutil.rmtree(outputs, ignore_errors=True)
+        outputs.mkdir()
+        _env(["docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/tmp",
+              "-v", f"{inputs}:/INPUTS/", "-v", f"{outputs}:/OUTPUTS/", "-v", f"{FREESURFER_LICENSE}:/extra/freesurfer/license.txt",
+              SYNB0, "--stripped"], log)
+    # decision: the synthetic b0 should need only a small shift onto the real one, a big one means synb0 misregistered
+    moved = np.loadtxt(outputs / "topup_movpar.txt")[1]
+    if np.linalg.norm(moved[:3]) > 5 or np.abs(moved[3:]).max() > 0.1:
+        raise RuntimeError(f"{subject}: synb0 and the real b0 are {np.linalg.norm(moved[:3]):.1f} mm apart, see {outputs}")
+    # decision: UPenn's own brain mask moved into diffusion space, bet clips tumors and cavities
+    brain = _to_dwi(subject, out_dir(subject) / "brainmask.nii.gz", d / "b0.nii.gz", d / "brain_mask.nii.gz", log, label=True) > 0
+    brain = ndimage.binary_dilation(brain, iterations=1)
+    ml = brain.sum() * np.prod(zooms) / 1000
+    if not 800 < ml < 2200:
+        raise RuntimeError(f"{subject}: brain mask in diffusion space is {ml:.0f} mL, see {d}")
+    _save(brain.astype(np.uint8), image, d / "brain_mask.nii.gz")
+    tumor = _to_dwi(subject, out_dir(subject) / "seg.nii.gz", d / "b0.nii.gz", d / "tumor_mask.nii.gz", log, label=True) > 0
+    _save(ndimage.binary_dilation(tumor, iterations=2).astype(np.uint8), image, d / "tumor_mask.nii.gz")
+    (d / "acqp.txt").write_text(f"0 1 0 {readout}\n")
+    (d / "index.txt").write_text(" ".join(["1"] * len(bvals)) + "\n")
+    if not (d / "eddy.nii.gz").exists() and os.environ.get("EDDY_LOCAL") != "1":
+        # decision: eddy is slow on the laptop cpu and quick on a cluster gpu, so by default it runs there
+        raise RuntimeError(f"{subject}: eddy inputs are ready in {d}, run tools/bouchet/eddy.sbatch and copy eddy.* back")
+    # decision: linear second-level model for a half-sphere scheme with few directions, replace slices that lost signal, and smooth the first pass for patients who move
+    if not (d / "eddy.nii.gz").exists():
+        _env(["eddy_cpu", f"--imain={d / 'unrung.nii.gz'}", f"--mask={d / 'brain_mask.nii.gz'}", f"--acqp={d / 'acqp.txt'}",
+              f"--index={d / 'index.txt'}", f"--bvecs={source / 'dwi.bvec'}", f"--bvals={source / 'dwi.bval'}",
+              f"--topup={outputs / 'topup'}", f"--out={d / 'eddy'}", "--repol", "--slm=linear", "--fwhm=10,0,0,0,0",
+              "--cnr_maps", f"--nthr={threads}"], log)
+    shutil.copyfile(d / "eddy.eddy_rotated_bvecs", d / "dwi.bvec")
+    shutil.copyfile(source / "dwi.bval", d / "dwi.bval")
+    shutil.copyfile(source / "dwi.json", d / "dwi.json")
+    # decision: eddy's spline can undershoot below zero at edges, a negative signal has no meaning and breaks the free water fit
+    corrected = nib.load(d / "eddy.nii.gz")
+    _save(np.clip(np.asarray(corrected.dataobj), 0, None).astype(np.float32), corrected, d / "eddy_clipped.nii.gz")
+    os.replace(d / "eddy_clipped.nii.gz", d / "dwi.nii.gz")
+    (d / "eddy.nii.gz").unlink()
+
+
+def free_water(subject):
+    # explainer: fernet splits each voxel into tissue and free water, single shell works because of its interpolated start
+    d = PREP / subject
+    out = d / "fernet"
+    if (out / "corrected_fw_DWI.nii.gz").exists():
+        return out
+    out.mkdir(exist_ok=True)
+    python, log = DMRI_ENV / "bin" / "python", d / "fernet.log"
+    # decision: fernet divides by b0, so voxels with no b0 signal stay out of its mask or they come back as NaN
+    image = nib.load(d / "dwi.nii.gz")
+    b0 = np.asarray(image.dataobj)[..., np.loadtxt(d / "dwi.bval") < 50].mean(-1)
+    brain = np.asarray(nib.load(d / "brain_mask.nii.gz").dataobj) > 0
+    _save((brain & (b0 > 0)).astype(np.uint8), image, d / "fernet_mask.nii.gz")
+    grads = ["-r", d / "dwi.bvec", "-b", d / "dwi.bval", "-m", d / "fernet_mask.nii.gz"]
+    # decision: keep tumor, edema and cavity out of the reference white matter and CSF it picks
+    _env([python, FERNET / "scripts" / "fernet.py", "-d", d / "dwi.nii.gz", *grads, "-x", d / "tumor_mask.nii.gz",
+          "-o", out / "fernet", "-B"], log)
+    _env([python, FERNET / "scripts" / "fernet_fw_dwi.py", "-d", d / "dwi.nii.gz", *grads,
+          "-f", out / "fernet_fw_volume_fraction.nii.gz", "-o", out / "corrected"], log)
+    return out
+
+
 def fetch(subject):
     d = raw(subject)
     if (d / "dwi.fz").exists():
         return True
+    if PREPPED:
+        if not (DTI / subject / "dwi.nii.gz").exists():
+            return False
+        preprocess(subject)
+        free_water(subject)
+        return _reconstruct(subject)
     series = pick(subject)
     if series is None:
         return False
@@ -80,11 +215,18 @@ def fetch(subject):
         archive.unlink()
         subprocess.run([str(DCM2NIIX), "-z", "y", "-f", "dwi", "-o", str(d), str(d / "dicom")],
                        stdout=open(log, "a"), stderr=subprocess.STDOUT, check=True)
+    return _reconstruct(subject)
+
+
+def _reconstruct(subject):
+    d = raw(subject)
+    log = d / "fetch.log"
     _dsi(["--action=src", f"--source={d}/dwi.nii.gz", f"--bval={d}/dwi.bval", f"--bvec={d}/dwi.bvec", f"--output={d}/dwi.sz"], log)
     # explainer: qc writes qc.tsv into the working directory unless told otherwise
     _dsi(["--action=qc", f"--source={d}/dwi.sz", f"--output={d}/qc.tsv"], log)
-    # decision: check_btable picks the gradient axis order that gives the most coherent fibers, one older protocol needs it
-    _dsi(["--action=rec", f"--source={d}/dwi.sz", "--method=4", "--param=1.25", "--check_btable=1",
+    # decision: check_btable picks the gradient axis order on the raw scan, the corrected scan keeps eddy's rotated table as is
+    _dsi(["--action=rec", f"--source={d}/dwi.sz", "--method=4", "--param=1.25", f"--check_btable={0 if PREPPED else 1}",
+          "--make_isotropic=2", "--bias_field_correction=1", "--motion_correction=0",
           f"--thread_count={THREADS}", f"--output={d}/dwi.fz"], log)
     return True
 
@@ -146,7 +288,8 @@ def register(subject, tries=4):
              "-ia-image-centers", "-o", w / "shape.mat", "-n", "100x100x50", "-threads", THREADS], w / "register.log")
     # decision: NMI refine only at the two finest levels (coarse ones jumped up to 90 degrees), a few runs each, keep the fit with fa most on white matter
     start, best = w / "shape.mat", None
-    for dof in (6, 12):
+    # decision: once distortion is corrected the fit stays rigid, an affine would only soak up anatomy
+    for dof in (6,) if PREPPED else (6, 12):
         scored = [(_fa_contrast(subject, start, w / "fa_try.nii.gz"), start)]
         for k in range(tries):
             out = w / f"try_{dof}_{k}.mat"
@@ -224,6 +367,7 @@ def run(number, timepoint=1):
 
 if __name__ == "__main__":
     timepoint = 2 if "--follow-up" in sys.argv else 1
+    PREPPED = "--prep" in sys.argv
     numbers = [int(a) for a in sys.argv[1:] if a.isdigit()] or [int(p) for p in sorted(os.listdir(PAIRS)) if p.isdigit() and int(p) < 10000]
     for n in numbers:
         try:

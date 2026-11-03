@@ -48,11 +48,11 @@ def _dsi(args, log):
 
 
 def pick(subject):
-    # decision: the pre-op study is the earliest one. _T / _TERA / ONLY names are re-sends, so the plain series wins, then the most volumes
+    # decision: pre-op is the earliest study and follow-up the latest, the plain series beats _T / _TERA / ONLY re-sends, then the one with the most volumes wins
     pid = subject[:15]
     mine = [s for s in json.loads(SERIES.read_text()) if s["PatientID"] == pid]
-    first = min(s["StudyDate"][:10] for s in mine)
-    found = [s for s in mine if s["StudyDate"][:10] == first
+    when = (min if subject.endswith("_11") else max)(s["StudyDate"][:10] for s in mine)
+    found = [s for s in mine if s["StudyDate"][:10] == when
              and re.search(r"DTI|DIFF|MDDW", s.get("SeriesDescription") or "", re.I)]
     found.sort(key=lambda s: (bool(re.search(r"_T\b|_TERA|ONLY", s["SeriesDescription"], re.I)), -s["ImageCount"]))
     return found[0] if found else None
@@ -214,18 +214,19 @@ def check(subject, points):
     return result
 
 
-def run(number):
-    subject = subject_id(number, 1)
+def run(number, timepoint=1):
+    subject = subject_id(number, timepoint)
     if not fetch(subject):
-        return subject, "no pre-op diffusion"
+        return subject, "no diffusion at this timepoint"
     register(subject)
     return subject, check(subject, to_native(subject))
 
 
 if __name__ == "__main__":
-    numbers = [int(a) for a in sys.argv[1:]] or [int(p) for p in sorted(os.listdir(PAIRS)) if p.isdigit() and int(p) < 10000]
+    timepoint = 2 if "--follow-up" in sys.argv else 1
+    numbers = [int(a) for a in sys.argv[1:] if a.isdigit()] or [int(p) for p in sorted(os.listdir(PAIRS)) if p.isdigit() and int(p) < 10000]
     for n in numbers:
         try:
-            print(*run(n), flush=True)
+            print(*run(n, timepoint), flush=True)
         except Exception as error:
-            print(subject_id(n, 1), "failed:", error, flush=True)
+            print(subject_id(n, timepoint), "failed:", error, flush=True)

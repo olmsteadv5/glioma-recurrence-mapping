@@ -13,6 +13,8 @@ BASE=/nfs/roberts/scratch/pi_hpz2/wo88/eddy
 scan=$(sed -n "${SLURM_ARRAY_TASK_ID}p" $BASE/scans.txt)
 d=$BASE/$scan
 module load FSL/6.0.7.22
+# decision: the module leaves the output format unset and eddy refuses to write images without it
+export FSLOUTPUTTYPE=NIFTI_GZ
 eddy_cuda --imain=$d/unrung.nii.gz --mask=$d/brain_mask.nii.gz --acqp=$d/acqp.txt --index=$d/index.txt \
     --bvecs=$d/dwi.bvec --bvals=$d/dwi.bval --topup=$d/topup --out=$d/eddy \
     --repol --slm=linear --fwhm=10,0,0,0,0 --cnr_maps

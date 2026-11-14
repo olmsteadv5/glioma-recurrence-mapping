@@ -19,7 +19,7 @@ def mark(stage):
     print(f"* {stage}", flush=True)
 
 
-def process(number, first="fetch", timepoint=1, was=None):
+def process(number, first="fetch", timepoint=1, was=None, last="map"):
     # explainer: starting at a stage runs every stage after it too
     started = time.time()
     at = STAGES.index(first)
@@ -38,6 +38,8 @@ def process(number, first="fetch", timepoint=1, was=None):
         clock = time.time()
         if shipped:
             subject, run["labels"] = ingest.run(number, timepoint)
+        elif number >= 10000:
+            subject = adapter(number).get(number, timepoint)
         else:
             subject = fetch.get(number, timepoint)
         took("fetch", clock)
@@ -48,15 +50,19 @@ def process(number, first="fetch", timepoint=1, was=None):
     if at <= 1 and not shipped:
         mark("strip")
         clock = time.time()
-        stripped = skullstrip.run(subject)
+        if number < 10000 or not getattr(adapter(number), "PRESTRIPPED", False):
+            stripped = skullstrip.run(subject)
         verify.run(subject, stripped)
         took("strip", clock)
 
     if at <= 2:
         mark("tissue")
         clock = time.time()
-        tissue.run(subject, fast=shipped)
+        tissue.run(subject, fast=shipped or (number >= 10000 and getattr(adapter(number), "FAST_SYNTHSEG", False)))
         took("tissue", clock)
+    # decision: stop here when segmentation runs elsewhere, e.g. on a cluster gpu
+    if last == "tissue":
+        return subject, None
 
     seg = out_dir(subject) / "seg.nii.gz"
     if at <= 3 and shipped:
@@ -115,7 +121,7 @@ def missing(number, first, timepoint=1):
     return None
 
 
-def main(numbers, first="fetch", timepoint=1):
+def main(numbers, first="fetch", timepoint=1, last="map"):
     OUTPUTS.mkdir(parents=True, exist_ok=True)
     stored = json.loads(RESULTS.read_text()) if RESULTS.exists() else {}
     results = {}
@@ -129,8 +135,10 @@ def main(numbers, first="fetch", timepoint=1):
             results[subject] = stored.get(subject, {})
             results[subject].update(evaluate.run(subject, out_dir(subject) / "seg.nii.gz"))
         else:
-            subject, scores = process(number, first, timepoint, was)
+            subject, scores = process(number, first, timepoint, was, last)
             results[subject] = scores
+    if last != "map":
+        return results
 
     mark("map")
     clock = time.time()
@@ -160,19 +168,21 @@ def main(numbers, first="fetch", timepoint=1):
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    first, timepoint = "fetch", "1"
-    for flag, fallback in (("--from", "fetch"), ("--timepoint", "1")):
+    first, timepoint, last = "fetch", "1", "map"
+    for flag in ("--from", "--timepoint", "--until"):
         if flag in args:
             cut = args.index(flag)
             value = args[cut + 1] if cut + 1 < len(args) else ""
             args = args[:cut] + args[cut + 2:]
             if flag == "--from":
                 first = value
-            else:
+            elif flag == "--timepoint":
                 timepoint = value
+            else:
+                last = value
     if (not args or not all(a.isdigit() for a in args)
-            or first not in STAGES or timepoint not in ("1", "2")):
+            or first not in STAGES or timepoint not in ("1", "2") or last not in ("tissue", "map")):
         sys.exit(f"usage: ./main.py <subject numbers> [--from {'|'.join(STAGES)}] "
-                 f"[--timepoint 1|2]")
+                 f"[--timepoint 1|2] [--until tissue]")
 
-    main([int(a) for a in args], first, int(timepoint))
+    main([int(a) for a in args], first, int(timepoint), last)

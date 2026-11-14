@@ -12,7 +12,7 @@ from scipy.interpolate import RBFInterpolator
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scan.register import _greedy
-from paths import PAIRS, THREADS, modality, out_dir, stripped_dir, subject_id
+from paths import PAIRS, THREADS, in_analysis, modality, out_dir, stripped_dir, subject_id
 
 LEFT = (2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 17, 18, 26, 28)
 RIGHT = (41, 42, 43, 44, 46, 47, 49, 50, 51, 52, 53, 54, 58, 60)
@@ -159,6 +159,6 @@ def run(number):
 
 if __name__ == "__main__":
     numbers = [int(a) for a in sys.argv[1:]] or sorted(int(p.name) for p in PAIRS.iterdir()
-                                                       if p.name.isdigit() and int(p.name) < 10000)
+                                                       if p.name.isdigit() and in_analysis(int(p.name)))
     for n in numbers:
         print(n, run(n), flush=True)

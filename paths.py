@@ -39,8 +39,13 @@ REGIONS = {"ET": (3,), "TC": (1, 3), "WT": (1, 2, 3), "RC": (4,)}
 THREADS = "12"
 
 
-# decision: PREDICT-GBM ids start at 50000 so they never clash with UPenn's 1-630
-COLLECTIONS = {5: "PREDGBM-T-", 6: "PREDGBM-L-", 7: "PREDGBM-R-"}
+# decision: PREDICT-GBM ids start at 50000 so they never clash with UPenn's 1-630. RHUH standalone is 80000 for pre-op to recurrence and 90000 for early post-op to recurrence
+COLLECTIONS = {5: "PREDGBM-T-", 6: "PREDGBM-L-", 7: "PREDGBM-R-", 8: "RHUHGBM-P-", 9: "RHUHGBM-O-"}
+# explainer: collections that arrive already stripped and segmented
+SHIPPED = (5, 6, 7)
+COHORTS = {0: "UPenn", 5: "TUM", 6: "LUMIERE", 7: "RHUH in PREDICT", 8: "RHUH pre-op", 9: "RHUH post-op"}
+# decision: RHUH runs standalone from its own release, its PREDICT copy stays on disk but out of every analysis
+LEFT_OUT = (7,)
 PREDICT = INPUTS / "predict_gbm"
 RHUH = INPUTS / "rhuh_gbm"
 
@@ -50,7 +55,22 @@ def subject_id(number, timepoint=1):
 
 
 def external(number):
-    return number // 10000 in COLLECTIONS
+    return number // 10000 in SHIPPED
+
+
+def cohort_of(number):
+    return COHORTS[number // 10000]
+
+
+def patient_key(number):
+    # explainer: the person behind an id, shared by every RHUH id of the same patient
+    if number // 10000 in (7, 8, 9):
+        return f"RHUH-{number % 10000:04d}"
+    return f"{cohort_of(number)}-{number % 10000:04d}"
+
+
+def in_analysis(number):
+    return number // 10000 not in LEFT_OUT
 
 
 def anatomy(directory, subject):

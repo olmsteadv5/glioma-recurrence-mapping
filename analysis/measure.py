@@ -8,7 +8,7 @@ import numpy as np
 from scipy import ndimage
 
 from geometry import MARGIN_MM, distance, ml_per_voxel, template_brain
-from paths import PARTICIPANTS, REGIONS, SCANS, out_dir, pair_dir
+from paths import PARTICIPANTS, REGIONS, SCANS, cohort_of, in_analysis, out_dir, pair_dir
 
 # decision: Lee pattern classes, by share of the recurrence inside the high-dose volume
 PATTERNS = ((0.95, "central"), (0.80, "in-field"), (0.20, "marginal"), (0.0, "distant"))
@@ -152,9 +152,18 @@ def zones(first, later, region, space):
             "separate": float(apart.sum()) * ml}
 
 
-def pairs(space, tissue=False):
+def _wanted(name, cohorts):
+    # explainer: the scans folder also holds lock files, only scan folders carry a number
+    if not name[10:15].isdigit():
+        return False
+    number = int(name[10:15])
+    return in_analysis(number) and cohort_of(number) in cohorts
+
+
+def pairs(space, tissue=False, cohorts=("UPenn",)):
     # explainer: pass tissue=True when building a target, a missing tissue map would quietly run SynthSeg
-    have = {d.name for d in SCANS.iterdir() if _seg_file(d.name, space).exists()
+    # decision: UPenn unless an analysis names other cohorts, so the shared UPenn tables never quietly take in another dataset
+    have = {d.name for d in SCANS.iterdir() if _wanted(d.name, cohorts) and _seg_file(d.name, space).exists()
             and (not tissue or not d.name.endswith("_11")
                  or (d / "tissue_in_mni.nii.gz").exists())}
     return [(name, name[:-2] + "21") for name in sorted(have)

@@ -79,7 +79,9 @@ def flag(rows):
     spread = {k: 1.4826 * np.nanmedian([abs(r[k] - centre[k]) for r in rows]) for k in COHORT}
     for r in rows:
         why = [k for k, limit in LIMITS.items() if (r[k] < limit if k in FLOORS else r[k] > limit)]
-        why += [f"{k} unusual" for k in COHORT if spread[k] and abs(r[k] - centre[k]) > SPREAD * spread[k]]
+        # decision: signal and contrast only count against a scan when low, a clean scan is no reason for a look
+        why += [f"{k} unusual" for k in COHORT if spread[k] and (centre[k] - r[k] if k in ("snr_b0", "cnr_dwi")
+                                                                  else abs(r[k] - centre[k])) > SPREAD * spread[k]]
         why += [f"{k} missing" for k in COHORT if np.isnan(r[k])]
         r["flags"] = "; ".join(why)
     return rows

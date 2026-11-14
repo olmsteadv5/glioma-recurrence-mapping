@@ -308,6 +308,73 @@ def register(subject, tries=4):
     return w / "to_t2.mat"
 
 
+# explainer: dsi maps live on dsi's grid, fernet's and the plain tensor's on the corrected scan's own grid
+DSI_MAPS = ("qa", "md")
+# decision: fernet's trace is three diffusivities summed in mm2/s, so a third of it in dsi's 1e-3 units is the tissue md
+FERNET_MAPS = {"fw": ("fernet_fw_volume_fraction", 1.0), "tissue_md": ("fernet_fw_tensor_TR", 1000 / 3),
+               "tissue_fa": ("fernet_fw_tensor_FA", 1.0), "tissue_ad": ("fernet_fw_tensor_AX", 1000.0),
+               "tissue_rd": ("fernet_fw_tensor_RAD", 1000.0)}
+# decision: a plain tensor fit on fernet's grid and mask, so corrected vs uncorrected differ only by the free water
+TENSOR_MAPS = {"dti_fa": ("-fa", 1.0), "dti_md": ("-adc", 1000.0)}
+# decision: below this share of a voxel inside the diffusion field of view the value is mostly made up
+COVERED = 0.5
+
+
+def _plain_tensor(d, log):
+    if all((d / f"{name}.nii.gz").exists() for name in TENSOR_MAPS):
+        return
+    _env(["dwi2tensor", d / "dwi.nii.gz", d / "dti_tensor.nii.gz", "-fslgrad", d / "dwi.bvec", d / "dwi.bval",
+          "-mask", d / "fernet_mask.nii.gz", "-force", "-quiet"], log)
+    for name, (flag, _) in TENSOR_MAPS.items():
+        _env(["tensor2metric", d / "dti_tensor.nii.gz", flag, d / f"{name}.nii.gz", "-force", "-quiet"], log)
+    (d / "dti_tensor.nii.gz").unlink()
+
+
+def maps(subject):
+    # explainer: every scalar map of the corrected scan onto the same session's T2 grid through the checked diffusion to T2 fit
+    w, d = work(subject), raw(subject)
+    t2 = modality(stripped_dir(subject), subject, "T2")
+    log = w / "register.log"
+    brain = np.asarray(nib.load(out_dir(subject) / "brainmask.nii.gz").dataobj) > 0
+    names = [*DSI_MAPS, *FERNET_MAPS, *TENSOR_MAPS]
+    outputs = [w / f"{name}_on_t2.nii.gz" for name in ("coverage", *names)]
+    # decision: a refit of the diffusion to T2 transform makes every older map stale
+    fitted = (w / "to_t2.mat").stat().st_mtime
+    if all(path.exists() and path.stat().st_mtime > fitted for path in outputs):
+        return outputs
+    _dsi(["--action=exp", f"--source={d}/dwi.fz", f"--export={','.join(DSI_MAPS)}"], log)
+    _, corrected = dsi_to_world(subject)
+    sources = {}
+    for name in DSI_MAPS:
+        image = nib.load(d / f"dwi.fz.{name}.nii.gz")
+        nib.save(nib.Nifti1Image(np.asarray(image.dataobj).astype(np.float32), corrected), w / f"{name}.nii.gz")
+        sources[name] = (w / f"{name}.nii.gz", 1.0)
+    _plain_tensor(d, log)
+    sources.update({name: (d / "fernet" / f"{stem}.nii.gz", scale) for name, (stem, scale) in FERNET_MAPS.items()})
+    sources.update({name: (d / f"{name}.nii.gz", scale) for name, (_, scale) in TENSOR_MAPS.items()})
+    tmp = w / "resampled.tmp.nii.gz"
+
+    def resample(source):
+        _greedy(["-d", 3, "-rf", t2, "-rm", source, tmp, "-r", w / "to_t2.mat", "-threads", THREADS], log)
+        moved = nib.load(tmp)
+        return np.asarray(moved.dataobj), moved.affine
+
+    # explainer: written to a temp name and moved into place only once final, so a crash never leaves a raw map that looks done
+    def save(data, affine, dest):
+        nib.save(nib.Nifti1Image(data.astype(np.float32), affine), tmp)
+        os.replace(tmp, dest)
+
+    # explainer: share of each T2 voxel that came from inside the diffusion mask, the analysis picks its own cutoff
+    values, affine = resample(d / "fernet_mask.nii.gz")
+    share = np.where(brain, values, 0)
+    save(share, affine, outputs[0])
+    for name, (source, scale) in sources.items():
+        values, affine = resample(source)
+        # decision: nan outside the brain and the diffusion field of view, a zero there would pass for a real value in smoothing
+        save(np.where(brain & (share >= COVERED), values * scale, np.nan), affine, w / f"{name}_on_t2.nii.gz")
+    return outputs
+
+
 def track(subject):
     w = work(subject)
     if not (w / "tracts.trk.gz").exists():
@@ -362,6 +429,8 @@ def run(number, timepoint=1):
     if not fetch(subject):
         return subject, "no diffusion at this timepoint"
     register(subject)
+    if PREPPED:
+        maps(subject)
     return subject, check(subject, to_native(subject))
 
 

@@ -14,8 +14,8 @@ from show.compare import _inverse, tumor_surface
 from yale import atlas
 from hcp import streamlines
 from geometry import outline
-from paths import (LABELS, MNI, MODALITIES, THREADS, anatomy, cache_dir, modality, out_dir, pair_cache,
-                   pair_dir, raw_dir, stripped_dir, walk_dir)
+from paths import (DIFFUSION_MAPS, LABELS, MNI, MODALITIES, PATIENT_TRACTS, THREADS, anatomy, cache_dir, modality,
+                   out_dir, pair_cache, pair_dir, raw_dir, stripped_dir, walk_dir)
 
 pv.OFF_SCREEN = True
 
@@ -79,7 +79,7 @@ def patient_target(subject, phase):
 
 
 def patient_tracts(subject):
-    path = out_dir(subject) / "diffusion" / "tracts_native.npz"
+    path = out_dir(subject) / PATIENT_TRACTS / "tracts_native.npz"
     if not path.exists():
         return []
     saved = np.load(path)
@@ -1125,16 +1125,19 @@ class Slices:
         return out_dir(who) / "seg.nii.gz"
 
     def _first_on_later(self, name):
-        # explainer: pre-op sequence moved onto the follow-up grid by the same rigid fit as the tumor
+        # explainer: pre-op sequence or diffusion map moved onto the follow-up grid by the same rigid fit as the tumor
         dest = (pair_dir(self.later) / "first_t1_in_later.nii.gz" if name == "T1"
                 else pair_cache(self.later) / f"first_{name}_in_later.nii.gz")
-        source = modality(stripped_dir(self.subject), self.subject, name)
-        if not dest.exists() and source.exists():
+        source = (self._diffusion_map(self.subject, name) if name in DIFFUSION_MAPS
+                  else modality(stripped_dir(self.subject), self.subject, name))
+        rigid = pair_dir(self.later) / "rigid_first_to_later.mat"
+        # decision: the pipeline owns the moved T1, the viewer only fills it in if missing. its own copies redo when the map or the fit is newer
+        if source.exists() and (not dest.exists() or name != "T1"
+                                and dest.stat().st_mtime < max(source.stat().st_mtime, rigid.stat().st_mtime)):
             subprocess.run(["greedy", "-d", "3",
                             "-rf", str(anatomy(stripped_dir(self.later), self.later)),
                             "-rm", str(source), str(dest),
-                            "-r", str(pair_dir(self.later) / "rigid_first_to_later.mat"),
-                            "-threads", THREADS], capture_output=True)
+                            "-r", str(rigid), "-threads", THREADS], capture_output=True)
         return dest
 
     def load(self, space):
@@ -1149,6 +1152,11 @@ class Slices:
                     p = self._first_on_later(m)
                     if p.exists():
                         self.volumes[m] = self._canon(nib.load(p))
+                for m in DIFFUSION_MAPS:
+                    p = self._first_on_later(m)
+                    if p.exists():
+                        affine, data = self._canon(nib.load(p))
+                        self.volumes[m] = affine, np.nan_to_num(data)
             else:
                 # decision: fall back to raw scans so a half-processed subject still draws
                 d = stripped_dir(shown)
@@ -1158,6 +1166,13 @@ class Slices:
                     p = modality(d, shown, m)
                     if p.exists():
                         self.volumes[m] = self._canon(nib.load(p))
+                # decision: diffusion maps only on a scan's own grid, they would need another resample to sit on the other scan
+                for m in DIFFUSION_MAPS:
+                    p = self._diffusion_map(shown, m)
+                    if p.exists():
+                        affine, data = self._canon(nib.load(p))
+                        # explainer: outside the diffusion field of view is nan, drawn as black
+                        self.volumes[m] = affine, np.nan_to_num(data)
         else:
             self.volumes["T1"] = self._canon(nib.load(out_dir(shown) / "t1_in_mni.nii.gz"))
             labels, names = atlas.label_volume(nib.load(MNI))
@@ -1177,6 +1192,15 @@ class Slices:
         start = (np.unravel_index(np.argmax(self.seg > 0), self.seg.shape)
                  if (self.seg > 0).any() else [s // 2 for s in self.shape])
         self.cursor = [int(v) for v in start]
+
+    @staticmethod
+    def _diffusion_map(subject, name):
+        return out_dir(subject) / "diffusion_prep" / f"{DIFFUSION_MAPS[name]}_on_t2.nii.gz"
+
+    @staticmethod
+    def _value(name, value):
+        # explainer: diffusion maps are small decimals, mri intensities are counts
+        return round(float(value), 3) if name in DIFFUSION_MAPS else int(value)
 
     @staticmethod
     def _canon(image):
@@ -1224,7 +1248,9 @@ class Slices:
     def plane(self, which, size):
         gray, lab, parcel, lab2 = self._slab(which)
         top = np.percentile(gray[gray > 0], 99) if (gray > 0).any() else 1
-        rgb = np.repeat((np.clip(gray / max(top, 1) * 255, 0, 255)
+        # decision: diffusion maps live below 1, so they scale to their own top instead of the floor of 1 counts need
+        top = top if self.modality in DIFFUSION_MAPS else max(top, 1)
+        rgb = np.repeat((np.clip(gray / top * 255, 0, 255)
                          ).astype(np.uint8)[:, :, None], 3, axis=2)
         # decision: parcels first so the tumor wins where they overlap
         if self.involved:
@@ -1347,11 +1373,11 @@ class Slices:
         out = {"voxel": (int(x), int(y), int(z)), "label": LABELS.get(label, "background"),
                "label2": None if later is None else LABELS.get(later, "background"),
                "background": self.background if self.later else "1",
-               "label_value": label, "intensity": int(self._gray()[x, y, z]),
+               "label_value": label, "intensity": self._value(self.modality, self._gray()[x, y, z]),
                "space": self.space, "modality": self.modality, "stripped": self.stripped,
                "segmented": self.segmented,
                "modalities": list(self.volumes),
-               "signal": {m: int(v[1][x, y, z]) for m, v in self.volumes.items()},
+               "signal": {m: self._value(m, v[1][x, y, z]) for m, v in self.volumes.items()},
                "parcel": None}
         if self.parcels is not None:
             value = int(self.parcels[x, y, z])

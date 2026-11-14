@@ -26,6 +26,13 @@ FREESURFER_LICENSE = Path("/opt/freesurfer/license.txt")
 FERNET = ROOT / "tools" / "fernet"
 
 MODALITIES = ("T1", "T1GD", "T2", "FLAIR")
+# decision: the one tract run the patient walk-down and the viewer both read, so the viewer never shows tracts the numbers did not come from
+PATIENT_TRACTS = "diffusion"
+# explainer: native diffusion maps, viewer name to file stem, all from the preprocessed run
+# decision: plain tensor fa, the registration-time fa map is never masked to the diffusion field of view
+DIFFUSION_MAPS = {"FA": "dti_fa", "MD": "md", "FW": "fw", "tMD": "tissue_md"}
+# explainer: what number keys pick in the slice viewer, scans first then diffusion maps
+VIEWS = MODALITIES + tuple(DIFFUSION_MAPS)
 LABELS = {1: "NETC", 2: "SNFH", 3: "ET", 4: "RC"}
 REGIONS = {"ET": (3,), "TC": (1, 3), "WT": (1, 2, 3), "RC": (4,)}
 

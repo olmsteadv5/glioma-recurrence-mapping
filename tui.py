@@ -26,6 +26,7 @@ from show import render
 from yale import atlas, connect, function
 from paths import (ATLAS_INPUT, LABELS, MODALITIES, REGIONS, RESULTS, results_dir,
                    STAGES, out_dir, raw_dir, stage_file, stripped_dir)
+from paths import VIEWS as SLICE_VIEWS
 
 
 FG, DIM, FAINT = "#ebdbb2", "#a89984", "#7c6f64"
@@ -1049,8 +1050,8 @@ class Console(App):
             mri = f" · scan {r['background']} mri" if self.later else ""
             viewer.border_title = f"slices · {r['space']}{mri}{colors}"
             strip, taken = self.strip(
-                "viewer", [(str(i), m) for i, m in enumerate(MODALITIES, start=1)],
-                r["modality"], absent=[m for m in MODALITIES if m not in r["modalities"]])
+                "viewer", [(str(i), m) for i, m in enumerate(SLICE_VIEWS, start=1)],
+                r["modality"], absent=[m for m in SLICE_VIEWS if m not in r["modalities"]])
             viewer.styles.border_subtitle_align = "left"
             viewer.border_subtitle = self.band(viewer, strip, taken, self.slice_hints())
 
@@ -1359,12 +1360,9 @@ class Console(App):
 
     def on_key(self, event: events.Key):
         if self.mode == "slices" and self.slices:
-            if event.key in "1234":
-                names = self.slices.readout()["modalities"]
-                i = int(event.key) - 1
-                if i < len(names):
-                    self.slices.modality = names[i]
-                    self.draw()
+            # decision: a key always means the same image, the one its number shows in the strip, present or not
+            if len(event.key) == 1 and event.key.isdigit() and 0 < int(event.key) <= len(SLICE_VIEWS):
+                self.pick_modality(SLICE_VIEWS[int(event.key) - 1])
 
 
 if __name__ == "__main__":

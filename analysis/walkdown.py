@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from analysis import measure
 from geometry import MARGIN_MM, distance, ml_per_voxel, outline, template_brain
-from paths import REGIONS, THREADS, anatomy, out_dir, pair_dir, results_dir, stripped_dir, walk_dir
+from paths import PATIENT_TRACTS, REGIONS, THREADS, anatomy, out_dir, pair_dir, results_dir, stripped_dir, walk_dir
 from show.compare import _inverse
 from hcp import streamlines
 
@@ -125,7 +125,7 @@ def grid(first, source):
 def tracts(first, source):
     if source == "atlas":
         return streamlines.streamlines()
-    saved = np.load(out_dir(first) / "diffusion" / "tracts_native.npz")
+    saved = np.load(out_dir(first) / PATIENT_TRACTS / "tracts_native.npz")
     return np.split(saved["points"].astype(float), saved["offsets"][1:-1])
 
 
@@ -277,7 +277,7 @@ def table(space, source, kind=""):
 
 def has_tracts(first):
     here = out_dir(first)
-    return (here / "diffusion" / "tracts_native.npz").exists() and (here / "midline" / "lateral.nii.gz").exists()
+    return (here / PATIENT_TRACTS / "tracts_native.npz").exists() and (here / "midline" / "lateral.nii.gz").exists()
 
 
 def pairs(space, source):

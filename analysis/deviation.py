@@ -2,6 +2,7 @@
 # explainer: does diffusion that is abnormal for this patient, in either direction, mark where the tumor later recurs
 
 import csv
+import functools
 import os
 import sys
 from pathlib import Path
@@ -32,8 +33,8 @@ FW_MAX = 0.8
 MIRROR_SIGMA_MM = 1.5
 # decision: stable voxels kept at this rate with matching weight, recurring voxels all kept
 STABLE_RATE = 0.2
-# decision: the models fit on an even share of the table, weights carried, so 38 refits stay minutes not hours
-MODEL_RATE = 0.25
+# decision: the models fit on an even share of the table, weights carried, small enough to fit in memory beside other jobs
+MODEL_RATE = 0.1
 OUTCOMES = {0: "stable", 1: "enhancing", 2: "non-enhancing"}
 
 
@@ -265,20 +266,45 @@ def _write(rows, name):
     return path
 
 
-def main(cohort="upenn"):
+def _clean():
+    # explainer: pre-op scans the diffusion quality table flags, left out of the clean sensitivity run
+    with open(results_dir("native") / "diffusion_qc.csv") as fh:
+        return {int(r["scan"][10:15]) for r in csv.DictReader(fh) if r["scan"].endswith("_11") and r["flags"]}
+
+
+def main(cohort="upenn", step="all", reference_mm=REFERENCE_MM, fw_max=FW_MAX):
     from concurrent.futures import ProcessPoolExecutor
+    reference_mm, fw_max = float(reference_mm), float(fw_max)
+    # decision: sensitivity runs get their own files, the default run keeps the plain names
+    tag = cohort if (reference_mm, fw_max) == (REFERENCE_MM, FW_MAX) else f"{cohort}_ref{reference_mm:g}_fw{fw_max:g}"
+    saved = results_dir("native") / f"deviation_voxels_{tag}.npz"
+    if step in ("models", "clean"):
+        with np.load(saved) as z:
+            table = {k: z[k] for k in z}
+        if step == "models":
+            # explainer: refit only the models from the saved voxel table
+            print(_write(models(table), f"deviation_model_{tag}.csv"), flush=True)
+            return
+        keep = ~np.isin(table["patient"], list(_clean()))
+        table = {k: v[keep] for k, v in table.items()}
+        print(np.unique(table["patient"]).size, "clean patients", flush=True)
+        print(_write(aucs(table), f"deviation_auc_{tag}_clean.csv"), flush=True)
+        print(_write(models(table), f"deviation_model_{tag}_clean.csv"), flush=True)
+        return
     firsts = [a for a, _ in measure.pairs("native") if (out_dir(a) / "diffusion_prep" / "coverage_on_t2.nii.gz").exists()
               and (out_dir(a) / "midline" / "sheet.npz").exists()]
-    # decision: three at once, each patient holds several full volumes and other jobs share the laptop
-    with ProcessPoolExecutor(3) as pool:
-        parts = list(pool.map(patient, firsts))
-        checks = [r for rows in pool.map(sanity, firsts) for r in rows]
+    # decision: two at once, each patient holds several full volumes and other jobs share the laptop
+    with ProcessPoolExecutor(2) as pool:
+        parts = list(pool.map(functools.partial(patient, reference_mm=reference_mm, fw_max=fw_max), firsts))
+        checks = [] if step == "auc" else [r for rows in pool.map(sanity, firsts) for r in rows]
     table = {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}
-    np.savez_compressed(results_dir("native") / f"deviation_voxels_{cohort}.npz", **table)
+    np.savez_compressed(saved, **table)
     print(len(firsts), "patients,", table["outcome"].size, "voxels kept", flush=True)
-    print(_write(checks, f"deviation_sanity_{cohort}.csv"), flush=True)
-    print(_write(aucs(table), f"deviation_auc_{cohort}.csv"), flush=True)
-    print(_write(models(table), f"deviation_model_{cohort}.csv"), flush=True)
+    if checks:
+        print(_write(checks, f"deviation_sanity_{tag}.csv"), flush=True)
+    print(_write(aucs(table), f"deviation_auc_{tag}.csv"), flush=True)
+    if step != "auc":
+        print(_write(models(table), f"deviation_model_{tag}.csv"), flush=True)
 
 
 if __name__ == "__main__":

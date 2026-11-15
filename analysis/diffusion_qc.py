@@ -47,7 +47,9 @@ def covered(subject, image, seen, brain, seg):
     far = ndimage.distance_transform_edt(~seg, sampling=image.header.get_zooms()[:3])
     zone = brain & ~seg & (far <= ZONE_MM)
     # decision: only recurrence that lands in the pre-op brain, the rest is resection or shift the analyses can't use either
-    new = (np.asarray(follow_up_on_first(subject, later).dataobj) > 0) & brain & ~seg
+    after = np.asarray(follow_up_on_first(subject, later).dataobj)
+    # explainer: a resection cavity is not recurrence
+    new = (after > 0) & (after != 4) & brain & ~seg
     share = lambda region: round(float(seen[region].mean()), 3) if region.any() else None
     out["zone_covered"], out["new_recurrence_covered"] = share(zone), share(new)
     return out

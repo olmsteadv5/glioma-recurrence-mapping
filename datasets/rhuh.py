@@ -1,11 +1,10 @@
 # explainer: RHUH-GBM from its own release, unstripped SRI24 scans run through every stage like UPenn, with RHUH's expert labels kept as the reference
 
-import shutil
-
 import nibabel as nib
 import numpy as np
 
-from paths import MODALITIES, REFERENCE_SEG, RHUH, modality, out_dir, raw_dir, stripped_dir, subject_id
+from paths import MODALITIES, REFERENCE_SEG, RHUH, THREADS, modality, out_dir, raw_dir, stripped_dir, subject_id
+from scan.register import _greedy
 
 SOURCE = RHUH / "download" / "PKG - RHUH-GBM-nii-v1" / "RHUH-GBM_nii_v1"
 # explainer: RHUH's folders 0, 1, 2 are pre-op, early post-op and recurrence
@@ -17,6 +16,8 @@ FOLLOWUP_ON_PREOP_GRID = False
 FAST_SYNTHSEG = True
 # decision: RHUH ran SynthStrip before registering and z-scoring, a second strip here only trims brain they kept
 PRESTRIPPED = True
+# explainer: the SRI24 grid RHUH registered every scan to
+STANDARD = (240, 240, 155)
 
 
 def folder(number, timepoint=1):
@@ -29,12 +30,34 @@ def _file(number, timepoint, name):
     return where / f"RHUH-{number % 10000:04d}_{where.name}_{name}.nii.gz"
 
 
+def _mover(number, timepoint, work):
+    # decision: one RHUH scan was never registered to SRI24, so it goes onto the same patient's recurrence scan, which was
+    if nib.load(_file(number, timepoint, "t1ce")).shape == STANDARD:
+        return nib.load
+    fixed = _file(number, 2, "t1ce")
+    matrix = work / "onto_sri.mat"
+    _greedy(["-d", 3, "-a", "-dof", 12, "-m", "NMI", "-i", fixed, _file(number, timepoint, "t1ce"), "-o", matrix,
+             "-ia-image-centers", "-n", "100x50x20", "-threads", THREADS], work / "onto_sri.log")
+
+    def move(path, label=False):
+        dest = work / f"onto_sri_{path.name}"
+        # explainer: space outside the scan fills with its own background, a z-scored background is not 0
+        fill = ["-ri", "LABEL", "0.2vox"] if label else ["-rb", str(float(np.asarray(nib.load(path).dataobj).min()))]
+        _greedy(["-d", 3, "-rf", fixed, *fill, "-rm", path, dest, "-r", matrix, "-threads", THREADS], work / "onto_sri.log")
+        moved = nib.load(dest)
+        moved = nib.Nifti1Image(np.asarray(moved.dataobj), moved.affine)
+        dest.unlink()
+        return moved
+    return move
+
+
 def get(number, timepoint=1):
     subject = subject_id(number, timepoint)
     raw_dir(subject).mkdir(parents=True, exist_ok=True)
+    load = _mover(number, timepoint, raw_dir(subject))
     images = {}
     for ours, theirs in NAMES.items():
-        image = nib.load(_file(number, timepoint, theirs))
+        image = load(_file(number, timepoint, theirs))
         data = np.asarray(image.dataobj, dtype=np.float32)
         # decision: RHUH ships z-scored scans on one constant background, shifted so that background is 0 since every stage here reads > 0 as signal. a shift leaves contrast alone
         images[ours] = data - data.min(), image.affine
@@ -49,14 +72,14 @@ def get(number, timepoint=1):
     # decision: adc rides along beside the four sequences, the stages only read those four
     adc = _file(number, timepoint, "adc")
     if adc.exists() and not modality(raw_dir(subject), subject, "ADC").exists():
-        shutil.copyfile(adc, modality(raw_dir(subject), subject, "ADC"))
+        nib.save(load(adc), modality(raw_dir(subject), subject, "ADC"))
     # explainer: one recurrence label file is named segmentation.nii.gz with no prefix, so match by the word
     found = sorted(folder(number, timepoint).glob("*segmentation*.nii.gz"))
     labels = found[0] if found else _file(number, timepoint, "segmentations")
     reference = REFERENCE_SEG / f"{subject}_seg.nii.gz"
     if labels.exists() and not reference.exists():
         # decision: rounded to whole labels, a few of RHUH's label files are stored as floats
-        image = nib.load(labels)
+        image = load(labels, label=True) if load is not nib.load else nib.load(labels)
         nib.save(nib.Nifti1Image(np.rint(np.asarray(image.dataobj)).astype(np.int16), image.affine), reference)
     missing = [m for m in MODALITIES if not modality(raw_dir(subject), subject, m).exists()]
     if missing:

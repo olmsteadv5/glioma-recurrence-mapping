@@ -8,7 +8,8 @@ from paths import MODALITIES, modality, out_dir
 
 SHAPE = (240, 240, 155)
 ZOOMS = (1.0, 1.0, 1.0)
-BRAIN_ML = (900.0, 2000.0)
+# decision: the floor allows a resected brain soon after surgery, a broken strip falls far below it
+BRAIN_ML = (800.0, 2000.0)
 
 
 def run(subject, directory):

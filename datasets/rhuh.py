@@ -16,8 +16,16 @@ FOLLOWUP_ON_PREOP_GRID = False
 FAST_SYNTHSEG = True
 # decision: RHUH ran SynthStrip before registering and z-scoring, a second strip here only trims brain they kept
 PRESTRIPPED = True
-# explainer: the SRI24 grid RHUH registered every scan to
+# explainer: the SRI24 grid RHUH registered every scan to, and the header every scan but two carries
 STANDARD = (240, 240, 155)
+SRI = np.array([[-1, 0, 0, 0], [0, -1, 0, 239], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=float)
+
+
+def reorient(image):
+    # explainer: an SRI24 scan stored with its axes the other way round, turned back so its voxels and header match the rest
+    turn = nib.orientations.ornt_transform(nib.io_orientation(image.affine), nib.io_orientation(SRI))
+    data = nib.orientations.apply_orientation(np.asarray(image.dataobj), turn)
+    return nib.Nifti1Image(np.ascontiguousarray(data), SRI)
 
 
 def folder(number, timepoint=1):
@@ -31,9 +39,13 @@ def _file(number, timepoint, name):
 
 
 def _mover(number, timepoint, work):
-    # decision: one RHUH scan was never registered to SRI24, so it goes onto the same patient's recurrence scan, which was
-    if nib.load(_file(number, timepoint, "t1ce")).shape == STANDARD:
+    scan = nib.load(_file(number, timepoint, "t1ce"))
+    if scan.shape == STANDARD and np.allclose(scan.affine, SRI, atol=1e-3):
         return nib.load
+    if scan.shape == STANDARD:
+        # decision: on the SRI24 grid with flipped axes and a header to match, checked against the patient's other scans
+        return lambda path, label=False: reorient(nib.load(path))
+    # decision: one RHUH scan was never registered to SRI24, so it goes onto the same patient's recurrence scan, which was
     fixed = _file(number, 2, "t1ce")
     matrix = work / "onto_sri.mat"
     _greedy(["-d", 3, "-a", "-dof", 12, "-m", "NMI", "-i", fixed, _file(number, timepoint, "t1ce"), "-o", matrix,

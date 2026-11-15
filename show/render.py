@@ -14,7 +14,7 @@ from show.compare import _inverse, tumor_surface
 from yale import atlas
 from hcp import streamlines
 from geometry import outline
-from paths import (DIFFUSION_MAPS, LABELS, MNI, MODALITIES, PATIENT_TRACTS, THREADS, anatomy, cache_dir, modality,
+from paths import (DIFFUSION_MAPS, LABELS, MNI, MODALITIES, PATIENT_BUILT, PATIENT_TRACTS, THREADS, anatomy, cache_dir, modality,
                    out_dir, pair_cache, pair_dir, raw_dir, stripped_dir, walk_dir)
 
 pv.OFF_SCREEN = True
@@ -74,7 +74,7 @@ def target_file(subject, kind, phase, space):
 
 def patient_target(subject, phase):
     # explainer: the walk-down built from the patient's own tracts, on the pre-op grid
-    path = walk_dir(subject) / f"walk_{phase}_preop.nii.gz"
+    path = walk_dir(subject) / f"walk_{phase}{PATIENT_BUILT}.nii.gz"
     return path if path.exists() else None
 
 
@@ -100,7 +100,7 @@ def follow_up_on_first(first, later):
 
 def walk_ends(subject, space="mni"):
     out = {}
-    tag = "" if space == "mni" else "_preop"
+    tag = "" if space == "mni" else PATIENT_BUILT
     for phase in WALK_PHASES:
         path = walk_dir(subject) / f"walk_{phase}_ends{tag}.npy"
         if path.exists():

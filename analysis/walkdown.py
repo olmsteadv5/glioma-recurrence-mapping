@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from analysis import measure
 from geometry import MARGIN_MM, distance, ml_per_voxel, outline, template_brain
-from paths import PATIENT_TRACTS, REGIONS, THREADS, anatomy, out_dir, pair_dir, results_dir, stripped_dir, walk_dir
+from paths import PATIENT_BUILT, REGIONS, THREADS, anatomy, out_dir, pair_dir, results_dir, stripped_dir, walk_dir
 from show.compare import _inverse
 from hcp import streamlines
 
@@ -125,7 +125,7 @@ def grid(first, source):
 def tracts(first, source):
     if source == "atlas":
         return streamlines.streamlines()
-    saved = np.load(out_dir(first) / PATIENT_TRACTS / "tracts_native.npz")
+    saved = np.load(out_dir(first) / TRACT_RUN[source] / "tracts_native.npz")
     return np.split(saved["points"].astype(float), saved["offsets"][1:-1])
 
 
@@ -182,8 +182,16 @@ def walk_reach(data, image, brain, x, lines, skim=SKIM_MM):
 
 
 # explainer: file tags for the build grid and for the follow-up grid
-BUILT = {"atlas": "_mni", "dti": "_preop"}
-SCORED = {"atlas": "", "dti": "_dti"}
+BUILT = {"atlas": "_mni", "dti": "_preop", "dti_prep": PATIENT_BUILT}
+SCORED = {"atlas": "", "dti": "_dti", "dti_prep": "_dtiprep"}
+# explainer: which diffusion run each patient source reads its tracts from
+TRACT_RUN = {"dti": "diffusion", "dti_prep": "diffusion_prep"}
+# decision: rescoring with the fixed ball and the beyond-tumor capture writes beside the tables the lab has seen, never over them
+RESCORED = "tables_rescored"
+# explainer: set by the covered argument, then targets and recurrence are both cut to where the pre-op diffusion scan reached
+COVERED = False
+# explainer: set by the predict argument, which cohorts a run scores, each set gets its own tables
+COHORTS = ("UPenn",)
 
 
 def build(first, source="atlas"):
@@ -215,6 +223,17 @@ def to_native(first, later, name, source="atlas"):
     return np.asarray(nib.load(dest).dataobj)
 
 
+def _coverage(first, later):
+    # explainer: the pre-op diffusion scan's reach, moved onto the follow-up grid the targets are scored on
+    dest = walk_dir(later) / "diffusion_coverage.nii.gz"
+    if not dest.exists():
+        subprocess.run(["greedy", "-d", "3", "-rf", str(anatomy(stripped_dir(later), later)),
+                        "-rm", str(out_dir(first) / "diffusion_prep" / "coverage_on_t2.nii.gz"), str(dest),
+                        "-r", str(pair_dir(later) / "rigid_first_to_later.mat"), "-threads", THREADS],
+                       capture_output=True, check=True)
+    return np.asarray(nib.load(dest).dataobj) >= 0.5
+
+
 def score(first, later, space, reach=None, allowed=None, source="atlas"):
     # explainer: walk-down, plain margin at the same d, and a ball the walk-down's size, all under the same midline gate
     if space == "mni":
@@ -229,60 +248,78 @@ def score(first, later, space, reach=None, allowed=None, source="atlas"):
     _, image = measure._seg(first, space)
     ml = measure.voxel_ml(first, space)
     now = {code: measure.mask(later, code, space) for code in ("ET", "WT")}
-    rows, iso_46 = [], None
+    if COVERED:
+        seen = _coverage(first, later)
+        allowed, now = allowed & seen, {code: mask & seen for code, mask in now.items()}
+    # decision: recurrence beyond the whole original abnormality is what a margin has to reach, every target covers the rest
+    original = measure.mask(first, "WT", space)
+    caught = {**now, **{f"{code}_beyond": mask & ~original for code, mask in now.items()}}
+    # decision: ties in distance broken at random with a seed per patient, a voxel-order tie-break leans the ball one way
+    shuffle = np.random.default_rng(int(first[-8:-3])).random(original.size)
+    rows, iso_46, balls_46 = [], None, None
     for phase, region in PHASES:
         gtv = measure.mask(first, region, space)
         if not gtv.any():
             gtv = measure.mask(first, "WT", space)
         first_in = np.where(gtv, 0, np.where(allowed, reach[phase], NEVER))
         far = np.where(allowed | gtv, np.maximum(distance(gtv, image), gates[phase]), np.inf)
-        order = np.argsort(far, axis=None, kind="stable")
-        # explainer: cumulative catches in ball order, so any ball size is one lookup
-        along = {code: np.cumsum(now[code].ravel()[order]) for code in now}
+        order = np.lexsort((shuffle, far.ravel()))
+        sizes = {}
         for mm in DISTANCES:
             walk = first_in <= mm
             iso = far <= mm
             if phase == "60":
                 iso &= iso_46[mm]
-            if mm == WALK_MM:
+            if mm == WALK_MM and not COVERED:
                 # decision: save the exact NRG volume we scored so the viewer draws that one
                 saved = {"nrg": iso} if space == "mni" else {"nrg": iso, "walk": walk}
                 for kind, mask in saved.items():
                     name = f"{kind}_{phase}{'_mni' if space == 'mni' else SCORED[source]}.nii.gz"
                     nib.save(nib.Nifti1Image(mask.astype(np.uint8), image.affine), walk_dir(later) / name)
-            size = int(walk.sum())
-            for kind, target in (("walk", walk), ("iso", iso), ("ball", None)):
-                count = size if target is None else int(target.sum())
+            size = sizes[mm] = int(walk.sum())
+            pick = order
+            if phase == "60":
+                # decision: the boost ball stays inside the base ball of the same distance, the NRG cone-down every other target follows
+                pool = np.zeros(original.size, bool)
+                # explainer: grown to the boost walk's size if resampling left it a few voxels past the base walk
+                pool[balls_46[0][:max(balls_46[1][mm], size)]] = True
+                pick = order[pool[order]]
+            ball = np.zeros(original.size, bool)
+            ball[pick[:size]] = True
+            ball = ball.reshape(original.shape)
+            for kind, target in (("walk", walk), ("iso", iso), ("ball", ball)):
+                count = int(target.sum())
                 inside_gtv = int(gtv.sum())
                 row = {"patient": first[-8:-3], "pathology": measure.pathology(first), "phase": phase,
                        "walk_mm": mm, "target": kind, "volume_ml": round(count * ml, 1),
                        "beyond_gtv_ml": round(max(count - inside_gtv, 0) * ml, 1)}
-                for code, mask in now.items():
-                    if not mask.any():
-                        row[f"{code}_pct"] = None
-                        continue
-                    caught = (int(along[code][size - 1]) if target is None
-                              else int((mask & target).sum()))
-                    row[f"{code}_pct"] = round(100 * caught / float(mask.sum()), 1)
+                for code, mask in caught.items():
+                    name = f"{code.replace('_beyond', '')}{'_beyond' if code.endswith('_beyond') else ''}_pct"
+                    row[name] = round(100 * int((mask & target).sum()) / float(mask.sum()), 1) if mask.any() else None
                 rows.append(row)
         if phase == "46":
             iso_46 = {mm: far <= mm for mm in DISTANCES}
+            balls_46 = order, sizes
     return rows
 
 
 def table(space, source, kind=""):
     # decision: the patient-tract walk gets its own tables so the atlas ones are never overwritten
-    return results_dir(space) / f"walkdown{SCORED[source]}{kind}.csv"
+    group = "" if COHORTS == ("UPenn",) else "_" + "_".join(c.lower() for c in COHORTS)
+    return results_dir(space, RESCORED) / f"walkdown{SCORED[source]}{group}{'_covered' if COVERED else ''}{kind}.csv"
 
 
-def has_tracts(first):
+def has_tracts(first, source="dti_prep"):
     here = out_dir(first)
-    return (here / PATIENT_TRACTS / "tracts_native.npz").exists() and (here / "midline" / "lateral.nii.gz").exists()
+    return (here / TRACT_RUN[source] / "tracts_native.npz").exists() and (here / "midline" / "lateral.nii.gz").exists()
 
 
 def pairs(space, source):
-    found = measure.pairs(space)
-    return found if source == "atlas" else [(a, b) for a, b in found if has_tracts(a)]
+    found = measure.pairs(space, cohorts=COHORTS)
+    # decision: a covered comparison keeps only patients with a preprocessed scan, the same set for atlas and patient tracts
+    if source == "atlas" and not COVERED:
+        return found
+    return [(a, b) for a, b in found if has_tracts(a, "dti_prep" if source == "atlas" else source)]
 
 
 def write(space, source="atlas"):
@@ -414,14 +451,24 @@ def _build(job):
     return first, build(first, source)
 
 
-def main(source="atlas"):
+def main(source="atlas", *flags):
     from concurrent.futures import ProcessPoolExecutor
-    # decision: the patient-tract walk lives on the pre-op grid, so it's only scored in the follow-up's own space
-    spaces = measure.SPACES if source == "atlas" else ("native",)
+    global COVERED, COHORTS
+    unknown = set(flags) - {"covered", "predict"}
+    if unknown or ("predict" in flags and (source != "atlas" or "covered" in flags)):
+        # explainer: PREDICT has no diffusion scans, so it has neither patient tracts nor a coverage map
+        sys.exit(f"flags {flags}: use covered or predict, and predict only with atlas tracts")
+    COVERED = "covered" in flags
+    # decision: PREDICT here means TUM and LUMIERE, RHUH runs standalone and its PREDICT copy is left out
+    COHORTS = ("TUM", "LUMIERE") if "predict" in flags else ("UPenn",)
+    # decision: the patient-tract walk lives on the pre-op grid and coverage is a native map, so both score in the follow-up's own space only
+    spaces = measure.SPACES if source == "atlas" and not COVERED else ("native",)
     firsts = [first for first, _ in pairs(spaces[-1], source)]
+    # explainer: a walk already built from the same tracts is reused, rescoring never needs a rebuild
+    todo = [first for first in firsts if not (walk_dir(first) / f"walk_allowed{BUILT[source]}.nii.gz").exists()]
     # decision: one thread per worker so they share the cores instead of fighting
     with ProcessPoolExecutor(8) as pool:
-        for first, info in pool.map(_build, [(first, source) for first in firsts]):
+        for first, info in pool.map(_build, [(first, source) for first in todo]):
             print(first[-8:-3], info, flush=True)
     for space in spaces:
         print(write(space, source), summarize(space, source), summarize_curves(space, source),

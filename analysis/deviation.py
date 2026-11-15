@@ -3,6 +3,7 @@
 
 import csv
 import functools
+import gc
 import os
 import sys
 from pathlib import Path
@@ -245,6 +246,9 @@ def models(table):
                 train, test = groups != p, groups == p
                 fit = sm.GLM(y[train], X[train], family=sm.families.Binomial(), freq_weights=weight[train]).fit()
                 held[test] = fit.predict(X[test])
+                # explainer: fitted models hold reference loops the collector frees late, hundreds of refits fill memory without this
+                del fit
+                gc.collect()
             # decision: scored within each patient and pooled by pair count, a pooled ranking would mostly reflect how much each patient recurs
             scored = [_auc(held[groups == p], y[groups == p] > 0, weight[groups == p]) for p in np.unique(groups)]
             auc = sum(a * n for a, n in scored if n and np.isfinite(a)) / max(sum(n for a, n in scored if n and np.isfinite(a)), 1e-12)

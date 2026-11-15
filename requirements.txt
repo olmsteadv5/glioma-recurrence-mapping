@@ -11,3 +11,4 @@ dcm2niix>=1.0.20250506  # diffusion dicom to nifti
 # terminal UI (tui.py), needs kitty for the graphics protocol
 textual>=8.0
 textual-image>=0.14
+statsmodels>=0.14  # the clustered model in the deviation analysis

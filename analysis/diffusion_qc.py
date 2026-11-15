@@ -8,18 +8,23 @@ from pathlib import Path
 
 import nibabel as nib
 import numpy as np
+from scipy import ndimage
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from paths import out_dir, results_dir
 from scan.diffusion import PREP
+from show.render import follow_up_on_first
 
 WM, VENTRICLES = (2, 41), (4, 43)
 # decision: hard limits worth a look, the synb0 ones match the gate in preprocess and tiny fernet references make its fit unreliable
 LIMITS = {"topup_mm": 5.0, "topup_rad": 0.1, "eddy_mean_mm": 3.0, "eddy_step_mm": 1.0, "volumes_lost": 4, "tracts_wm": 0.6,
-          "fernet_wm_voxels": 500, "fernet_csf_voxels": 200}
+          "fernet_wm_voxels": 500, "fernet_csf_voxels": 200,
+          "tumor_covered": 0.9, "zone_covered": 0.9, "new_recurrence_covered": 0.9}
 # explainer: these limits are floors, every other one is a ceiling
-FLOORS = ("tracts_wm", "fernet_wm_voxels", "fernet_csf_voxels")
+FLOORS = ("tracts_wm", "fernet_wm_voxels", "fernet_csf_voxels", "tumor_covered", "zone_covered", "new_recurrence_covered")
+# decision: the band around the tumor the recurrence analyses test, so the part of it the diffusion scan misses matters
+ZONE_MM = 40
 # decision: values this many robust spreads from the cohort get a look, not a verdict
 SPREAD = 3.0
 COHORT = ("snr_b0", "cnr_dwi", "md_wm", "fw_wm", "fw_ventricles", "tissue_md_wm", "dti_fa_wm")
@@ -30,6 +35,22 @@ LOST = 0.1
 
 def _map(work, name):
     return np.asarray(nib.load(work / f"{name}_on_t2.nii.gz").dataobj)
+
+
+def covered(subject, image, seen, brain, seg):
+    # explainer: share of the tumor, the band around it and the new recurrence that the diffusion scan reached, pre-op scans only for the last two
+    out = {"tumor_covered": round(float(seen[seg].mean()), 3) if seg.any() else None,
+           "zone_covered": None, "new_recurrence_covered": None}
+    later = subject[:-2] + "21"
+    if not seg.any() or not subject.endswith("_11") or not (out_dir(later) / "seg.nii.gz").exists():
+        return out
+    far = ndimage.distance_transform_edt(~seg, sampling=image.header.get_zooms()[:3])
+    zone = brain & ~seg & (far <= ZONE_MM)
+    # decision: only recurrence that lands in the pre-op brain, the rest is resection or shift the analyses can't use either
+    new = (np.asarray(follow_up_on_first(subject, later).dataobj) > 0) & brain & ~seg
+    share = lambda region: round(float(seen[region].mean()), 3) if region.any() else None
+    out["zone_covered"], out["new_recurrence_covered"] = share(zone), share(new)
+    return out
 
 
 def row(subject):
@@ -64,6 +85,8 @@ def row(subject):
            "fernet_wm_voxels": int((np.asarray(nib.load(d / "fernet" / "fernet_wm_mask.nii.gz").dataobj) > 0).sum()),
            "fernet_csf_voxels": int((np.asarray(nib.load(d / "fernet" / "fernet_csf_mask.nii.gz").dataobj) > 0).sum()),
            "outside_fov_pct": round(100 * float((_map(w, "coverage")[brain] < 0.5).mean()), 1)}
+    image = nib.load(out_dir(subject) / "seg.nii.gz")
+    out.update(covered(subject, image, _map(w, "coverage") >= 0.5, brain, seg > 0))
     for name, region in (("md", wm), ("fw", wm), ("fw", ventricles), ("tissue_md", wm), ("dti_fa", wm)):
         tag = "wm" if region is wm else "ventricles"
         out[f"{name}_{tag}"] = round(float(np.nanmedian(_map(w, name)[region])), 3)
@@ -78,7 +101,7 @@ def flag(rows):
     centre = {k: np.nanmedian([r[k] for r in rows]) for k in COHORT}
     spread = {k: 1.4826 * np.nanmedian([abs(r[k] - centre[k]) for r in rows]) for k in COHORT}
     for r in rows:
-        why = [k for k, limit in LIMITS.items() if (r[k] < limit if k in FLOORS else r[k] > limit)]
+        why = [k for k, limit in LIMITS.items() if r[k] is not None and (r[k] < limit if k in FLOORS else r[k] > limit)]
         # decision: signal and contrast only count against a scan when low, a clean scan is no reason for a look
         why += [f"{k} unusual" for k in COHORT if spread[k] and (centre[k] - r[k] if k in ("snr_b0", "cnr_dwi")
                                                                   else abs(r[k] - centre[k])) > SPREAD * spread[k]]

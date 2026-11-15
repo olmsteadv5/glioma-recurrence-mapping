@@ -245,10 +245,11 @@ def models(table):
                 train, test = groups != p, groups == p
                 fit = sm.GLM(y[train], X[train], family=sm.families.Binomial(), freq_weights=weight[train]).fit()
                 held[test] = fit.predict(X[test])
-            auc, _ = _auc(held, y > 0, weight)
-            # decision: independence working structure with cluster-robust errors, an exchangeable one over tens of thousands of voxels per patient adds cost and little else
-            gee = sm.GEE(y, X, groups=groups, family=sm.families.Binomial(), cov_struct=sm.cov_struct.Independence(),
-                         weights=weight).fit()
+            # decision: scored within each patient and pooled by pair count, a pooled ranking would mostly reflect how much each patient recurs
+            scored = [_auc(held[groups == p], y[groups == p] > 0, weight[groups == p]) for p in np.unique(groups)]
+            auc = sum(a * n for a, n in scored if n and np.isfinite(a)) / max(sum(n for a, n in scored if n and np.isfinite(a)), 1e-12)
+            # decision: a weighted logistic fit with errors clustered by patient, a GEE builds per-patient matrices too large for tens of thousands of voxels each
+            gee = sm.GLM(y, X, family=sm.families.Binomial(), freq_weights=weight).fit(cov_type="cluster", cov_kwds={"groups": groups})
             row = {"outcome": OUTCOMES[outcome], "model": label, "held_out_auc": round(auc, 3), "patients": int(np.unique(groups).size)}
             for c, b, pval in zip(["intercept"] + columns, gee.params, gee.pvalues):
                 row[f"{c}_coef"], row[f"{c}_p"] = round(float(b), 4), float(f"{pval:.3g}")

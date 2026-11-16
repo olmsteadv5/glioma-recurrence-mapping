@@ -48,6 +48,22 @@ def paired(cell, patients, phase, column):
             f"{column} worse": int((d < -0.05).sum()), f"{column} p": float(f"{p:.2g}")}
 
 
+def locality():
+    # explainer: margin around the original tumor that holds 95% of enhancing recurrence, by pathology group
+    from analysis import measure
+    by = {}
+    for first, later in measure.pairs("native"):
+        found = measure.overlap(first, later, "ET", "native")
+        score = measure.pathology(first)
+        if "margin_95_mm" in found and score is not None:
+            for label, floor in (("all", 1), ("score 3-6", 3), ("score 5-6", 5)):
+                if score >= floor:
+                    by.setdefault(label, []).append(found["margin_95_mm"])
+        measure.forget()
+    for label, values in by.items():
+        print(f"enhancing recurrence, 95% within (median mm) {label:10s} n={len(values):2d}: {np.median(values):.1f}")
+
+
 def main():
     out = []
     for space in ("native", "mni"):
@@ -56,6 +72,12 @@ def main():
             continue
         groups = {c: sorted({r["patient"] for r in rows if r["cohort"] == c}) for c in ("UPenn", "TUM", "LUMIERE")}
         groups = {c: p for c, p in groups.items() if p}
+        # decision: UPenn's follow-up is pathology scored, scores 1-2 are mostly treatment effect, so results are also shown without them and on true progression alone
+        score = {r["patient"]: _num(r["pathology"]) for r in rows if r["cohort"] == "UPenn"}
+        for label, floor in (("UPenn score 3-6", 3), ("UPenn score 5-6", 5)):
+            chosen = sorted(p for p, v in score.items() if v is not None and v >= floor)
+            if chosen:
+                groups[label] = chosen
         groups["pooled"] = sorted({r["patient"] for r in rows})
         for name, patients in groups.items():
             for phase in ("46", "60"):
@@ -85,3 +107,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    locality()

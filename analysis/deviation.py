@@ -283,6 +283,16 @@ def main(cohort="upenn", step="all", reference_mm=REFERENCE_MM, fw_max=FW_MAX):
     # decision: sensitivity runs get their own files, the default run keeps the plain names
     tag = cohort if (reference_mm, fw_max) == (REFERENCE_MM, FW_MAX) else f"{cohort}_ref{reference_mm:g}_fw{fw_max:g}"
     saved = results_dir("native") / f"deviation_voxels_{tag}.npz"
+    if step == "pathology":
+        # decision: UPenn's follow-up is pathology scored, so the matched AUCs are repeated without pseudoprogression and on true progression alone
+        with np.load(saved) as z:
+            table = {k: z[k] for k in z}
+        scores = {n: measure.pathology(f"UPENN-GBM-{n:05d}_11") for n in np.unique(table["patient"])}
+        for label, floor in (("score3to6", 3), ("score5to6", 5)):
+            keep = np.isin(table["patient"], [n for n, v in scores.items() if v is not None and v >= floor])
+            part = {k: v[keep] for k, v in table.items()}
+            print(_write(aucs(part), f"deviation_auc_{tag}_{label}.csv"), np.unique(part["patient"]).size, "patients", flush=True)
+        return
     if step in ("models", "clean"):
         with np.load(saved) as z:
             table = {k: z[k] for k in z}

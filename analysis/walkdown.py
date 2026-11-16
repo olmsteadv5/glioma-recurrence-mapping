@@ -234,6 +234,21 @@ def _coverage(first, later):
     return np.asarray(nib.load(dest).dataobj) >= 0.5
 
 
+# decision: ICRU 91 calls dose figures over volumes under about 2 mL unstable, the same caution holds for recurrence this small
+SMALL_ML = 2.0
+
+
+def _icru(recurrence, target, gaps, image, name):
+    # explainer: geometric stand-ins for ICRU reporting, the 98th percentile distance from recurrence to target mirrors the near-minimum D98%, and Paddick's index scores miss and spill together
+    if not recurrence.any():
+        return {f"{name}_d98_mm": None, f"{name}_paddick": None, f"{name}_small": None}
+    gap = gaps[recurrence]
+    both = float((recurrence & target).sum())
+    return {f"{name}_d98_mm": round(float(np.percentile(gap, 98)), 1),
+            f"{name}_paddick": round(both ** 2 / (float(recurrence.sum()) * max(float(target.sum()), 1.0)), 3),
+            f"{name}_small": bool(recurrence.sum() * ml_per_voxel(image) < SMALL_ML)}
+
+
 def score(first, later, space, reach=None, allowed=None, source="atlas"):
     # explainer: walk-down, plain margin at the same d, and a ball the walk-down's size, all under the same midline gate
     if space == "mni":
@@ -293,9 +308,13 @@ def score(first, later, space, reach=None, allowed=None, source="atlas"):
                 row = {"patient": first[-8:-3], "pathology": measure.pathology(first), "phase": phase,
                        "walk_mm": mm, "target": kind, "volume_ml": round(count * ml, 1),
                        "beyond_gtv_ml": round(max(count - inside_gtv, 0) * ml, 1)}
+                # explainer: one distance map per target, shared by every recurrence mask
+                gaps = distance(target, image) if mm == WALK_MM else None
                 for code, mask in caught.items():
-                    name = f"{code.replace('_beyond', '')}{'_beyond' if code.endswith('_beyond') else ''}_pct"
-                    row[name] = round(100 * int((mask & target).sum()) / float(mask.sum()), 1) if mask.any() else None
+                    name = f"{code.replace('_beyond', '')}{'_beyond' if code.endswith('_beyond') else ''}"
+                    row[f"{name}_pct"] = round(100 * int((mask & target).sum()) / float(mask.sum()), 1) if mask.any() else None
+                    if mm == WALK_MM:
+                        row.update(_icru(mask, target, gaps, image, name))
                 rows.append(row)
         if phase == "46":
             iso_46 = {mm: far <= mm for mm in DISTANCES}
@@ -329,7 +348,7 @@ def write(space, source="atlas"):
         measure.forget()
     for kind, keep in (("_curves", rows), ("", [r for r in rows if r["walk_mm"] == WALK_MM])):
         with open(table(space, source, kind), "w", newline="") as fh:
-            out = csv.DictWriter(fh, fieldnames=list(keep[0]))
+            out = csv.DictWriter(fh, fieldnames=list(dict.fromkeys(k for r in keep for k in r)))
             out.writeheader()
             out.writerows(keep)
     return table(space, source, "_curves")

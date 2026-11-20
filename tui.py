@@ -426,6 +426,7 @@ class Console(App):
         self.scene = render.Scene(first, overlap, palette=self.palette, later=later, space=self.scene_space)
         self.scene.set_opacity("shell", SHELL_OPACITY)
         self.slices = render.Slices(first, self.space, later=later, background=self.background)
+        self.put_back_view()
         self.chart = None
         self.ensure_layers(KEYS - self.hidden_layers)
         self.apply_layers()
@@ -473,6 +474,18 @@ class Console(App):
         self.background = saved.get("background", self.background)
         if saved.get("subject") in self.results:
             self.subject = saved["subject"]
+        # explainer: the slice position is put back once the patient's slices exist
+        self.saved_view = saved.get("view")
+
+    def put_back_view(self):
+        view, self.saved_view = getattr(self, "saved_view", None), None
+        if not (view and self.slices and view.get("subject") == self.subject and view.get("space") == self.space):
+            return
+        cursor = view.get("cursor") or []
+        if len(cursor) == 3 and all(0 <= int(c) < n for c, n in zip(cursor, self.slices.shape)):
+            self.slices.cursor = [int(c) for c in cursor]
+        if view.get("modality") in self.slices.volumes:
+            self.slices.modality = view["modality"]
 
     def save_state(self):
         try:
@@ -480,7 +493,9 @@ class Console(App):
             STATE.write_text(json.dumps({
                 "shown": sorted(KEYS - self.hidden_layers), "mode": self.mode,
                 "space": self.space, "scene_space": self.scene_space, "palette": self.palette, "listing": self.listing,
-                "background": self.background, "subject": self.subject}, indent=1))
+                "background": self.background, "subject": self.subject,
+                "view": {"subject": self.subject, "space": self.space, "cursor": list(self.slices.cursor),
+                         "modality": self.slices.modality} if self.slices else None}, indent=1))
         except OSError:
             pass
 
@@ -624,11 +639,12 @@ class Console(App):
         self._layers_width = self.query_one("#layers", Rows).size.width
         w = max(self._layers_width, 30) - 4
         native = self.scene_space == "native"
+        # decision: the slices draw the 2 cm margin on either grid, so it is offered in native too
+        scored = render.target_file(self.subject, "nrg", "46", "mni") is not None
         if native:
-            walked, scored = render.patient_target(self.subject, "46") is not None, False
+            walked = render.patient_target(self.subject, "46") is not None or scored
         else:
             walked = render.target_file(self.subject, "walk", "46", "mni") is not None
-            scored = render.target_file(self.subject, "nrg", "46", "mni") is not None
 
         def offered(key):
             if key in ("--2", "C:both", "C:new", "C:gone", "tracts:2") or key.startswith("2:"):
@@ -662,7 +678,9 @@ class Console(App):
             elif key.startswith("W:ends"):
                 value = f"{len(render.walk_ends(self.subject, self.scene_space).get(key[6:], ())):,}"
             elif key.startswith("W:"):
-                value = patient_ml(self.subject, key[2:]) if native else target_ml(self.subject, key[2:])
+                # explainer: the slices always draw the atlas walk-down, only the native 3d view shows the patient-tract one
+                atlas = not native or self.mode == "slices"
+                value = target_ml(self.subject, key[2:]) if atlas else patient_ml(self.subject, key[2:])
             elif key.endswith(":WT"):
                 value = f"{self.results[self.scan_subject(key[0])]['regions_ml']['WT']} mL"
             elif key[:2] in ("1:", "2:"):
@@ -1133,6 +1151,7 @@ class Console(App):
         if self.mode == "slices" and name in self.slices.readout()["modalities"]:
             self.slices.modality = name
             self.draw()
+            self.save_state()
 
     def scroll_shelf(self, column, line, by):
         # explainer: wheel scrolls the tract list under the pointer, zooms the chart elsewhere
@@ -1278,6 +1297,7 @@ class Console(App):
         if self.mode == "slices" and self.slices:
             self.slices.click(which, fx, fy)
             self.draw()
+            self.save_state()
 
     VIEW_ACTIONS = ("view", "space", "palette", "show_list", "background")
 
@@ -1305,6 +1325,8 @@ class Console(App):
         self.mode = VIEWERS[(VIEWERS.index(self.mode) + 1) % len(VIEWERS)]
         self.show_mode()
         self.save_state()
+        if self.scene:
+            self.refresh_layers()
         # explainer: a tract picked in the chart stays picked in the 3d and back
         if self.scene and self.chart is not None:
             self.sync_tracts()

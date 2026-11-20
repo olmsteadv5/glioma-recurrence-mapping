@@ -74,11 +74,9 @@ def plot(curves, path):
         for s, y in low.items():
             at = int(np.nanargmin(y))
             if at < REACH_MM - 5:
-                ax.plot(at, y[at] * 100, "o", color=INK, ms=2.5, zorder=4)
                 ax.annotate(short(s), (at, y[at] * 100), xytext=(4, -2), textcoords="offset points", color=INK,
                             fontsize=6.5, va="top")
             else:
-                ax.plot(x[-1], y[-1] * 100, "o", color=INK, ms=2.5, zorder=4)
                 edge.append((y[-1] * 100, s))
         # explainer: labels at the edge are pushed apart so none sit on top of each other
         placed = []
@@ -100,8 +98,8 @@ def plot(curves, path):
     axes[-1].set_xlabel("Distance from the tumor part (mm), 0 = inside it")
     fig.supylabel("Brain in the shell the diffusion scan reached", color=SOFT, fontsize=8)
     fig.text(0, -0.02, "Grey line = patient. Coloured line = median, band = middle 50%. Coverage = voxels with coverage "
-             f">= {SEEN}, the cut the maps use.\nShells are 1 mm wide and only count brain. Numbered dots = the lowest "
-             f"point of patients that drop below {int(LABEL_BELOW * 100)}%.", color=FAINT, fontsize=7)
+             f">= {SEEN}, the cut the maps use.\nShells are 1 mm wide and only count brain. Numbers = patients that drop below "
+             f"{int(LABEL_BELOW * 100)}%, placed at their lowest point.", color=FAINT, fontsize=7)
     fig.subplots_adjust(hspace=0.3, right=0.86)
     for ext in ("png", "svg"):
         fig.savefig(f"{path}.{ext}")

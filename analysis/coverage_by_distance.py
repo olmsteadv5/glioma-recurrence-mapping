@@ -88,7 +88,10 @@ def plot(curves, path):
             ax.annotate(short(s), (x[-1], value), xytext=(x[-1] + 1.6, spot), textcoords="data", color=INK, fontsize=6.5,
                         va="center", annotation_clip=False,
                         arrowprops={"arrowstyle": "-", "color": FAINT, "lw": 0.5, "shrinkA": 0, "shrinkB": 2})
-        ax.set_title(f"{title} ({len(rows)} pre-op scans)")
+        # explainer: how many tumors the scan reached completely, and nearly, at 0 mm
+        inside = Y[:, 0]
+        ax.set_title(f"{title} ({len(rows)} pre-op scans). Inside the tumor: {int((inside >= 0.99995).sum())} fully "
+                     f"covered, {int((inside >= 0.99).sum())} at 99% or more")
         for g in (90, 100):
             ax.axhline(g, color=RULE, lw=0.8, zorder=0)
         ax.set_ylim(min(60, np.nanmin(Y) * 100 - 3), 101.5)

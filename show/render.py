@@ -78,6 +78,20 @@ def patient_target(subject, phase):
     return path if path.exists() else None
 
 
+def native_nrg(subject, phase):
+    # explainer: the 2 cm margin lives on the follow-up grid, moved back onto the pre-op grid through the inverse rigid fit
+    source = walk_dir(subject) / f"nrg_{phase}.nii.gz"
+    rigid = pair_dir(subject) / "rigid_first_to_later.mat"
+    if not source.exists() or not rigid.exists():
+        return None
+    here = cache_dir(subject) / f"nrg_{phase}_on_first.nii.gz"
+    if not here.exists() or here.stat().st_mtime < source.stat().st_mtime:
+        subprocess.run(["greedy", "-d", "3", "-rf", str(out_dir(subject) / "seg.nii.gz"),
+                        "-ri", "LABEL", "0.2vox", "-rm", str(source), str(here),
+                        "-r", str(rigid) + ",-1", "-threads", THREADS], capture_output=True)
+    return here if here.exists() else None
+
+
 def patient_tracts(subject):
     path = out_dir(subject) / PATIENT_TRACTS / "tracts_native.npz"
     if not path.exists():
@@ -307,7 +321,7 @@ class Scene:
         if self.space == "mni":
             source = target_file(self.subject, kind, phase, "mni")
         else:
-            source = patient_target(self.subject, phase) if kind == "walk" else None
+            source = patient_target(self.subject, phase) if kind == "walk" else native_nrg(self.subject, phase)
         if source is None:
             return
         cache = pair_cache(self.subject) / f"{kind}_{phase}_surface{'' if self.space == 'mni' else '_native'}.npz"

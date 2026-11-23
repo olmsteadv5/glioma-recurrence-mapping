@@ -312,29 +312,36 @@ def f07_patient_vs_atlas(folder, patient, atlas):
 
 def f08_distance(folder, patient, atlas):
     who = sorted(set(patients_of(patient)) & set(patients_of(atlas)))
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.2), sharey=True)
-    for ax, phase in zip(axes, PHASES):
-        for cell, label, colour in ((patient, "Patient tracts", T["other"]), (atlas, "Atlas tracts", T["walk"])):
-            Y = np.array([[gains(cell, [p], phase, "WT_pct", mm)[0] if len(gains(cell, [p], phase, "WT_pct", mm)) else np.nan
-                           for mm in range(41)] for p in who])
-            mid = np.nanmedian(Y, 0)
-            ax.plot(range(41), mid, color=colour, lw=2.4)
-            # explainer: atlas label above its line early on, patient label under its line late, both inside the axes
-            at = 10 if colour == T["walk"] else 30
-            ax.text(at, mid[at] + (0.3 if colour == T["walk"] else -0.3), label, color=colour, fontsize=10,
-                    ha="right" if colour == T["walk"] else "center", va="bottom" if colour == T["walk"] else "top")
-        ax.axhline(0, color=T["faint"], lw=1, ls=(0, (4, 3)))
-        ax.axvline(WALK_MM, color=T["rule"], lw=1)
-        ax.set_title(f"{PHASES[phase]} · FLAIR recurrence")
-        ax.set_xlabel("Walk distance along the tracts (mm)")
-        ax.set_xlim(0, 40)
-    # explainer: shared axis, so the range is set once after both panels have drawn
-    axes[0].set_ylim(-0.9, max(a.get_ylim()[1] for a in axes) + 0.3)
-    axes[0].set_ylabel("Walk-down minus ball, median (points)")
+    fig, axes = plt.subplots(2, 2, figsize=(11, 7.2), sharex=True, sharey=True)
+    for r, phase in enumerate(PHASES):
+        for c, (column, title) in enumerate(KINDS.items()):
+            ax = axes[r, c]
+            for cell, label, colour in ((patient, "Patient tracts", T["other"]), (atlas, "Atlas tracts", T["walk"])):
+                Y = np.array([[np.nan if not len(g := gains(cell, [p], phase, column, mm)) else g[0]
+                               for mm in range(41)] for p in who])
+                mid = np.nanmedian(Y, 0)
+                ax.plot(range(41), mid, color=colour, lw=2.4)
+                # explainer: label once, in the top-left panel, atlas above its line and patient below
+                if r == 0 and c == 0:
+                    at = 10 if colour == T["walk"] else 30
+                    ax.text(at, mid[at] + (0.3 if colour == T["walk"] else -0.3), label, color=colour, fontsize=10,
+                            ha="right" if colour == T["walk"] else "center",
+                            va="bottom" if colour == T["walk"] else "top")
+            ax.axhline(0, color=T["faint"], lw=1, ls=(0, (4, 3)))
+            ax.axvline(WALK_MM, color=T["rule"], lw=1)
+            ax.set_title(f"{PHASES[phase]} · {title}")
+            ax.set_xlim(0, 40)
+            if r == 1:
+                ax.set_xlabel("Walk distance along the tracts (mm)")
+            if c == 0:
+                ax.set_ylabel("Walk-down minus ball,\nmedian (points)")
+    # explainer: shared axis, so the range is set once after every panel has drawn
+    axes[0, 0].set_ylim(-0.9, max(a.get_ylim()[1] for a in axes.flat) + 0.3)
     headline(fig, "No walk distance rescues the patient's own tracts",
              "Median gain over the same-volume ball at every walk distance; our walk is 20 mm")
-    note(fig, "Likely cause: the tumor pushes fibers aside (mass effect), so pre-op tracts wrap around it instead of "
-              "leading away, and tracking fails in edema.")
+    note(fig, "Enhancing recurrence stays within a few mm of the tumor, so neither tract source changes how much of it "
+              "a same-size target catches.\nLikely cause for the FLAIR gap: the tumor pushes fibers aside (mass effect), "
+              "so pre-op tracts wrap around it instead of leading away, and tracking fails in edema.")
     save(fig, folder, "08_walk_distance")
 
 

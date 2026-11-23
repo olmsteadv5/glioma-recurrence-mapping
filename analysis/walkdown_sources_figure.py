@@ -6,7 +6,9 @@ import sys
 from pathlib import Path
 
 import matplotlib
+import nibabel as nib
 import numpy as np
+from scipy import ndimage
 from scipy.stats import wilcoxon
 
 matplotlib.use("Agg")
@@ -15,13 +17,15 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from analysis.walkdown import RESCORED, WALK_MM
-from paths import results_dir
+from paths import out_dir, results_dir
 
 INK, SOFT, FAINT, RULE, PATIENT = "#1f2328", "#5c636b", "#8a9199", "#e3e6e9", "#c3c8cd"
 # decision: both scored only where the diffusion scan reached, so the comparison is the tracts and nothing else
 SOURCES = (("walkdown_dtiprep_covered_curves.csv", "Patient diffusion tracts", "#eb6834"),
            ("walkdown_covered_curves.csv", "HCP-1065 atlas tracts", "#2a78d6"))
 PHASE = "46"
+# decision: a strict run keeps a patient only when the scan reached nearly all the tumor and most of the 2 cm around it
+TUMOR_MIN, BAND_MIN, BAND_MM, SEEN = 0.99, 0.90, 20, 0.5
 num = lambda v: None if v in ("", "None") else float(v)
 
 
@@ -66,10 +70,37 @@ def slope(ax, left, right, title, ylabel, zero=False):
     ax.set_ylabel(ylabel)
 
 
-def main():
+def coverage(patient):
+    # explainer: on the pre-op grid, share of the whole tumor and of the brain within 20 mm of it that the scan reached
+    d = out_dir(f"UPENN-GBM-{patient}_11")
+    image = nib.load(d / "seg.nii.gz")
+    tumor = np.asarray(image.dataobj) > 0
+    brain = np.asarray(nib.load(d / "brainmask.nii.gz").dataobj) > 0
+    seen = np.nan_to_num(np.asarray(nib.load(d / "diffusion_prep" / "coverage_on_t2.nii.gz").dataobj)) >= SEEN
+    far = ndimage.distance_transform_edt(~tumor, sampling=image.header.get_zooms()[:3])
+    band = brain & ~tumor & (far <= BAND_MM)
+    return float(seen[tumor].mean()), float(seen[band].mean())
+
+
+def strict_set(patients):
+    rows = {p: coverage(p) for p in patients}
+    with open(results_dir("native") / "diffusion_coverage_strict.csv", "w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["patient", "tumor_covered", f"band_{BAND_MM}mm_covered", "kept"])
+        for p, (t, b) in rows.items():
+            writer.writerow([p, round(t, 4), round(b, 4), t >= TUMOR_MIN and b >= BAND_MIN])
+    kept = [p for p, (t, b) in rows.items() if t >= TUMOR_MIN and b >= BAND_MIN]
+    print("left out:", ", ".join(f"{p} (tumor {rows[p][0]:.1%}, band {rows[p][1]:.1%})" for p in patients if p not in kept))
+    return kept
+
+
+def main(strict=False):
     style()
     cells = [load(name) for name, *_ in SOURCES]
     patients = sorted({k[0] for k in cells[0]} & {k[0] for k in cells[1]})
+    total = len(patients)
+    if strict:
+        patients = strict_set(patients)
     fig = plt.figure(figsize=(7.2, 6.6))
     grid = fig.add_gridspec(2, 3, height_ratios=(1, 0.95), hspace=0.55, wspace=0.55)
     vol = [[num(c[(p, WALK_MM, "walk")]["volume_ml"]) for p in patients] for c in cells]
@@ -98,16 +129,18 @@ def main():
     ax.set_xlabel("Walk distance along the tracts (mm)")
     ax.set_ylabel("FLAIR recurrence, walk-down\nminus ball (points)")
     ax.set_title("Gain over the same-volume ball at every walk distance")
-    fig.text(0, 0.0, f"{len(patients)} UPenn patients with pre-op diffusion, 46 Gy target, both scored only where the "
+    who = (f"{len(patients)} of {total} UPenn patients, scan covering {TUMOR_MIN:.0%}+ of the tumor and "
+           f"{BAND_MIN:.0%}+ of the {BAND_MM} mm around it" if strict else f"{len(patients)} UPenn patients with pre-op diffusion")
+    fig.text(0, 0.0, f"{who}, 46 Gy target, both scored only where the "
              "diffusion scan reached. Grey line = patient.\nThick tick = median. Bottom: line = median over patients, "
              "band = middle 50%. p = paired Wilcoxon, atlas against patient tracts.", color=FAINT, fontsize=7,
              va="top", transform=fig.transFigure)
     fig.subplots_adjust(right=0.95, bottom=0.1)
-    out = results_dir("native").parent / "figures" / "walkdown_sources"
+    out = results_dir("native").parent / "figures" / ("walkdown_sources_strict" if strict else "walkdown_sources")
     for ext in ("png", "svg"):
         fig.savefig(f"{out}.{ext}")
     print(f"{out}.png")
 
 
 if __name__ == "__main__":
-    main()
+    main(strict="strict" in sys.argv[1:])

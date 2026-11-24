@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import matplotlib
+import matplotlib.patches
 import numpy as np
 from scipy.stats import wilcoxon
 
@@ -16,8 +17,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from analysis import measure
 from analysis.walkdown import RESCORED, WALK_MM
+from geometry import MARGIN_MM
 from paths import cohort_of, results_dir
 
+ZONES = {"dark": ("#3A5A8C", "#4C8DF6", "#F08A50", "#E5484D"), "light": ("#A9C4EC", "#2A78D6", "#E0682C", "#C93A3F")}
 THEMES = {"dark": {"bg": "#000000", "ink": "#EDEDEA", "soft": "#A3A6AB", "faint": "#6B6E73", "rule": "#26282B",
                    "patient": "#34363A", "walk": "#4C8DF6", "other": "#F08A50", "base": "#A3A6AB"},
           "light": {"bg": "#FFFFFF", "ink": "#1F2328", "soft": "#5C636B", "faint": "#8A9199", "rule": "#E3E6E9",
@@ -137,6 +140,54 @@ def f01_reach(folder):
     save(fig, folder, "01_where_recurrence_goes")
 
 
+def f02_location(folder, theme):
+    # explainer: every follow-up tumor split by where it sits relative to the original whole tumor
+    rows = []
+    for first, later in measure.pairs("native"):
+        rows.append({code: measure.zones(first, later, code, "native") for code in ("ET", "WT")})
+        measure.forget()
+    names = (("inside", "Inside the original tumor"), ("within", f"Outside, within {MARGIN_MM} mm"),
+             ("beyond", f"Beyond {MARGIN_MM} mm, connected"), ("separate", f"Separate lesion beyond {MARGIN_MM} mm"))
+    colours = dict(zip([k for k, _ in names], ZONES[theme]))
+    fig, axes = plt.subplots(1, 2, figsize=(11, 7.4))
+    summary = {}
+    for ax, (code, title) in zip(axes, (("ET", "Enhancing recurrence"), ("WT", "FLAIR recurrence"))):
+        shares = []
+        for r in rows:
+            z = r[code]
+            total = sum(z.values()) if z else 0
+            if total > 0:
+                shares.append({k: z[k] / total * 100 for k, _ in names})
+        # decision: sorted by how much lies outside the original tumor, so the spread reads as one sweep
+        shares.sort(key=lambda d: (d["beyond"] + d["separate"], d["within"]))
+        for i, d in enumerate(shares):
+            left = 0
+            for k, _ in names:
+                ax.barh(i, d[k], left=left, height=0.78, color=colours[k], linewidth=0)
+                left += d[k]
+        far = np.array([d["beyond"] + d["separate"] for d in shares])
+        summary[code] = (np.median([d["inside"] for d in shares]), np.median(far), int((far > 10).sum()), len(shares))
+        ax.set_title(f"{title} ({len(shares)} patients)\n{int((far > 10).sum())} with over 10% beyond {MARGIN_MM} mm",
+                     fontsize=10)
+        ax.set_xlim(0, 100)
+        ax.set_ylim(-0.6, len(shares) - 0.4)
+        ax.set_yticks([])
+        ax.spines["left"].set_visible(False)
+        ax.set_xlabel("Share of the follow-up tumor (%)")
+    handles = [matplotlib.patches.Patch(color=colours[k], label=label) for k, label in names]
+    # explainer: key across the top, under the headline, so it never meets the footnote
+    fig.legend(handles=handles, loc="upper left", ncol=4, bbox_to_anchor=(0.0, 0.955), labelcolor=T["soft"],
+               fontsize=9, handlelength=1.2)
+    fig.subplots_adjust(top=0.84)
+    et, wt = summary["ET"], summary["WT"]
+    headline(fig, "Recurrence grows back in or right next to the original tumor",
+             f"Median share inside the original tumor: {et[0]:.0f}% of enhancing and {wt[0]:.0f}% of FLAIR recurrence. "
+             f"Median beyond {MARGIN_MM} mm: {et[1]:.0f}% and {wt[1]:.0f}%")
+    note(fig, "Bar = one UPenn patient, sorted by the share beyond 20 mm. Distance is from the edge of the original whole "
+              "tumor (FLAIR + core). Separate lesion = a piece of recurrence not connected to anything within 20 mm.")
+    save(fig, folder, "02_recurrence_location")
+
+
 def f02_brain(folder, cell):
     patients = patients_of(cell)
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.6), sharey=True)
@@ -160,7 +211,7 @@ def f02_brain(folder, cell):
     headline(fig, "The walk-down irradiates less brain than the 2 cm margin",
              f"{len(patients)} patients: UPenn, TUM, LUMIERE")
     note(fig, "Grey line = patient. Thick tick = median.")
-    save(fig, folder, "02_brain_irradiated")
+    save(fig, folder, "03_brain_irradiated")
 
 
 def f03_equal_volume(folder, cell):
@@ -188,7 +239,7 @@ def f03_equal_volume(folder, cell):
              "Each line grows one way: the walk-down, a ball of exactly its volume, and a uniform margin")
     note(fig, "Points along each line are grow distances 0 to 40 mm. Where the blue line sits above the orange, "
               "the tract shape caught more for the same brain.")
-    save(fig, folder, "03_compare_at_equal_volume")
+    save(fig, folder, "04_compare_at_equal_volume")
 
 
 def f04_by_cohort(folder, cell):
@@ -217,7 +268,7 @@ def f04_by_cohort(folder, cell):
              f"Mean per-patient difference at {WALK_MM} mm, 95% bootstrap interval; blue = interval above zero")
     note(fig, "Enhancing recurrence sits within a few mm of the tumor (chart 1), so any target of the same size "
               "catches it; the shape only matters for the spread further out.")
-    save(fig, folder, "04_gain_by_cohort")
+    save(fig, folder, "05_gain_by_cohort")
 
 
 def f05_robust(folder, cell):
@@ -250,7 +301,7 @@ def f05_robust(folder, cell):
              "46 Gy, recurrence outside the original tumor, mean and 95% bootstrap interval")
     note(fig, "Pathology score = share of second-surgery tissue that was tumor (UPenn). The tissue-matched ball has "
               "the walk-down's white-matter share, so what remains is the shape, not just the tissue.")
-    save(fig, folder, "05_robustness")
+    save(fig, folder, "06_robustness")
 
 
 # ---------- part 2: patient diffusion ----------
@@ -276,7 +327,7 @@ def f06_coverage(folder):
              "UPenn's diffusion is a 12 cm slab; what it misses is mostly far from the tumor")
     note(fig, "Line = median of 38 pre-op scans, band = middle 50%. Only 00307 (70% of its enhancing tumor), "
               "00086 and 00122 miss part of the tumor itself. Missing voxels are left out, never filled in.")
-    save(fig, folder, "06_diffusion_coverage")
+    save(fig, folder, "07_diffusion_coverage")
 
 
 def f07_patient_vs_atlas(folder, patient, atlas):
@@ -307,7 +358,7 @@ def f07_patient_vs_atlas(folder, patient, atlas):
     note(fig, "Grey line = patient, thick tick = median. With a strict coverage cut (34 patients with 99%+ of the "
               "tumor and 90%+ of the 20 mm around it covered) the 46 Gy FLAIR result is the same: +1.4, p < 0.001. "
               "Axes clipped at the 97th percentile.")
-    save(fig, folder, "07_patient_vs_atlas_tracts")
+    save(fig, folder, "08_patient_vs_atlas_tracts")
 
 
 def f08_distance(folder, patient, atlas):
@@ -342,7 +393,7 @@ def f08_distance(folder, patient, atlas):
     note(fig, "Enhancing recurrence stays within a few mm of the tumor, so neither tract source changes how much of it "
               "a same-size target catches.\nLikely cause for the FLAIR gap: the tumor pushes fibers aside (mass effect), "
               "so pre-op tracts wrap around it instead of leading away, and tracking fails in edema.")
-    save(fig, folder, "08_walk_distance")
+    save(fig, folder, "09_walk_distance")
 
 
 def f09_deviation(folder):
@@ -377,7 +428,7 @@ def f09_deviation(folder):
              "Each voxel scored against the patient's own healthy tissue 30+ mm away; 0.5 = chance")
     note(fig, "Filled = higher than healthy, hollow = deviates in either direction (Reshma's idea). Bars = 95% "
               "interval resampling patients. 38 UPenn patients, 4 mm distance bands.")
-    save(fig, folder, "09_diffusion_vs_recurrence")
+    save(fig, folder, "10_diffusion_vs_recurrence")
 
 
 def f10_models(folder):
@@ -403,7 +454,7 @@ def f10_models(folder):
     ax.set_xlabel("Held-out AUC, leave one patient out")
     headline(fig, "Distance does the work; diffusion adds nothing on top",
              "Predicting which tissue recurs, trained on all patients but one and tested on that one")
-    save(fig, folder, "10_distance_vs_diffusion")
+    save(fig, folder, "11_distance_vs_diffusion")
 
 
 def main(theme="dark"):
@@ -416,6 +467,7 @@ def main(theme="dark"):
     patient = curves("walkdown_dtiprep_covered_curves.csv")
     atlas_cov = curves("walkdown_covered_curves.csv")
     f01_reach(folder)
+    f02_location(folder, theme)
     f02_brain(folder, atlas_all)
     f03_equal_volume(folder, atlas_all)
     f04_by_cohort(folder, atlas_all)

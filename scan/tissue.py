@@ -40,6 +40,24 @@ def run(subject, fast=False):
     return dest
 
 
+def robust(subject):
+    # decision: robust mode with cortical parcels, written beside the first run so nothing built on tissue.nii.gz changes
+    dest = out_dir(subject) / "tissue_robust.nii.gz"
+    if dest.exists():
+        return dest
+    lock = open(out_dir(subject).parent / ".synthseg.lock", "w")
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    # explainer: --vol and --qc give each structure's volume and SynthSeg's own quality score for it
+    _shell([SYNTHSEG, "--i", anatomy(raw_dir(subject), subject), "--o", dest, "--robust", "--parc",
+            "--vol", out_dir(subject) / "tissue_robust_volumes.csv", "--qc", out_dir(subject) / "tissue_robust_qc.csv",
+            "--keepgeom", "--cpu", "--threads", THREADS],
+           out_dir(subject) / "tissue_robust.log",
+           env={**os.environ, "FREESURFER_HOME": str(FREESURFER_HOME)})
+    if not dest.exists():
+        raise RuntimeError(f"{subject}: synthseg wrote no output")
+    return dest
+
+
 def to_mni(subject):
     dest = out_dir(subject) / "tissue_in_mni.nii.gz"
     if dest.exists():
@@ -55,3 +73,19 @@ def to_mni(subject):
             "-rm", source, dest, "-r", warp, affine, "-threads", THREADS],
            destination / "tissue.log")
     return dest
+
+
+if __name__ == "__main__":
+    import sys
+    from paths import SCANS
+    # explainer: python -m scan.tissue robust runs the robust pass over every processed scan, one failure doesn't stop the rest
+    if sys.argv[1:] == ["robust"]:
+        # decision: PREDICT's RHUH copy is left out of every analysis, and UPenn goes first since its maps are needed soonest
+        scans = sorted((p.name for p in SCANS.iterdir() if (p / "tissue.nii.gz").exists()
+                        and not p.name.startswith("PREDGBM-R")), key=lambda s: (not s.startswith("UPENN"), s))
+        for i, subject in enumerate(scans, 1):
+            try:
+                robust(subject)
+                print(f"{i}/{len(scans)} {subject}", flush=True)
+            except Exception as error:
+                print(f"{i}/{len(scans)} {subject} FAILED {error}", flush=True)

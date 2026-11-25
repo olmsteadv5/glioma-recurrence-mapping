@@ -420,9 +420,40 @@ class Scene:
         index = {p["name"]: i for i, p in enumerate(atlas.parcels())}
         if name not in index:
             return
-        mesh = atlas.meshes()[index[name]]
-        self.actors["lit"] = self._mesh(mesh.vertices, mesh.faces, _hex(LIT), 1.0)
+        if self.space == "mni":
+            mesh = atlas.meshes()[index[name]]
+            points, faces = mesh.vertices, mesh.faces
+        else:
+            # decision: the atlas meshes are in MNI, so in native the parcel is warped in like the targets and meshed there
+            found = self._native_parcel(name, index[name] + 1)
+            if found is None:
+                return
+            points, faces = found
+        self.actors["lit"] = self._mesh(points, faces, _hex(LIT), 1.0)
         self.lit = name
+
+    def _native_parcel(self, name, value):
+        cache = cache_dir(self.subject) / f"parcel_{name}_native.npz"
+        if cache.exists():
+            held = np.load(cache)
+            return held["vertices"], held["faces"]
+        labels, _ = atlas.label_volume(nib.load(MNI))
+        mni = cache_dir(self.subject) / f"parcel_{name}_mni.nii.gz"
+        here = cache_dir(self.subject) / f"parcel_{name}_native.nii.gz"
+        nib.save(nib.Nifti1Image((labels == value).astype(np.uint8), nib.load(MNI).affine), mni)
+        subprocess.run(["greedy", "-d", "3", "-rf", str(anatomy(stripped_dir(self.subject), self.subject)),
+                        "-ri", "LABEL", "0.2vox", "-rm", str(mni), str(here),
+                        "-r", str(out_dir(self.subject) / "affine.mat") + ",-1", str(_inverse(self.subject)),
+                        "-threads", THREADS], capture_output=True)
+        mni.unlink(missing_ok=True)
+        if not here.exists():
+            return None
+        image = nib.load(here)
+        surface = tumor_surface(np.asarray(image.dataobj).astype(np.int16), image.affine, 1)
+        if surface is None:
+            return None
+        np.savez_compressed(cache, vertices=surface[0], faces=surface[1])
+        return surface
 
     def pick(self, x, y):
         # decision: ray cast against parcels only so the shell can't intercept

@@ -1156,6 +1156,8 @@ class Slices:
         self.hidden, self.whole = {"1": set(), "2": set(LABELS)}, {"1": None, "2": None}
         self.involved, self.lit = {}, None
         self.targets, self.show_targets = {}, set()
+        # explainer: which tissue map is laid over the slices, and which tumor segmentation each scan shows
+        self.show_tissue, self.source = None, {"1": "B", "2": "B"}
         self.compare, self.pair = {}, None
         self.load(space)
 
@@ -1192,6 +1194,7 @@ class Slices:
     def load(self, space):
         self.space = space
         self.volumes, self.parcels, self.stripped = {}, None, True
+        self.tissue, self.tumorsynth = {}, {}
         self.compare = {}
         self.targets = {}
         shown = self.later if self.background == "2" and self.later else self.subject
@@ -1208,7 +1211,7 @@ class Slices:
                         self.volumes[m] = affine, np.nan_to_num(data)
                 for m in LABEL_MAPS:
                     if (out_dir(self.subject) / f"{LABEL_MAPS[m]}.nii.gz").exists():
-                        self.volumes[m] = self._canon(nib.load(self._first_on_later(m)))
+                        self.tissue[m] = self._canon(nib.load(self._first_on_later(m)))[1]
             else:
                 # decision: fall back to raw scans so a half-processed subject still draws
                 d = stripped_dir(shown)
@@ -1228,7 +1231,7 @@ class Slices:
                 for m in LABEL_MAPS:
                     p = out_dir(shown) / f"{LABEL_MAPS[m]}.nii.gz"
                     if p.exists():
-                        self.volumes[m] = self._canon(nib.load(p))
+                        self.tissue[m] = self._canon(nib.load(p))[1]
         else:
             self.volumes["T1"] = self._canon(nib.load(out_dir(shown) / "t1_in_mni.nii.gz"))
             labels, names = atlas.label_volume(nib.load(MNI))
@@ -1242,6 +1245,16 @@ class Slices:
             path = self._seg_path(scan)
             if path.exists():
                 self.segs[scan] = self._canon(nib.load(path))[1]
+        # explainer: TumorSynth's tumor for each scan, on this grid, for when that scan is switched to it
+        if space == "native":
+            for scan, who in (("1", self.subject), ("2", self.later)):
+                if who is None or not (out_dir(who) / "tumorsynth.nii.gz").exists():
+                    continue
+                path = (self._first_on_later("TS") if scan == "1" and self.later
+                        else out_dir(who) / "tumorsynth.nii.gz")
+                self.tumorsynth[scan] = self._canon(nib.load(path))[1] == 18
+        self.brats = dict(self.segs)
+        self.apply_sources()
         self.segmented = "1" in self.segs
         self.seg = self.segs.get("1", np.zeros(self.shape, dtype=np.int16))
         self.modality = "T1GD" if "T1GD" in self.volumes else next(iter(self.volumes))
@@ -1253,11 +1266,22 @@ class Slices:
     def _diffusion_map(subject, name):
         return out_dir(subject) / "diffusion_prep" / f"{DIFFUSION_MAPS[name]}_on_t2.nii.gz"
 
+    def apply_sources(self):
+        # decision: TumorSynth gives one whole-tumor label, so a scan switched to it shows the tumor as one region
+        for scan in list(self.brats):
+            if self.source.get(scan) == "T" and scan in self.tumorsynth:
+                self.segs[scan] = self.tumorsynth[scan].astype(np.int16) * 2
+            else:
+                self.segs[scan] = self.brats[scan]
+        self.seg = self.segs.get("1", np.zeros(self.shape, dtype=np.int16))
+
+    def tumor_ml(self, scan):
+        mask = self.segs.get(scan)
+        return None if mask is None else float((mask > 0).sum() * abs(np.linalg.det(self.affine[:3, :3])) / 1000)
+
     @staticmethod
     def _value(name, value):
-        # explainer: diffusion maps are small decimals, mri intensities are counts, label maps read as a structure name
-        if name in LABEL_MAPS:
-            return label_table(name).get(int(value), ("-",))[0] if int(value) else "-"
+        # explainer: diffusion maps are small decimals, mri intensities are counts
         return round(float(value), 3) if name in DIFFUSION_MAPS else int(value)
 
     @staticmethod
@@ -1266,10 +1290,6 @@ class Slices:
         return canonical.affine, np.asarray(canonical.dataobj)
 
     def _gray(self):
-        # explainer: a label map draws over the scan, T1-Gd when there is one
-        if self.modality in LABEL_MAPS:
-            base = next((m for m in ("T1GD", "T1", "T2", "FLAIR") if m in self.volumes), self.modality)
-            return self.volumes[base][1]
         return self.volumes[self.modality][1]
 
     def _cut(self, volume, which):
@@ -1322,9 +1342,9 @@ class Slices:
         top = top if self.modality in DIFFUSION_MAPS else max(top, 1)
         rgb = np.repeat((np.clip(gray / top * 255, 0, 255)
                          ).astype(np.uint8)[:, :, None], 3, axis=2)
-        if self.modality in LABEL_MAPS:
-            labels = self._cut(self.volumes[self.modality][1], which).astype(np.int32)
-            table = label_table(self.modality)
+        if self.show_tissue in self.tissue:
+            labels = self._cut(self.tissue[self.show_tissue], which).astype(np.int32)
+            table = label_table(self.show_tissue)
             for value in np.unique(labels):
                 if value and value in table:
                     on = labels == value
@@ -1455,6 +1475,8 @@ class Slices:
                "segmented": self.segmented,
                "modalities": list(self.volumes),
                "signal": {m: self._value(m, v[1][x, y, z]) for m, v in self.volumes.items()},
+               "tissue": {m: (label_table(m).get(int(v[x, y, z]), ("-",))[0] if int(v[x, y, z]) else "-")
+                          for m, v in self.tissue.items()},
                "parcel": None}
         if self.parcels is not None:
             value = int(self.parcels[x, y, z])

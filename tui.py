@@ -27,6 +27,7 @@ from yale import atlas, connect, function
 from paths import (ATLAS_INPUT, LABELS, MODALITIES, REGIONS, RESULTS, results_dir,
                    STAGES, out_dir, raw_dir, stage_file, stripped_dir)
 from paths import VIEWS as SLICE_VIEWS
+from paths import TUMOR_SOURCES
 
 
 FG, DIM, FAINT = "#ebdbb2", "#a89984", "#7c6f64"
@@ -61,7 +62,12 @@ LAYERS = [("shell", "brain surface", "#a89984", 0),
           ("C:gone", "gone at follow-up", "#8ec07c", 0),
           ("--t", "tracts through the tumor shown", "", 0),
           ("tracts:1", "through pre-op tumor", "#%02x%02x%02x" % render.TRACTS["1"], 0),
-          ("tracts:2", "through follow-up tumor", "#%02x%02x%02x" % render.TRACTS["2"], 0)]
+          ("tracts:2", "through follow-up tumor", "#%02x%02x%02x" % render.TRACTS["2"], 0),
+          ("--s", "tissue segmentation \u00b7 slices", "", 0),
+          ("S:SEG", "SynthSeg robust", "#83a598", 0),
+          ("S:TS", "TumorSynth", "#d3869b", 0)]
+# explainer: tissue maps take turns, two colored maps at once can't be read
+TISSUE_KEYS = ("S:SEG", "S:TS")
 KEYS = {k for k, *_ in LAYERS if not k.startswith("--")}
 SHOWN = {"shell", "1:WT", "2:WT", "tracts:1", "tracts:2"}
 # decision: personal setting, so it lives in ~/.config not with the results
@@ -332,7 +338,7 @@ class Console(App):
     """
     BINDINGS = [
         ("q", "quit", "quit"), ("v", "view", "3d/slices"), ("s", "space", "native/mni"),
-        ("p", "palette", "colors"), ("n", "background", "scan mri"),
+        ("p", "palette", "colors"), ("n", "background", "scan mri"), ("t", "tumor_source", "tumor algorithm"),
         Binding("a", "show_list('parcels')", "parcels", show=False),
         Binding("b", "show_list('functions')", "functions", show=False),
         Binding("c", "show_list('connectivity')", "connectivity", show=False),
@@ -647,6 +653,14 @@ class Console(App):
             walked = render.target_file(self.subject, "walk", "46", "mni") is not None
 
         def offered(key):
+            tissue = self.slices.tissue if self.slices else {}
+            if key == "--s":
+                return bool(tissue)
+            if key in TISSUE_KEYS:
+                return key[2:] in tissue
+            # explainer: TumorSynth has one whole-tumor label, so a scan switched to it has no parts to list
+            if key[:2] in ("1:", "2:") and not key.endswith(":WT") and self.slices and self.on_tumorsynth(key[0]):
+                return False
             if key in ("--2", "C:both", "C:new", "C:gone", "tracts:2") or key.startswith("2:"):
                 if not self.later:
                     return False
@@ -664,6 +678,9 @@ class Console(App):
         for key, name, color, deep in self.layer_rows:
             if key.startswith("--"):
                 title = f" {name} "
+                # explainer: the letter says which algorithm the scan's tumor comes from, t switches it
+                if key in ("--1", "--2") and self.slices:
+                    title = f" {name}  [{self.slices.source.get(key[2], 'B')}] "
                 out.append(f"[{FAINT}]\u2500\u2500[/][{DIM}]{title}[/]"
                            f"[{FAINT}]{'\u2500' * max(w + 2 - len(title), 0)}[/]")
                 continue
@@ -681,6 +698,8 @@ class Console(App):
                 # explainer: the slices always draw the atlas walk-down, only the native 3d view shows the patient-tract one
                 atlas = not native or self.mode == "slices"
                 value = target_ml(self.subject, key[2:]) if atlas else patient_ml(self.subject, key[2:])
+            elif key.endswith(":WT") and self.slices and self.on_tumorsynth(key[0]):
+                value = f"{self.slices.tumor_ml(key[0]):.1f} mL"
             elif key.endswith(":WT"):
                 value = f"{self.results[self.scan_subject(key[0])]['regions_ml']['WT']} mL"
             elif key[:2] in ("1:", "2:"):
@@ -747,6 +766,8 @@ class Console(App):
             self.hidden_layers ^= {key}
             if scan and key not in self.hidden_layers:
                 self.hidden_layers.discard(f"{scan}:WT")
+            if key in TISSUE_KEYS and key not in self.hidden_layers:
+                self.hidden_layers |= set(TISSUE_KEYS) - {key}
         # decision: comparison redraws the same tissue, so it and the tumors take turns
         if key not in self.hidden_layers:
             if key in tumor:
@@ -760,6 +781,9 @@ class Console(App):
         self.draw()
         self.save_state()
 
+    def on_tumorsynth(self, scan):
+        return self.slices.source.get(scan) == "T" and scan in self.slices.tumorsynth
+
     def sync_overlay(self):
         if not self.slices:
             return
@@ -767,7 +791,12 @@ class Console(App):
             self.slices.hidden[scan] = {value for value, name in LABELS.items()
                                         if f"{scan}:{name}" in self.hidden_layers}
             whole = f"{scan}:WT" not in self.hidden_layers and not (self.scene and self.split(scan))
+            # explainer: a TumorSynth tumor is one region, always drawn whole
+            if self.on_tumorsynth(scan):
+                self.slices.hidden[scan] = set(LABELS)
+                whole = f"{scan}:WT" not in self.hidden_layers
             self.slices.whole[scan] = render.TISSUE[0] if whole else None
+        self.slices.show_tissue = next((k[2:] for k in TISSUE_KEYS if k not in self.hidden_layers), None)
         self.slices.show_targets = {(kind, p) for kind, prefix in render.TARGET_KEY.items()
                                     for p in render.WALK_PHASES if prefix + p not in self.hidden_layers}
         self.slices.compare = {}
@@ -1080,6 +1109,8 @@ class Console(App):
         lines = [f"[{FAINT}]{row(r['coord_space'], place, w)}[/]",
                  f"[{FAINT}]{row('voxel', ' '.join(str(v) for v in r['voxel']), w)}[/]",
                  f"[{DIM}]{row('scan 1', r['label'] if r['segmented'] else '—', w)}[/]"]
+        for name, value in r.get("tissue", {}).items():
+            lines.append(f"[{FAINT}]{row(name, value, w)}[/]")
         if r["label2"] is not None:
             lines.append(f"[{DIM}]{row('scan 2', r['label2'], w)}[/]")
         for note, ready in (("not stripped yet", r["stripped"]),
@@ -1299,7 +1330,7 @@ class Console(App):
             self.draw()
             self.save_state()
 
-    VIEW_ACTIONS = ("view", "space", "palette", "show_list", "background")
+    VIEW_ACTIONS = ("view", "space", "palette", "show_list", "background", "tumor_source")
 
     def check_action(self, action, parameters):
         # decision: gray the key out instead of letting it do nothing
@@ -1310,6 +1341,8 @@ class Console(App):
             return (self.mode == "3d" or (self.mode == "slices" and self.space == "mni")) or None
         if action == "space":
             return self.mode in ("slices", "3d") or None
+        if action == "tumor_source":
+            return (self.mode == "slices" and self.space == "native" and self.slices is not None) or None
         if action == "background":
             return (self.mode == "slices" and self.later is not None) or None
         if action == "show_list":
@@ -1351,11 +1384,32 @@ class Console(App):
         if self.mode == "slices":
             self.draw()
 
+    def action_tumor_source(self):
+        # decision: one key flips both scans together, a scan without a TumorSynth map stays on BraTS and says so
+        wanted = "B" if "T" in self.slices.source.values() else "T"
+        missing = []
+        for scan in ("1", "2") if self.later else ("1",):
+            if wanted == "T" and scan not in self.slices.tumorsynth:
+                missing.append(scan)
+                self.slices.source[scan] = "B"
+            else:
+                self.slices.source[scan] = wanted
+        self.slices.apply_sources()
+        self.sync_overlay()
+        self.refresh_layers()
+        self.draw()
+        names = {s: TUMOR_SOURCES[v] for s, v in self.slices.source.items() if s == "1" or self.later}
+        note = f"tumor: {', '.join(f'scan {s} {n}' for s, n in names.items())}"
+        if missing:
+            note += f" (no TumorSynth map for scan {', '.join(missing)})"
+        self.say(note)
+
     def action_background(self):
         self.background = "2" if self.background == "1" else "1"
         self.slices.background = self.background
         self.slices.load(self.space)
         self.sync_overlay()
+        self.refresh_layers()
         self.save_state()
         self.draw()
 

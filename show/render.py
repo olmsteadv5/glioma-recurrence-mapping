@@ -393,7 +393,8 @@ class Scene:
         ids = frozenset(ids) if ids else None
         if ids == self.shown:
             return
-        if self.shown is not None:
+        # explainer: a pick in native space or with no lines draws nothing, so there may be no tract actor to remove
+        if "tract" in self.actors:
             self.plotter.remove_actor(self.actors.pop("tract"))
         self.shown = ids
         # decision: dim the rest of the bundle so the picked ones read

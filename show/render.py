@@ -2,6 +2,7 @@
 import functools
 import os
 import subprocess
+from pathlib import Path
 
 import nibabel as nib
 import numpy as np
@@ -14,10 +15,41 @@ from show.compare import _inverse, tumor_surface
 from yale import atlas
 from hcp import streamlines
 from geometry import outline
-from paths import (DIFFUSION_MAPS, LABELS, MNI, MODALITIES, PATIENT_BUILT, PATIENT_TRACTS, THREADS, anatomy, cache_dir, modality,
+from paths import (DIFFUSION_MAPS, LABEL_MAPS, LABELS, MNI, MODALITIES, PATIENT_BUILT, PATIENT_TRACTS, THREADS, anatomy, cache_dir, modality,
                    out_dir, pair_cache, pair_dir, raw_dir, stripped_dir, walk_dir)
 
 pv.OFF_SCREEN = True
+
+FREESURFER_LUT = Path("/opt/freesurfer/FreeSurferColorLUT.txt")
+# explainer: TumorSynth's labels named and colored like their FreeSurfer counterparts, tumor on its own
+TUMORSYNTH = {1: 2, 2: 3, 3: 4, 4: 5, 5: 7, 6: 8, 7: 10, 8: 11, 9: 12, 10: 13, 11: 14, 12: 15, 13: 16, 14: 17,
+              15: 18, 16: 26, 17: 28}
+TUMORSYNTH_TUMOR = (255, 64, 160)
+# decision: how much of the label color covers the grey scan, enough to read the structure and still see anatomy
+LABEL_ALPHA = 0.6
+
+
+@functools.lru_cache(maxsize=1)
+def _freesurfer_lut():
+    names, colors = {}, {}
+    if FREESURFER_LUT.exists():
+        for line in FREESURFER_LUT.read_text().splitlines():
+            bits = line.split()
+            if len(bits) >= 5 and bits[0].isdigit():
+                names[int(bits[0])] = bits[1]
+                colors[int(bits[0])] = tuple(int(v) for v in bits[2:5])
+    return names, colors
+
+
+def label_table(view):
+    # explainer: name and color for every value a label map can hold
+    names, colors = _freesurfer_lut()
+    if view == "TS":
+        table = {k: (names.get(v, str(k)).replace("Left-", ""), colors.get(v, (200, 200, 200)))
+                 for k, v in TUMORSYNTH.items()}
+        table[18] = ("Tumor", TUMORSYNTH_TUMOR)
+        return table
+    return {k: (names[k], colors[k]) for k in names}
 
 
 
@@ -1143,13 +1175,16 @@ class Slices:
         dest = (pair_dir(self.later) / "first_t1_in_later.nii.gz" if name == "T1"
                 else pair_cache(self.later) / f"first_{name}_in_later.nii.gz")
         source = (self._diffusion_map(self.subject, name) if name in DIFFUSION_MAPS
+                  else out_dir(self.subject) / f"{LABEL_MAPS[name]}.nii.gz" if name in LABEL_MAPS
                   else modality(stripped_dir(self.subject), self.subject, name))
         rigid = pair_dir(self.later) / "rigid_first_to_later.mat"
         # decision: the pipeline owns the moved T1, the viewer only fills it in if missing. its own copies redo when the map or the fit is newer
         if source.exists() and (not dest.exists() or name != "T1"
                                 and dest.stat().st_mtime < max(source.stat().st_mtime, rigid.stat().st_mtime)):
+            # decision: label maps move with label interpolation, linear would invent structures between two
+            labels = ["-ri", "LABEL", "0.2vox"] if name in LABEL_MAPS else []
             subprocess.run(["greedy", "-d", "3",
-                            "-rf", str(anatomy(stripped_dir(self.later), self.later)),
+                            "-rf", str(anatomy(stripped_dir(self.later), self.later)), *labels,
                             "-rm", str(source), str(dest),
                             "-r", str(rigid), "-threads", THREADS], capture_output=True)
         return dest
@@ -1171,6 +1206,9 @@ class Slices:
                     if p.exists():
                         affine, data = self._canon(nib.load(p))
                         self.volumes[m] = affine, np.nan_to_num(data)
+                for m in LABEL_MAPS:
+                    if (out_dir(self.subject) / f"{LABEL_MAPS[m]}.nii.gz").exists():
+                        self.volumes[m] = self._canon(nib.load(self._first_on_later(m)))
             else:
                 # decision: fall back to raw scans so a half-processed subject still draws
                 d = stripped_dir(shown)
@@ -1187,6 +1225,10 @@ class Slices:
                         affine, data = self._canon(nib.load(p))
                         # explainer: outside the diffusion field of view is nan, drawn as black
                         self.volumes[m] = affine, np.nan_to_num(data)
+                for m in LABEL_MAPS:
+                    p = out_dir(shown) / f"{LABEL_MAPS[m]}.nii.gz"
+                    if p.exists():
+                        self.volumes[m] = self._canon(nib.load(p))
         else:
             self.volumes["T1"] = self._canon(nib.load(out_dir(shown) / "t1_in_mni.nii.gz"))
             labels, names = atlas.label_volume(nib.load(MNI))
@@ -1213,7 +1255,9 @@ class Slices:
 
     @staticmethod
     def _value(name, value):
-        # explainer: diffusion maps are small decimals, mri intensities are counts
+        # explainer: diffusion maps are small decimals, mri intensities are counts, label maps read as a structure name
+        if name in LABEL_MAPS:
+            return label_table(name).get(int(value), ("-",))[0] if int(value) else "-"
         return round(float(value), 3) if name in DIFFUSION_MAPS else int(value)
 
     @staticmethod
@@ -1222,7 +1266,19 @@ class Slices:
         return canonical.affine, np.asarray(canonical.dataobj)
 
     def _gray(self):
+        # explainer: a label map draws over the scan, T1-Gd when there is one
+        if self.modality in LABEL_MAPS:
+            base = next((m for m in ("T1GD", "T1", "T2", "FLAIR") if m in self.volumes), self.modality)
+            return self.volumes[base][1]
         return self.volumes[self.modality][1]
+
+    def _cut(self, volume, which):
+        x, y, z = self.cursor
+        if which == "axial":
+            return volume[::-1, ::-1, z].T
+        if which == "coronal":
+            return volume[::-1, y, ::-1].T
+        return volume[x, ::-1, ::-1].T
 
     def _slab(self, which):
         # decision: radiological view, patient left on the viewer's right, so flip RAS x
@@ -1266,6 +1322,13 @@ class Slices:
         top = top if self.modality in DIFFUSION_MAPS else max(top, 1)
         rgb = np.repeat((np.clip(gray / top * 255, 0, 255)
                          ).astype(np.uint8)[:, :, None], 3, axis=2)
+        if self.modality in LABEL_MAPS:
+            labels = self._cut(self.volumes[self.modality][1], which).astype(np.int32)
+            table = label_table(self.modality)
+            for value in np.unique(labels):
+                if value and value in table:
+                    on = labels == value
+                    rgb[on] = (rgb[on] * (1 - LABEL_ALPHA) + np.array(table[value][1]) * LABEL_ALPHA).astype(np.uint8)
         # decision: parcels first so the tumor wins where they overlap
         if self.involved:
             table = np.zeros((len(self.parcel_names) + 1, 3), dtype=np.float32)

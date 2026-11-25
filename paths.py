@@ -33,8 +33,10 @@ PATIENT_BUILT = "_prep"
 # explainer: native diffusion maps, viewer name to file stem, all from the preprocessed run
 # decision: plain tensor fa, the registration-time fa map is never masked to the diffusion field of view
 DIFFUSION_MAPS = {"FA": "dti_fa", "MD": "md", "FW": "fw", "tMD": "tissue_md"}
-# explainer: what number keys pick in the slice viewer, scans first then diffusion maps
-VIEWS = MODALITIES + tuple(DIFFUSION_MAPS)
+# explainer: label maps the slice viewer can show, viewer name to file stem in each scan's folder
+LABEL_MAPS = {"SEG": "tissue_robust", "TS": "tumorsynth"}
+# explainer: what number keys pick in the slice viewer, scans, then diffusion maps, then label maps on 9 and 0
+VIEWS = MODALITIES + tuple(DIFFUSION_MAPS) + tuple(LABEL_MAPS)
 LABELS = {1: "NETC", 2: "SNFH", 3: "ET", 4: "RC"}
 REGIONS = {"ET": (3,), "TC": (1, 3), "WT": (1, 2, 3), "RC": (4,)}
 

@@ -1068,7 +1068,7 @@ class Console(App):
             mri = f" · scan {r['background']} mri" if self.later else ""
             viewer.border_title = f"slices · {r['space']}{mri}{colors}"
             strip, taken = self.strip(
-                "viewer", [(str(i), m) for i, m in enumerate(SLICE_VIEWS, start=1)],
+                "viewer", [(str(i % 10), m) for i, m in enumerate(SLICE_VIEWS, start=1)],
                 r["modality"], absent=[m for m in SLICE_VIEWS if m not in r["modalities"]])
             viewer.styles.border_subtitle_align = "left"
             viewer.border_subtitle = self.band(viewer, strip, taken, self.slice_hints())
@@ -1383,8 +1383,9 @@ class Console(App):
     def on_key(self, event: events.Key):
         if self.mode == "slices" and self.slices:
             # decision: a key always means the same image, the one its number shows in the strip, present or not
-            if len(event.key) == 1 and event.key.isdigit() and 0 < int(event.key) <= len(SLICE_VIEWS):
-                self.pick_modality(SLICE_VIEWS[int(event.key) - 1])
+            # explainer: keys 1 to 9 then 0 for the tenth view, like a keyboard row
+            if len(event.key) == 1 and event.key.isdigit() and (int(event.key) or 10) <= len(SLICE_VIEWS):
+                self.pick_modality(SLICE_VIEWS[(int(event.key) or 10) - 1])
 
 
 if __name__ == "__main__":
